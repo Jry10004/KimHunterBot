@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const connectDB = require('./database/connection');
+const User = require('./models/User');
 
 // 봇 설정
 const client = new Client({
@@ -16,22 +18,20 @@ const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
 const DEV_CHANNEL_ID = process.env.DEV_CHANNEL_ID;
 const DEV_MODE = process.env.DEV_MODE === 'true';
 
-// 간단한 메모리 저장소 (나중에 데이터베이스로 교체)
-const users = new Map();
-
-// 유저 초기화 함수
-function initUser(userId) {
-    if (!users.has(userId)) {
-        users.set(userId, {
-            id: userId,
-            gold: 1000,
-            level: 1,
-            exp: 0,
-            lastDaily: null,
-            lastWork: 0
-        });
+// 유저 초기화/조회 함수
+async function getUser(discordId) {
+    try {
+        let user = await User.findOne({ discordId });
+        if (!user) {
+            user = new User({ discordId });
+            await user.save();
+            console.log(`새 유저 생성: ${discordId}`);
+        }
+        return user;
+    } catch (error) {
+        console.error('유저 조회/생성 오류:', error);
+        return null;
     }
-    return users.get(userId);
 }
 
 // 슬래시 명령어 정의
@@ -46,16 +46,23 @@ const commands = [
     
     new SlashCommandBuilder()
         .setName('회원가입')
-        .setDescription('🎮 강화왕 김헌터 회원가입')
+        .setDescription('🎮 강화왕 김헌터 회원가입'),
+    
+    new SlashCommandBuilder()
+        .setName('db테스트')
+        .setDescription('🔧 데이터베이스 연결 테스트')
 ];
 
 // 봇이 준비되었을 때
 client.once('ready', async () => {
-    console.log(`✅ ${client.user.tag} 봇이 온라인 상태입니다!`);
+    console.log(`✅ ${client.user.tag} 봇이 온라인 상태입니다! - 자동 재시작 테스트`);
     console.log(`📌 개발 모드: ${DEV_MODE ? '활성화' : '비활성화'}`);
     if (DEV_MODE && DEV_CHANNEL_ID) {
         console.log(`📌 개발 채널: ${DEV_CHANNEL_ID}`);
     }
+    
+    // MongoDB 연결
+    await connectDB();
     
     // 슬래시 명령어 등록
     try {
@@ -93,7 +100,11 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '게임') {
-            const user = initUser(interaction.user.id);
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.reply({ content: '❌ 유저 데이터를 불러올 수 없습니다!', ephemeral: true });
+                return;
+            }
             
             const embed = new EmbedBuilder()
                 .setColor('#00ff00')
@@ -152,6 +163,31 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({ embeds: [embed], components: [row] });
         }
+        
+        else if (commandName === 'db테스트') {
+            try {
+                const user = await getUser(interaction.user.id);
+                const totalUsers = await User.countDocuments();
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('🔧 데이터베이스 테스트')
+                    .setDescription('MongoDB 연결 상태를 확인합니다.')
+                    .addFields(
+                        { name: '✅ 연결 상태', value: 'MongoDB 연결 성공', inline: true },
+                        { name: '👥 총 유저 수', value: `${totalUsers}명`, inline: true },
+                        { name: '💰 내 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                        { name: '📊 내 레벨', value: `Lv.${user.level}`, inline: true },
+                        { name: '🆔 Discord ID', value: user.discordId, inline: true },
+                        { name: '📅 가입일', value: user.createdAt.toLocaleDateString('ko-KR'), inline: true }
+                    );
+                
+                await interaction.reply({ embeds: [embed], ephemeral: true });
+            } catch (error) {
+                console.error('DB 테스트 오류:', error);
+                await interaction.reply({ content: '❌ 데이터베이스 연결 실패!', ephemeral: true });
+            }
+        }
     } catch (error) {
         console.error('명령어 처리 오류:', error);
         if (!interaction.replied) {
@@ -171,7 +207,11 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    const user = initUser(interaction.user.id);
+    const user = await getUser(interaction.user.id);
+    if (!user) {
+        await interaction.reply({ content: '❌ 유저 데이터를 불러올 수 없습니다!', ephemeral: true });
+        return;
+    }
     const now = Date.now();
 
     try {
@@ -189,6 +229,7 @@ client.on('interactionCreate', async (interaction) => {
             user.gold += goldReward;
             user.exp += expReward;
             user.lastDaily = today;
+            await user.save();
 
             const embed = new EmbedBuilder()
                 .setColor('#ffaa00')
@@ -215,6 +256,7 @@ client.on('interactionCreate', async (interaction) => {
             const goldReward = Math.floor(Math.random() * 300) + 200; // 200-500골드
             user.gold += goldReward;
             user.lastWork = now;
+            await user.save();
 
             const embed = new EmbedBuilder()
                 .setColor('#0099ff')
@@ -325,8 +367,41 @@ client.on('interactionCreate', async (interaction) => {
         const gender = interaction.fields.getTextInputValue('gender');
         const referral = interaction.fields.getTextInputValue('referral');
         
-        // 여기에 실제 회원가입 로직 추가
-        // 닉네임 중복 체크, 데이터 저장 등
+        try {
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.reply({ content: '❌ 유저 데이터를 불러올 수 없습니다!', ephemeral: true });
+                return;
+            }
+
+            // 이미 회원가입 했는지 확인
+            if (user.registered) {
+                await interaction.reply({ content: '❌ 이미 회원가입을 완료하셨습니다!', ephemeral: true });
+                return;
+            }
+
+            // 닉네임 중복 체크
+            const existingUser = await User.findOne({ nickname });
+            if (existingUser) {
+                await interaction.reply({ content: '❌ 이미 사용 중인 닉네임입니다!', ephemeral: true });
+                return;
+            }
+
+            // 회원가입 정보 저장
+            user.nickname = nickname;
+            user.email = email;
+            user.phone = phone;
+            user.gender = gender;
+            user.referral = referral;
+            user.registered = true;
+            user.registeredAt = new Date();
+            user.gold += 1000; // 가입 보너스
+            await user.save();
+        } catch (error) {
+            console.error('회원가입 처리 오류:', error);
+            await interaction.reply({ content: '❌ 회원가입 처리 중 오류가 발생했습니다!', ephemeral: true });
+            return;
+        }
         
         const successEmbed = new EmbedBuilder()
             .setColor('#00ff00')
