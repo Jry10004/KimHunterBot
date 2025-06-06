@@ -1,0 +1,12 @@
+{
+  "watch": ["*.js", ".env"],
+  "ext": "js,json,env",
+  "ignore": ["node_modules/*"],
+  "delay": "1000",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "legacyWatch": true,
+  "polling": true,
+  "pollInterval": 1000
+}

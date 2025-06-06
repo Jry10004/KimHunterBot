@@ -1,0 +1,26 @@
+{
+  "name": "kimhunter-game-bot",
+  "version": "1.0.0",
+  "description": "강화왕 김헌터 - 디스코드 게임 봇",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node ./node_modules/nodemon/bin/nodemon.js index.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "game",
+    "rpg"
+  ],
+  "author": "김헌터",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.5.0",
+    "fs": "^0.0.1-security"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
