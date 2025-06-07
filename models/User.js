@@ -15,9 +15,17 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: false
     },
-    phone: {
+    emailVerified: {
+        type: Boolean,
+        default: false
+    },
+    emailVerificationCode: {
         type: String,
-        required: false
+        default: null
+    },
+    emailVerificationExpires: {
+        type: Date,
+        default: null
     },
     gender: {
         type: String,
@@ -45,6 +53,30 @@ const userSchema = new mongoose.Schema({
         default: null
     },
     lastWork: {
+        type: Number,
+        default: 0
+    },
+    attendanceStreak: {
+        type: Number,
+        default: 0
+    },
+    weeklyAttendance: {
+        type: [Boolean],
+        default: [false, false, false, false, false, false, false]
+    },
+    weekStart: {
+        type: Date,
+        default: null
+    },
+    unlockedAreas: {
+        type: [Number],
+        default: [1] // 1번 지역(꽃잎 마을)부터 시작
+    },
+    lastHunt: {
+        type: Number,
+        default: 0
+    },
+    huntingArea: {
         type: Number,
         default: 0
     },
