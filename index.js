@@ -5063,14 +5063,15 @@ function calculateCombatPower(user) {
     let equipmentBonus = 0;
     let enhancementBonus = 0;
     
-    // 각 장비슬롯별 계산 (새로운 시스템)
-    Object.entries(user.equipment).forEach(([slot, equipment]) => {
-        if (equipment && typeof equipment === 'object' && equipment.stats) {
-            // 기본 장비 스탯
-            const attack = equipment.stats?.attack || 0;
-            const defense = equipment.stats?.defense || 0;
-            const dodge = equipment.stats?.dodge || 0;
-            const luck = equipment.stats?.luck || 0;
+    // 각 장비슬롯별 계산 (신식 시스템 - 슬롯 번호 참조)
+    Object.keys(user.equipment).forEach(slot => {
+        const equipment = getEquippedItem(user, slot);
+        if (equipment && equipment.stats) {
+            // 기본 장비 스탯 (stats가 배열 형태인 경우 첫 번째 값 사용)
+            const attack = Array.isArray(equipment.stats.attack) ? equipment.stats.attack[0] : (equipment.stats.attack || 0);
+            const defense = Array.isArray(equipment.stats.defense) ? equipment.stats.defense[0] : (equipment.stats.defense || 0);
+            const dodge = Array.isArray(equipment.stats.dodge) ? equipment.stats.dodge[0] : (equipment.stats.dodge || 0);
+            const luck = Array.isArray(equipment.stats.luck) ? equipment.stats.luck[0] : (equipment.stats.luck || 0);
             
             const itemBonus = attack + defense + dodge + luck;
             equipmentBonus += itemBonus;
