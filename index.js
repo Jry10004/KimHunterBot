@@ -5065,26 +5065,38 @@ function calculateCombatPower(user) {
     
     // 각 장비슬롯별 계산 (신식 시스템 - 슬롯 번호 참조)
     Object.keys(user.equipment).forEach(slot => {
-        const equipment = getEquippedItem(user, slot);
-        if (equipment && equipment.stats) {
-            // 기본 장비 스탯 (stats가 배열 형태인 경우 첫 번째 값 사용)
-            const attack = Array.isArray(equipment.stats.attack) ? equipment.stats.attack[0] : (equipment.stats.attack || 0);
-            const defense = Array.isArray(equipment.stats.defense) ? equipment.stats.defense[0] : (equipment.stats.defense || 0);
-            const dodge = Array.isArray(equipment.stats.dodge) ? equipment.stats.dodge[0] : (equipment.stats.dodge || 0);
-            const luck = Array.isArray(equipment.stats.luck) ? equipment.stats.luck[0] : (equipment.stats.luck || 0);
+        const slotIndex = user.equipment[slot];
+        console.log(`🔍 ${slot} 슬롯 체크: 슬롯번호=${slotIndex}`);
+        
+        if (slotIndex >= 0) {
+            // 인벤토리에서 직접 찾기
+            const equipment = user.inventory.find(item => item.inventorySlot === slotIndex);
+            console.log(`📦 인벤토리 검색 결과: ${equipment ? equipment.name : '아이템 없음'}`);
             
-            const itemBonus = attack + defense + dodge + luck;
-            equipmentBonus += itemBonus;
-            
-            console.log(`장비 ${slot}: ${equipment.name} - 스탯 보너스: ${itemBonus} (공격: ${attack}, 방어: ${defense}, 회피: ${dodge}, 행운: ${luck})`);
-            
-            // 강화 보너스 계산
-            if (equipment.enhanceLevel > 0) {
-                const itemLevel = equipment.level || 1;
-                const bonus = calculateEnhancementBonus(itemLevel, equipment.enhanceLevel);
-                const enhanceBonus = (bonus.attack || 0) + (bonus.defense || 0);
-                enhancementBonus += enhanceBonus;
-                console.log(`강화 보너스: ${enhanceBonus} (+${equipment.enhanceLevel}강)`);
+            if (equipment && equipment.stats) {
+                console.log(`📊 스탯: ${JSON.stringify(equipment.stats)}`);
+                
+                // 스탯 값 추출 (숫자 형태만 처리)
+                let attack = Number(equipment.stats.attack) || 0;
+                let defense = Number(equipment.stats.defense) || 0;
+                let dodge = Number(equipment.stats.dodge) || 0;
+                let luck = Number(equipment.stats.luck) || 0;
+                
+                const itemBonus = attack + defense + dodge + luck;
+                equipmentBonus += itemBonus;
+                
+                console.log(`⚔️ ${slot}: ${equipment.name} - 전투력+${itemBonus} (공:${attack}, 방:${defense}, 회:${dodge}, 운:${luck})`);
+                
+                // 강화 보너스 계산
+                if (equipment.enhanceLevel > 0) {
+                    const itemLevel = equipment.level || 1;
+                    const bonus = calculateEnhancementBonus(itemLevel, equipment.enhanceLevel);
+                    const enhanceBonus = (bonus.attack || 0) + (bonus.defense || 0);
+                    enhancementBonus += enhanceBonus;
+                    console.log(`✨ 강화 보너스: +${enhanceBonus} (+${equipment.enhanceLevel}강)`);
+                }
+            } else if (equipment) {
+                console.log(`⚠️ ${equipment.name} - 스탯 데이터 없음`);
             }
         }
     });
@@ -10199,12 +10211,20 @@ client.on('interactionCreate', async (interaction) => {
             
             // 장착 처리 - 신식 시스템 (슬롯 번호 참조)
             freshUser.equipment[inventoryItem.type] = inventoryItem.inventorySlot;
-            inventoryItem.equipped = true;
+            
+            // freshUser.inventory에서 동일한 아이템을 찾아 equipped 상태 업데이트
+            const freshInventoryItem = freshUser.inventory.find(item => 
+                item.id === inventoryItem.id || item.inventorySlot === inventoryItem.inventorySlot
+            );
+            if (freshInventoryItem) {
+                freshInventoryItem.equipped = true;
+            }
             
             await freshUser.save();
             
-            // 장착 후 전투력 계산
-            const newCombatPower = calculateCombatPower(freshUser);
+            // 장착 후 전투력 계산 (새로 저장된 데이터 사용)
+            const updatedUser = await User.findOne({ discordId: interaction.user.id });
+            const newCombatPower = calculateCombatPower(updatedUser);
             const powerChange = newCombatPower - prevCombatPower;
             const changeText = powerChange > 0 ? `(+${powerChange})` : powerChange < 0 ? `(${powerChange})` : '(변화 없음)';
 
