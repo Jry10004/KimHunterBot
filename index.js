@@ -10196,6 +10196,24 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
+            // inventorySlot이 없는 경우 자동 할당
+            if (inventoryItem.inventorySlot === undefined || inventoryItem.inventorySlot === null) {
+                console.log(`⚠️ inventorySlot이 없는 아이템 발견! 자동 할당 중...`);
+                const availableSlot = getAvailableInventorySlot(freshUser);
+                if (availableSlot !== -1) {
+                    inventoryItem.inventorySlot = availableSlot;
+                    console.log(`✅ inventorySlot ${availableSlot}으로 할당 완료`);
+                } else {
+                    console.log(`❌ 사용 가능한 슬롯이 없음`);
+                    await interaction.update({ content: '인벤토리가 가득 찼습니다!', embeds: [], components: [] });
+                    return;
+                }
+            }
+            
+            console.log(`📦 아이템 정보: ${inventoryItem.name}, inventorySlot: ${inventoryItem.inventorySlot}`);
+            console.log(`📊 아이템 스탯:`, JSON.stringify(inventoryItem.stats));
+            console.log(`🔢 아이템 타입: ${inventoryItem.type}`);
+            
             // 이미 착용 중인지 확인
             if (freshUser.equipment[inventoryItem.type] === inventoryItem.inventorySlot) {
                 await interaction.update({ content: '이미 착용 중인 아이템입니다!', embeds: [], components: [] });
@@ -10219,7 +10237,9 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // 장착 전 전투력 계산
+            console.log(`📐 장착 전 weapon 슬롯: ${freshUser.equipment.weapon}`);
             const prevCombatPower = calculateCombatPower(freshUser);
+            console.log(`📐 장착 전 전투력: ${prevCombatPower}`);
             
             // 이전에 장착된 아이템이 있다면 해제
             const prevSlotIndex = freshUser.equipment[inventoryItem.type];
@@ -10247,10 +10267,15 @@ client.on('interactionCreate', async (interaction) => {
                 freshInventoryItem.equipped = true;
             }
             
+            console.log(`💾 저장 전 freshUser.equipment.weapon: ${freshUser.equipment.weapon}`);
+            console.log(`💾 저장 전 inventoryItem.inventorySlot: ${inventoryItem.inventorySlot}`);
             await freshUser.save();
+            console.log(`💾 저장 완료`);
             
             // 장착 후 전투력 계산 (새로 저장된 데이터 사용)
             const updatedUser = await User.findOne({ discordId: interaction.user.id });
+            console.log(`📏 장착 후 weapon 슬롯 확인: ${updatedUser.equipment.weapon}`);
+            console.log(`🔍 장착된 아이템 재확인:`, updatedUser.inventory.find(item => item.inventorySlot === updatedUser.equipment.weapon));
             const newCombatPower = calculateCombatPower(updatedUser);
             const powerChange = newCombatPower - prevCombatPower;
             const changeText = powerChange > 0 ? `(+${powerChange})` : powerChange < 0 ? `(${powerChange})` : '(변화 없음)';
