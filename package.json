@@ -4,8 +4,8 @@
   "description": "강화왕 김헌터 - 디스코드 게임 봇",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node ./node_modules/nodemon/bin/nodemon.js index.js"
+    "start": "node --max-old-space-size=4096 index.js",
+    "dev": "node --max-old-space-size=4096 ./node_modules/nodemon/bin/nodemon.js index.js"
   },
   "keywords": [
     "discord",
