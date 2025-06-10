@@ -5066,16 +5066,12 @@ function calculateCombatPower(user) {
     // 각 장비슬롯별 계산 (신식 시스템 - 슬롯 번호 참조)
     Object.keys(user.equipment).forEach(slot => {
         const slotIndex = user.equipment[slot];
-        console.log(`🔍 ${slot} 슬롯 체크: 슬롯번호=${slotIndex}`);
         
         if (slotIndex >= 0) {
             // 인벤토리에서 직접 찾기
             const equipment = user.inventory.find(item => item.inventorySlot === slotIndex);
-            console.log(`📦 인벤토리 검색 결과: ${equipment ? equipment.name : '아이템 없음'}`);
             
             if (equipment && equipment.stats) {
-                console.log(`📊 스탯: ${JSON.stringify(equipment.stats)}`);
-                
                 // 스탯 값 추출 (숫자 형태만 처리)
                 let attack = Number(equipment.stats.attack) || 0;
                 let defense = Number(equipment.stats.defense) || 0;
@@ -5085,23 +5081,16 @@ function calculateCombatPower(user) {
                 const itemBonus = attack + defense + dodge + luck;
                 equipmentBonus += itemBonus;
                 
-                console.log(`⚔️ ${slot}: ${equipment.name} - 전투력+${itemBonus} (공:${attack}, 방:${defense}, 회:${dodge}, 운:${luck})`);
-                
                 // 강화 보너스 계산
                 if (equipment.enhanceLevel > 0) {
                     const itemLevel = equipment.level || 1;
                     const bonus = calculateEnhancementBonus(itemLevel, equipment.enhanceLevel);
                     const enhanceBonus = (bonus.attack || 0) + (bonus.defense || 0);
                     enhancementBonus += enhanceBonus;
-                    console.log(`✨ 강화 보너스: +${enhanceBonus} (+${equipment.enhanceLevel}강)`);
                 }
-            } else if (equipment) {
-                console.log(`⚠️ ${equipment.name} - 스탯 데이터 없음`);
             }
         }
     });
-    
-    console.log(`전투력 계산 - 기본: ${basePower}, 장비: ${equipmentBonus}, 강화: ${enhancementBonus}, 레벨: ${user.level * 5}`);
     
     // 레벨 보너스
     let levelBonus = user.level * 5;
@@ -9554,7 +9543,6 @@ client.on('interactionCreate', async (interaction) => {
         
         // 인벤토리 아이템 사용/장착 처리
         else if (interaction.customId.startsWith('inv_use_')) {
-            console.log('=== inv_use 핸들러 진입 ===');
             
             // customId 파싱: inv_use_{itemId}_{category}_{currentPage}
             // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
@@ -9564,36 +9552,23 @@ client.on('interactionCreate', async (interaction) => {
             const category = parts[parts.length - 2]; // 마지막에서 두 번째 부분
             const itemId = parts.slice(2, parts.length - 2).join('_'); // 나머지 부분들을 합쳐서 itemId
             
-            console.log(`inv_use - itemId: ${itemId}, category: ${category}`);
-            console.log(`사용자 인벤토리 아이템 수: ${user.inventory.length}`);
             
             const inventoryItem = user.inventory.find(inv => inv.id === itemId);
             
             if (inventoryItem) {
-                console.log(`🔍 찾은 아이템: ${inventoryItem.name}`);
-                console.log(`📦 inventorySlot: ${inventoryItem.inventorySlot}`);
-                console.log(`⚔️ type: ${inventoryItem.type}`);
-                
                 // inventorySlot이 없는 경우 자동 할당
                 if (inventoryItem.inventorySlot === undefined || inventoryItem.inventorySlot === null) {
-                    console.log(`⚠️ inventorySlot이 없는 아이템 발견! 자동 할당 중...`);
                     const availableSlot = getAvailableInventorySlot(user);
                     if (availableSlot !== -1) {
                         inventoryItem.inventorySlot = availableSlot;
-                        console.log(`✅ inventorySlot ${availableSlot}으로 할당 완료`);
                     } else {
-                        console.log(`❌ 사용 가능한 슬롯이 없음`);
                         await interaction.reply({ content: '인벤토리가 가득 찼습니다!', flags: 64 });
                         return;
                     }
                 }
-                
-                console.log(`🎯 아이템 전체 정보:`, JSON.stringify(inventoryItem, null, 2));
             }
             
             if (!inventoryItem) {
-                console.log(`inv_use에서 아이템을 찾을 수 없음 - 요청된 ID: ${itemId}`);
-                console.log('인벤토리 아이템 IDs:', user.inventory.map((inv, idx) => `${idx}: ${inv.name}: ${inv.id || 'NO_ID'}`));
                 await interaction.reply({ content: `해당 아이템을 찾을 수 없습니다! (ID: ${itemId})`, flags: 64 });
                 return;
             }
@@ -9634,13 +9609,8 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 
                 // 장착 처리 - 신식 시스템 (슬롯 번호 참조)
-                console.log(`🔧 장착 처리 전 - ${inventoryItem.type} 슬롯: ${user.equipment[inventoryItem.type]}`);
-                console.log(`🔧 설정할 inventorySlot: ${inventoryItem.inventorySlot}`);
-                
                 user.equipment[inventoryItem.type] = inventoryItem.inventorySlot;
                 inventoryItem.equipped = true;
-                
-                console.log(`🔧 장착 처리 후 - ${inventoryItem.type} 슬롯: ${user.equipment[inventoryItem.type]}`);
                 
                 await user.save();
                 
