@@ -107,6 +107,20 @@ process.on('SIGTERM', () => {
     saveGameData();
     process.exit(0);
 });
+
+// 슬롯 이름 한글 변환 함수
+function getSlotDisplayName(slot) {
+    const slotNames = {
+        'weapon': '무기',
+        'armor': '갑옷', 
+        'helmet': '헬멧',
+        'gloves': '장갑',
+        'boots': '부츠',
+        'accessory': '액세서리'
+    };
+    return slotNames[slot] || slot;
+}
+
 const Jimp = require('jimp');
 const GifEncoder = require('gif-encoder-2');
 
@@ -3902,11 +3916,14 @@ class PVPSystem {
 
         // 장비 스탯 계산
         let equipmentBonus = { attack: 0, defense: 0, dodge: 0, luck: 0 };
-        if (user.equipment && user.equipment.weapon) {
-            equipmentBonus.attack += user.equipment.weapon.stats.attack || 0;
+        const weapon = getEquippedItem(user, 'weapon');
+        const armor = getEquippedItem(user, 'armor');
+        
+        if (weapon && weapon.stats) {
+            equipmentBonus.attack += weapon.stats.attack?.[0] || 0;
         }
-        if (user.equipment && user.equipment.armor) {
-            equipmentBonus.defense += user.equipment.armor.stats.defense || 0;
+        if (armor && armor.stats) {
+            equipmentBonus.defense += armor.stats.defense?.[0] || 0;
         }
 
         const totalStats = {
@@ -4552,7 +4569,11 @@ function addItemToInventory(user, itemData) {
 
 function getEquippedItem(user, equipmentType) {
     const slotIndex = user.equipment[equipmentType];
-    if (slotIndex === -1) return null;
+    
+    // ObjectId나 잘못된 데이터 타입인 경우 null 반환
+    if (slotIndex === -1 || slotIndex === null || slotIndex === undefined || typeof slotIndex === 'object') {
+        return null;
+    }
     
     return user.inventory.find(item => item.inventorySlot === slotIndex);
 }
@@ -4751,8 +4772,8 @@ function generateRandomStats(statRanges) {
     return randomStats;
 }
 
-// 메이플스토리 정확한 스타포스 강화 확률표 (0-30성)
-const STARFORCE_RATES = {
+// 강화 확률표 (0-30강)
+const ENHANCEMENT_RATES = {
     0: { success: 95, fail: 5, destroy: 0 },
     1: { success: 90, fail: 10, destroy: 0 },
     2: { success: 85, fail: 15, destroy: 0 },
@@ -4783,7 +4804,7 @@ const STARFORCE_RATES = {
     27: { success: 5, fail: 76, destroy: 19 },
     28: { success: 3, fail: 77.6, destroy: 19.4 },
     29: { success: 1, fail: 79.2, destroy: 19.8 },
-    30: { success: 0, fail: 0, destroy: 0 } // 30성은 최대
+    30: { success: 0, fail: 0, destroy: 0 } // 30강은 최대
 };
 
 // 메이플스토리 정확한 강화 비용 계수표
@@ -4809,7 +4830,7 @@ const ITEM_LEVELS = {
 
 // 강화 비용 계산 함수 (Discord 봇에 맞게 조정된 골드 경제)
 function calculateEnhanceCost(itemLevel, currentStar) {
-    if (currentStar >= 30) return 0; // 30성은 최대
+    if (currentStar >= 30) return 0; // 30강은 최대
     
     const L = itemLevel;
     const S = currentStar;
@@ -4825,42 +4846,42 @@ function calculateEnhanceCost(itemLevel, currentStar) {
     return Math.round(finalCost / 10) * 10;
 }
 
-// 스타포스 스탯 보너스 계산 함수
-function calculateStarforceBonus(itemLevel, starLevel) {
-    if (starLevel <= 0) return { attack: 0, defense: 0 };
+// 강화 스탯 보너스 계산 함수
+function calculateEnhancementBonus(itemLevel, enhanceLevel) {
+    if (enhanceLevel <= 0) return { attack: 0, defense: 0 };
     
-    // 메이플스토리 공식: 레벨/20 + 스타당 고정 보너스
+    // 강화 공식: 레벨/20 + 강화당 고정 보너스
     const baseBonus = Math.floor(itemLevel / 20) + 1;
     
     let attack = 0;
     let defense = 0;
     
-    // 1-5성: 기본 보너스
-    for (let i = 1; i <= Math.min(starLevel, 5); i++) {
+    // 1-5강: 기본 보너스
+    for (let i = 1; i <= Math.min(enhanceLevel, 5); i++) {
         attack += baseBonus;
         defense += baseBonus;
     }
     
-    // 6-10성: 보너스 증가
-    for (let i = 6; i <= Math.min(starLevel, 10); i++) {
+    // 6-10강: 보너스 증가
+    for (let i = 6; i <= Math.min(enhanceLevel, 10); i++) {
         attack += baseBonus + 1;
         defense += baseBonus + 1;
     }
     
-    // 11-15성: 더 큰 보너스
-    for (let i = 11; i <= Math.min(starLevel, 15); i++) {
+    // 11-15강: 더 큰 보너스
+    for (let i = 11; i <= Math.min(enhanceLevel, 15); i++) {
         attack += baseBonus + 2;
         defense += baseBonus + 2;
     }
     
-    // 16-25성: 최고 보너스
-    for (let i = 16; i <= Math.min(starLevel, 25); i++) {
+    // 16-25강: 최고 보너스
+    for (let i = 16; i <= Math.min(enhanceLevel, 25); i++) {
         attack += baseBonus + 3;
         defense += baseBonus + 3;
     }
     
-    // 26-30성: 극한 보너스
-    for (let i = 26; i <= Math.min(starLevel, 30); i++) {
+    // 26-30강: 극한 보너스
+    for (let i = 26; i <= Math.min(enhanceLevel, 30); i++) {
         attack += baseBonus + 5;
         defense += baseBonus + 5;
     }
@@ -4868,8 +4889,8 @@ function calculateStarforceBonus(itemLevel, starLevel) {
     return { attack, defense };
 }
 
-// 스타캐치 확률 조정 함수
-function applyStarCatch(rates) {
+// 집중력 확률 조정 함수
+function applyFocus(rates) {
     const newSuccess = Math.min(100, rates.success * 1.05);
     const remaining = 100 - newSuccess;
     const failRatio = rates.fail / (rates.fail + rates.destroy);
@@ -4881,9 +4902,9 @@ function applyStarCatch(rates) {
     };
 }
 
-// 축복받은날 확률 조정 함수 (15~22성만)
-function applySundayMaple(rates, starLevel) {
-    if (starLevel < 15 || starLevel > 22) return rates;
+// 축복받은날 확률 조정 함수 (15~22강만)
+function applyBlessedDay(rates, enhanceLevel) {
+    if (enhanceLevel < 15 || enhanceLevel > 22) return rates;
     
     const newDestroy = rates.destroy * 0.7;
     const newFail = rates.fail + (rates.destroy - newDestroy);
@@ -4896,15 +4917,15 @@ function applySundayMaple(rates, starLevel) {
 }
 
 // 강화 시도 함수
-function attemptEnhance(rates, isStarCatch = false, isSunday = false, starLevel = 0) {
+function attemptEnhance(rates, isFocusMode = false, isBlessedDay = false, enhanceLevel = 0) {
     let finalRates = { ...rates };
     
-    if (isStarCatch) {
-        finalRates = applyStarCatch(finalRates);
+    if (isFocusMode) {
+        finalRates = applyFocus(finalRates);
     }
     
-    if (isSunday) {
-        finalRates = applySundayMaple(finalRates, starLevel);
+    if (isBlessedDay) {
+        finalRates = applyBlessedDay(finalRates, enhanceLevel);
     }
     
     const random = Math.random() * 100;
@@ -4919,8 +4940,8 @@ function attemptEnhance(rates, isStarCatch = false, isSunday = false, starLevel 
 }
 
 // 보호권을 사용한 강화 시도 함수
-function attemptEnhanceWithProtection(rates, isStarCatch = false, isSunday = false, starLevel = 0, useProtection = false) {
-    const baseResult = attemptEnhance(rates, isStarCatch, isSunday, starLevel);
+function attemptEnhanceWithProtection(rates, isFocusMode = false, isBlessedDay = false, enhanceLevel = 0, useProtection = false) {
+    const baseResult = attemptEnhance(rates, isFocusMode, isBlessedDay, enhanceLevel);
     
     // 보호권 사용 시 파괴 결과를 실패로 변경
     if (useProtection && baseResult === 'destroy') {
@@ -5038,9 +5059,9 @@ function calculateCombatPower(user) {
         basePower = user.stats.strength * 2 + user.stats.agility + user.stats.intelligence * 0.5 + user.stats.vitality * 1.5 + user.stats.luck;
     }
     
-    // 장비 보너스 및 스타포스 보너스
+    // 장비 보너스 및 강화 보너스
     let equipmentBonus = 0;
-    let starforceBonus = 0;
+    let enhancementBonus = 0;
     
     // 각 장비슬롯별 계산 (새로운 시스템)
     Object.entries(user.equipment).forEach(([slot, equipment]) => {
@@ -5056,23 +5077,23 @@ function calculateCombatPower(user) {
             
             console.log(`장비 ${slot}: ${equipment.name} - 스탯 보너스: ${itemBonus} (공격: ${attack}, 방어: ${defense}, 회피: ${dodge}, 행운: ${luck})`);
             
-            // 스타포스 보너스 계산
+            // 강화 보너스 계산
             if (equipment.enhanceLevel > 0) {
                 const itemLevel = equipment.level || 1;
-                const bonus = calculateStarforceBonus(itemLevel, equipment.enhanceLevel);
+                const bonus = calculateEnhancementBonus(itemLevel, equipment.enhanceLevel);
                 const enhanceBonus = (bonus.attack || 0) + (bonus.defense || 0);
-                starforceBonus += enhanceBonus;
-                console.log(`강화 보너스: ${enhanceBonus} (+${equipment.enhanceLevel}성)`);
+                enhancementBonus += enhanceBonus;
+                console.log(`강화 보너스: ${enhanceBonus} (+${equipment.enhanceLevel}강)`);
             }
         }
     });
     
-    console.log(`전투력 계산 - 기본: ${basePower}, 장비: ${equipmentBonus}, 강화: ${starforceBonus}, 레벨: ${user.level * 5}`);
+    console.log(`전투력 계산 - 기본: ${basePower}, 장비: ${equipmentBonus}, 강화: ${enhancementBonus}, 레벨: ${user.level * 5}`);
     
     // 레벨 보너스
     let levelBonus = user.level * 5;
     
-    return Math.floor(basePower + equipmentBonus + starforceBonus + levelBonus);
+    return Math.floor(basePower + equipmentBonus + enhancementBonus + levelBonus);
 }
 
 // 엠블럼 단계 확인 함수
@@ -5111,10 +5132,37 @@ async function getUser(discordId) {
             await user.save();
             console.log(`새 유저 생성: ${discordId}`);
         }
+        
+        // 일괄 정리 완료로 개별 마이그레이션 불필요
+        
         return user;
     } catch (error) {
         console.error('유저 조회/생성 오류:', error);
         return null;
+    }
+}
+
+// 개별 마이그레이션 함수 제거 (일괄 정리로 대체)
+
+// 기존 ObjectId 장비 데이터 정리 함수
+async function cleanupEquipmentData() {
+    try {
+        const result = await User.updateMany(
+            {}, 
+            {
+                $set: {
+                    'equipment.weapon': -1,
+                    'equipment.armor': -1,
+                    'equipment.helmet': -1,
+                    'equipment.gloves': -1,
+                    'equipment.boots': -1,
+                    'equipment.accessory': -1
+                }
+            }
+        );
+        console.log(`✅ ${result.modifiedCount}명의 유저 장비 데이터가 초기화되었습니다.`);
+    } catch (error) {
+        console.error('장비 데이터 정리 실패:', error);
     }
 }
 
@@ -5339,19 +5387,23 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('강화')
-        .setDescription('장비를 강화합니다 (스타포스 0-30성)')
+        .setDescription('장비를 강화합니다 (0-30강)')
         .addStringOption(option =>
             option.setName('장비슬롯')
                 .setDescription('강화할 장비 슬롯')
                 .setRequired(true)
                 .addChoices(
-                    { name: '무기 (weapon)', value: 'weapon' },
-                    { name: '갑옷 (armor)', value: 'armor' },
-                    { name: '투구 (helmet)', value: 'helmet' },
-                    { name: '장갑 (gloves)', value: 'gloves' },
-                    { name: '신발 (boots)', value: 'boots' },
-                    { name: '액세서리 (accessory)', value: 'accessory' }
-                )),
+                    { name: '무기', value: 'weapon' },
+                    { name: '갑옷', value: 'armor' },
+                    { name: '투구', value: 'helmet' },
+                    { name: '장갑', value: 'gloves' },
+                    { name: '신발', value: 'boots' },
+                    { name: '액세서리', value: 'accessory' }
+                ))
+        .addBooleanOption(option =>
+            option.setName('보호권사용')
+                .setDescription('보호권을 사용하여 파괴를 방지합니다 (20강 이상만 사용 가능)')
+                .setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('결투')
@@ -5367,35 +5419,43 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('집중력')
-        .setDescription('김헌터의 집중력 축복으로 장비를 강화합니다 (성공률 5% 증가)')
+        .setDescription('집중력 축복으로 장비를 강화합니다 (성공률 5% 증가)')
         .addStringOption(option =>
             option.setName('장비슬롯')
                 .setDescription('강화할 장비 슬롯')
                 .setRequired(true)
                 .addChoices(
-                    { name: '무기 (weapon)', value: 'weapon' },
-                    { name: '갑옷 (armor)', value: 'armor' },
-                    { name: '투구 (helmet)', value: 'helmet' },
-                    { name: '장갑 (gloves)', value: 'gloves' },
-                    { name: '신발 (boots)', value: 'boots' },
-                    { name: '액세서리 (accessory)', value: 'accessory' }
-                )),
+                    { name: '무기', value: 'weapon' },
+                    { name: '갑옷', value: 'armor' },
+                    { name: '투구', value: 'helmet' },
+                    { name: '장갑', value: 'gloves' },
+                    { name: '신발', value: 'boots' },
+                    { name: '액세서리', value: 'accessory' }
+                ))
+        .addBooleanOption(option =>
+            option.setName('보호권사용')
+                .setDescription('보호권을 사용하여 파괴를 방지합니다 (20강 이상만 사용 가능)')
+                .setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('축복받은날')
-        .setDescription('김헌터의 축복받은 날로 강화합니다 (15-22성 파괴율 30% 감소)')
+        .setDescription('축복받은 날로 강화합니다 (15-22강 파괴율 30% 감소)')
         .addStringOption(option =>
             option.setName('장비슬롯')
                 .setDescription('강화할 장비 슬롯')
                 .setRequired(true)
                 .addChoices(
-                    { name: '무기 (weapon)', value: 'weapon' },
-                    { name: '갑옷 (armor)', value: 'armor' },
-                    { name: '투구 (helmet)', value: 'helmet' },
-                    { name: '장갑 (gloves)', value: 'gloves' },
-                    { name: '신발 (boots)', value: 'boots' },
-                    { name: '액세서리 (accessory)', value: 'accessory' }
-                )),
+                    { name: '무기', value: 'weapon' },
+                    { name: '갑옷', value: 'armor' },
+                    { name: '투구', value: 'helmet' },
+                    { name: '장갑', value: 'gloves' },
+                    { name: '신발', value: 'boots' },
+                    { name: '액세서리', value: 'accessory' }
+                ))
+        .addBooleanOption(option =>
+            option.setName('보호권사용')
+                .setDescription('보호권을 사용하여 파괴를 방지합니다 (20강 이상만 사용 가능)')
+                .setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('강화랭킹')
@@ -5458,6 +5518,9 @@ client.once('ready', async () => {
     
     // MongoDB 연결
     await connectDB();
+    
+    // 기존 ObjectId 데이터 일괄 정리
+    await cleanupEquipmentData();
     
     // 게임 데이터 로드
     loadGameData();
@@ -6012,7 +6075,7 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             if (equipment.enhanceLevel >= 30) {
-                await interaction.reply({ content: '이미 최대 강화 단계(30성)입니다!', flags: 64 });
+                await interaction.reply({ content: '이미 최대 강화 단계(30강)입니다!', flags: 64 });
                 return;
             }
             
@@ -6042,11 +6105,11 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             // 강화 시도
-            const rates = STARFORCE_RATES[currentStar];
-            const isStarCatch = commandName === '집중력';
-            const isSunday = commandName === '축복받은날';
+            const rates = ENHANCEMENT_RATES[currentStar];
+            const isFocusMode = commandName === '집중력';
+            const isBlessedDay = commandName === '축복받은날';
             
-            const result = attemptEnhanceWithProtection(rates, isStarCatch, isSunday, currentStar, useProtection);
+            const result = attemptEnhanceWithProtection(rates, isFocusMode, isBlessedDay, currentStar, useProtection);
             user.gold -= cost;
             
             // 보호권 사용시 차감
@@ -6065,12 +6128,14 @@ client.on('interactionCreate', async (interaction) => {
                 user.enhanceStats.successCount += 1;
                 user.enhanceStats.maxEnhanceLevel = Math.max(user.enhanceStats.maxEnhanceLevel, equipment.enhanceLevel);
                 
+                // 신식 시스템: getEquippedItem이 이미 인벤토리의 실제 아이템을 참조하므로 별도 업데이트 불필요
+                
                 resultEmbed = new EmbedBuilder()
                     .setColor('#00ff00')
                     .setTitle('🎉 강화 성공!')
                     .setDescription(`**${equipment.name}**이(가) 강화되었습니다!`)
                     .addFields(
-                        { name: '강화 결과', value: `+${currentStar} → **+${equipment.enhanceLevel}**⭐`, inline: true },
+                        { name: '강화 결과', value: `+${currentStar} → **+${equipment.enhanceLevel}**강`, inline: true },
                         { name: '사용 골드', value: `${cost}G`, inline: true },
                         { name: '잔여 골드', value: `${user.gold}G`, inline: true }
                     );
@@ -6102,6 +6167,8 @@ client.on('interactionCreate', async (interaction) => {
                 equipment.enhanceLevel = Math.max(0, equipment.enhanceLevel - 1);
                 user.enhanceStats.destroyCount += 1;
                 
+                // 신식 시스템: getEquippedItem이 이미 인벤토리의 실제 아이템을 참조하므로 별도 업데이트 불필요
+                
                 resultEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
                     .setTitle('💥 강화 파괴!')
@@ -6117,9 +6184,9 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             // 이벤트 효과 표시
-            if (isStarCatch) {
+            if (isFocusMode) {
                 resultEmbed.setFooter({ text: '🌟 집중력 이벤트 적용 (성공률 +5%)' });
-            } else if (isSunday && currentStar >= 15 && currentStar <= 22) {
+            } else if (isBlessedDay && currentStar >= 15 && currentStar <= 22) {
                 resultEmbed.setFooter({ text: '🍁 축복받은날 이벤트 적용 (파괴율 -30%)' });
             }
             
@@ -6384,7 +6451,7 @@ client.on('interactionCreate', async (interaction) => {
                     { name: '💥 파괴 횟수', value: `${stats.destroyCount}회`, inline: true },
                     { name: '📈 성공률', value: `${successRate}%`, inline: true },
                     { name: '💀 파괴율', value: `${destroyRate}%`, inline: true },
-                    { name: '⭐ 최고 강화', value: `+${stats.maxEnhanceLevel}성`, inline: true },
+                    { name: '⭐ 최고 강화', value: `+${stats.maxEnhanceLevel}강`, inline: true },
                     { name: '💰 총 사용 골드', value: `${stats.totalCost.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: false }
                 );
             
@@ -9368,7 +9435,7 @@ client.on('interactionCreate', async (interaction) => {
                     }
                 }
                 
-                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
                 
                 itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                 itemList += `등급: ${item.rarity} | 수량: x${item.quantity}\n`;
@@ -9516,20 +9583,24 @@ client.on('interactionCreate', async (interaction) => {
                 // 장착 전 전투력 계산
                 const prevCombatPower = calculateCombatPower(user);
                 
-                // 이전에 장착된 아이템이 있다면 인벤토리에 다시 추가
-                if (user.equipment[inventoryItem.type]) {
-                    const previousItem = user.equipment[inventoryItem.type];
-                    if (typeof previousItem === 'object' && previousItem.id) {
-                        // 이전 장착 아이템을 인벤토리에 추가
-                        user.inventory.push(previousItem);
+                // 이전에 장착된 아이템이 있다면 해제
+                const prevSlotIndex = user.equipment[inventoryItem.type];
+                
+                // ObjectId인 경우 강제로 -1로 설정 (구식 데이터 처리)
+                if (prevSlotIndex && typeof prevSlotIndex === 'object') {
+                    console.log(`⚠️ 구식 ObjectId 데이터 감지: ${prevSlotIndex} → -1로 변경`);
+                    user.equipment[inventoryItem.type] = -1;
+                } else if (typeof prevSlotIndex === 'number' && prevSlotIndex !== -1) {
+                    // 이전 장착 아이템의 equipped 상태 해제
+                    const prevItem = user.inventory.find(item => item.inventorySlot === prevSlotIndex);
+                    if (prevItem) {
+                        prevItem.equipped = false;
                     }
                 }
                 
-                // 장착 처리 - 아이템을 장비 슬롯에 설정
-                user.equipment[inventoryItem.type] = inventoryItem;
-                
-                // 인벤토리에서 장착한 아이템 제거
-                user.inventory = user.inventory.filter(item => item.id !== inventoryItem.id);
+                // 장착 처리 - 신식 시스템 (슬롯 번호 참조)
+                user.equipment[inventoryItem.type] = inventoryItem.inventorySlot;
+                inventoryItem.equipped = true;
                 
                 await user.save();
                 
@@ -9543,7 +9614,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('⚔️ 장비 착용 완료!')
                     .setDescription(`**${inventoryItem.name}**을(를) 성공적으로 착용했습니다!`)
                     .addFields(
-                        { name: '착용한 아이템', value: `${inventoryItem.name}${inventoryItem.enhanceLevel > 0 ? ` (+${inventoryItem.enhanceLevel}성)` : ''}`, inline: true },
+                        { name: '착용한 아이템', value: `${inventoryItem.name}${inventoryItem.enhanceLevel > 0 ? ` (+${inventoryItem.enhanceLevel}강)` : ''}`, inline: true },
                         { name: '아이템 등급', value: inventoryItem.rarity, inline: true },
                         { name: '변화된 전투력', value: `${prevCombatPower.toLocaleString()} → ${newCombatPower.toLocaleString()} ${changeText}`, inline: true }
                     );
@@ -9595,20 +9666,23 @@ client.on('interactionCreate', async (interaction) => {
         else if (interaction.customId.startsWith('unequip_')) {
             const equipSlot = interaction.customId.replace('unequip_', '');
             
-            if (!user.equipment[equipSlot] || typeof user.equipment[equipSlot] !== 'object') {
-                await interaction.reply({ content: '해제할 장비가 없습니다!', flags: 64 });
+            const slotIndex = user.equipment[equipSlot];
+            if (slotIndex === -1 || slotIndex === null || slotIndex === undefined || typeof slotIndex === 'object') {
+                await interaction.update({ content: '해제할 장비가 없습니다!', embeds: [], components: [] });
                 return;
             }
             
             // 해제 전 전투력 계산
             const prevCombatPower = calculateCombatPower(user);
             
-            // 장착된 아이템을 인벤토리에 다시 추가
-            const unequippedItem = user.equipment[equipSlot];
-            user.inventory.push(unequippedItem);
+            // 장착된 아이템의 equipped 상태 해제
+            const unequippedItem = user.inventory.find(item => item.inventorySlot === slotIndex);
+            if (unequippedItem) {
+                unequippedItem.equipped = false;
+            }
             
             // 장비 슬롯 비우기
-            user.equipment[equipSlot] = null;
+            user.equipment[equipSlot] = -1;
             await user.save();
             
             // 해제 후 전투력 계산
@@ -9621,7 +9695,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('🔓 장비 해제 완료!')
                 .setDescription(`**${unequippedItem.name}**을(를) 해제했습니다!`)
                 .addFields(
-                    { name: '해제한 아이템', value: `${unequippedItem.name}${unequippedItem.enhanceLevel > 0 ? ` (+${unequippedItem.enhanceLevel}성)` : ''}`, inline: true },
+                    { name: '해제한 아이템', value: `${unequippedItem.name}${unequippedItem.enhanceLevel > 0 ? ` (+${unequippedItem.enhanceLevel}강)` : ''}`, inline: true },
                     { name: '아이템 등급', value: unequippedItem.rarity, inline: true },
                     { name: '변화된 전투력', value: `${prevCombatPower.toLocaleString()} → ${newCombatPower.toLocaleString()} ${changeText}`, inline: true }
                 );
@@ -9721,8 +9795,8 @@ client.on('interactionCreate', async (interaction) => {
                 let itemList = '';
                 currentItems.forEach((item, index) => {
                     const globalIndex = startIndex + index;
-                    const isEquipped = user.equipment[item.type] && user.equipment[item.type].id === item.id;
-                    const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
+                    const isEquipped = user.equipment[item.type] === item.inventorySlot;
+                    const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
                     
                     itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                     itemList += `등급: ${item.rarity} | 수량: x${item.quantity}\n`;
@@ -9751,7 +9825,7 @@ client.on('interactionCreate', async (interaction) => {
                 const itemButtons = new ActionRowBuilder();
                 currentItems.forEach((item, index) => {
                     const globalIndex = startIndex + index;
-                    const isEquipped = user.equipment[item.type] && user.equipment[item.type].id === item.id;
+                    const isEquipped = user.equipment[item.type] === item.inventorySlot;
                     const isEquipment = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(item.type);
                     
                     itemButtons.addComponents(
@@ -9849,12 +9923,12 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`**${getUserTitle(user)} ${user.nickname}**님의 현재 장비 상태\n\n🔥 **총 전투력**: ${combatPower.toLocaleString()}`)
                 .setImage('attachment://kim_equipment.gif')
                 .addFields(
-                    { name: '⚔️ 무기', value: user.equipment.weapon ? `${user.equipment.weapon.name}${user.equipment.weapon.enhanceLevel > 0 ? ` (+${user.equipment.weapon.enhanceLevel}성)` : ''}\n공격력: +${user.equipment.weapon.stats.attack}` : '없음', inline: true },
-                    { name: '🛡️ 갑옷', value: user.equipment.armor ? `${user.equipment.armor.name}${user.equipment.armor.enhanceLevel > 0 ? ` (+${user.equipment.armor.enhanceLevel}성)` : ''}\n방어력: +${user.equipment.armor.stats?.defense || 0}` : '없음', inline: true },
-                    { name: '⛑️ 헬멧', value: user.equipment.helmet ? `${user.equipment.helmet.name}${user.equipment.helmet.enhanceLevel > 0 ? ` (+${user.equipment.helmet.enhanceLevel}성)` : ''}` : '없음', inline: true },
-                    { name: '🧤 장갑', value: user.equipment.gloves ? `${user.equipment.gloves.name}${user.equipment.gloves.enhanceLevel > 0 ? ` (+${user.equipment.gloves.enhanceLevel}성)` : ''}` : '없음', inline: true },
-                    { name: '👢 부츠', value: user.equipment.boots ? `${user.equipment.boots.name}${user.equipment.boots.enhanceLevel > 0 ? ` (+${user.equipment.boots.enhanceLevel}성)` : ''}` : '없음', inline: true },
-                    { name: '💎 액세서리', value: user.equipment.accessory ? `${user.equipment.accessory.name}${user.equipment.accessory.enhanceLevel > 0 ? ` (+${user.equipment.accessory.enhanceLevel}성)` : ''}` : '없음', inline: true }
+                    { name: '⚔️ 무기', value: getEquippedItem(user, 'weapon') ? `${getEquippedItem(user, 'weapon').name}${(getEquippedItem(user, 'weapon').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'weapon').enhanceLevel}강)` : ''}\n공격력: ${getEquippedItem(user, 'weapon').stats?.attack?.[0] || 0}-${getEquippedItem(user, 'weapon').stats?.attack?.[1] || 0}` : '미착용', inline: true },
+                    { name: '🛡️ 갑옷', value: getEquippedItem(user, 'armor') ? `${getEquippedItem(user, 'armor').name}${(getEquippedItem(user, 'armor').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'armor').enhanceLevel}강)` : ''}\n방어력: ${getEquippedItem(user, 'armor').stats?.defense?.[0] || 0}-${getEquippedItem(user, 'armor').stats?.defense?.[1] || 0}` : '미착용', inline: true },
+                    { name: '⛑️ 헬멧', value: getEquippedItem(user, 'helmet') ? `${getEquippedItem(user, 'helmet').name}${(getEquippedItem(user, 'helmet').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'helmet').enhanceLevel}강)` : ''}` : '미착용', inline: true },
+                    { name: '🧤 장갑', value: getEquippedItem(user, 'gloves') ? `${getEquippedItem(user, 'gloves').name}${(getEquippedItem(user, 'gloves').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'gloves').enhanceLevel}강)` : ''}` : '미착용', inline: true },
+                    { name: '👢 부츠', value: getEquippedItem(user, 'boots') ? `${getEquippedItem(user, 'boots').name}${(getEquippedItem(user, 'boots').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'boots').enhanceLevel}강)` : ''}` : '미착용', inline: true },
+                    { name: '💎 액세서리', value: getEquippedItem(user, 'accessory') ? `${getEquippedItem(user, 'accessory').name}${(getEquippedItem(user, 'accessory').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'accessory').enhanceLevel}강)` : ''}` : '미착용', inline: true }
                 );
 
             // 카테고리별 장비 교체 버튼
@@ -9896,7 +9970,8 @@ client.on('interactionCreate', async (interaction) => {
             const buttonLabels = ['⚔️', '🛡️', '⛑️', '🧤', '👢', '💎'];
             
             equipmentSlots.forEach((slot, index) => {
-                if (user.equipment[slot] && typeof user.equipment[slot] === 'object') {
+                const slotValue = user.equipment[slot];
+                if (slotValue !== -1 && slotValue !== null && slotValue !== undefined && typeof slotValue === 'number') {
                     unequipButtons.addComponents(
                         new ButtonBuilder()
                             .setCustomId(`unequip_${slot}`)
@@ -9911,11 +9986,10 @@ client.on('interactionCreate', async (interaction) => {
                 components.push(unequipButtons);
             }
 
-            await interaction.reply({ 
+            await interaction.update({ 
                 embeds: [equipmentEmbed], 
                 components: components,
-                files: [equipmentAttachment],
-                flags: 64 
+                files: [equipmentAttachment]
             });
         }
         
@@ -9955,8 +10029,8 @@ client.on('interactionCreate', async (interaction) => {
             let itemList = '';
             currentItems.forEach((item, index) => {
                 const globalIndex = startIndex + index;
-                const isEquipped = user.equipment[category] && user.equipment[category].id === item.id;
-                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
+                const isEquipped = user.equipment[category] === item.inventorySlot;
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
                 
                 itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                 itemList += `등급: ${item.rarity} | 레벨: ${item.level}\n`;
@@ -10055,6 +10129,13 @@ client.on('interactionCreate', async (interaction) => {
         else if (interaction.customId.startsWith('equip_item_')) {
             console.log('=== 장착 핸들러 진입 ===');
             
+            // ObjectId 데이터 문제 해결을 위해 user 객체 새로 로드
+            const freshUser = await User.findOne({ discordId: interaction.user.id });
+            if (!freshUser) {
+                await interaction.update({ content: '유저 데이터를 찾을 수 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
             // customId 파싱: equip_item_{itemId}_{category}_{currentPage}
             // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
             const customId = interaction.customId;
@@ -10064,106 +10145,105 @@ client.on('interactionCreate', async (interaction) => {
             const itemId = parts.slice(2, parts.length - 2).join('_'); // 나머지 부분들을 합쳐서 itemId
             
             console.log(`장착 시도 - itemId: ${itemId}, category: ${category}`);
-            console.log(`사용자 인벤토리 아이템 수: ${user.inventory.length}`);
+            console.log(`사용자 인벤토리 아이템 수: ${freshUser.inventory.length}`);
             
-            // 아이템 검색 - ID로 찾거나 없으면 인덱스로 찾기 (호환성)
-            let item = user.inventory.find(inv => inv.id === itemId);
+            // 아이템 검색
+            const inventoryItem = freshUser.inventory.find(inv => inv.id === itemId);
             
-            // ID로 찾지 못했을 경우, 인덱스로 시도 (기존 데이터 호환성)
-            if (!item) {
-                const itemIndex = parseInt(itemId);
-                if (!isNaN(itemIndex) && itemIndex >= 0 && itemIndex < user.inventory.length) {
-                    item = user.inventory[itemIndex];
-                    console.log(`ID로 찾지 못해 인덱스 ${itemIndex}로 아이템 발견: ${item?.name}`);
-                }
-            }
-            
-            // 여전히 찾지 못한 경우, 이름으로 시도 (마지막 방법)
-            if (!item) {
-                // customId에서 카테고리 기반으로 해당 카테고리의 첫 번째 아이템 시도
-                const categoryItems = user.inventory.filter(inv => {
-                    if (category === 'weapon') return inv.type === 'weapon';
-                    if (category === 'armor') return inv.type === 'armor';
-                    if (category === 'helmet') return inv.type === 'helmet';
-                    if (category === 'gloves') return inv.type === 'gloves';
-                    if (category === 'boots') return inv.type === 'boots';
-                    if (category === 'accessory') return inv.type === 'accessory';
-                    return false;
-                });
-                
-                // 숫자라면 해당 순서의 아이템
-                const numericId = parseInt(itemId);
-                if (!isNaN(numericId) && numericId < categoryItems.length) {
-                    item = categoryItems[numericId];
-                    console.log(`카테고리별 인덱스 ${numericId}로 아이템 발견: ${item?.name}`);
-                }
-            }
-            
-            if (!item) {
+            if (!inventoryItem) {
                 console.log(`아이템을 찾을 수 없음 - 요청된 ID: ${itemId}`);
-                console.log('인벤토리 아이템 IDs:', user.inventory.map((inv, idx) => `${idx}: ${inv.name}: ${inv.id || 'NO_ID'}`));
-                await interaction.reply({ content: `해당 아이템을 찾을 수 없습니다! (ID: ${itemId})`, flags: 64 });
+                await interaction.update({ content: `해당 아이템을 찾을 수 없습니다!`, embeds: [], components: [] });
                 return;
             }
-
-            // 이미 착용 중인지 확인 (기존 데이터 호환성 고려)
-            const currentEquipped = user.equipment[category];
-            if (currentEquipped) {
-                // 새로운 방식 (아이템 객체)
-                if (typeof currentEquipped === 'object' && currentEquipped.id === itemId) {
-                    await interaction.reply({ content: '이미 착용 중인 아이템입니다!', flags: 64 });
-                    return;
-                }
-                // 기존 방식 (슬롯 번호) - 아이템 인덱스 비교
-                if (typeof currentEquipped === 'number') {
-                    const itemIndex = user.inventory.findIndex(inv => inv.id === itemId);
-                    if (currentEquipped === itemIndex) {
-                        await interaction.reply({ content: '이미 착용 중인 아이템입니다!', flags: 64 });
-                        return;
-                    }
-                }
+            
+            // 이미 착용 중인지 확인
+            if (freshUser.equipment[inventoryItem.type] === inventoryItem.inventorySlot) {
+                await interaction.update({ content: '이미 착용 중인 아이템입니다!', embeds: [], components: [] });
+                return;
             }
 
             // 레벨 확인
-            if (user.level < item.level) {
-                await interaction.reply({ 
-                    content: `레벨이 부족합니다! (필요: Lv.${item.level}, 현재: Lv.${user.level})`, 
-                    flags: 64 
+            if (freshUser.level < inventoryItem.level) {
+                await interaction.update({ 
+                    content: `레벨이 부족합니다! (필요: Lv.${inventoryItem.level}, 현재: Lv.${freshUser.level})`, 
+                    embeds: [], 
+                    components: [] 
                 });
                 return;
             }
 
-            // 장착 처리
-            user.equipment[category] = item;
-            await user.save();
+            // 장착 가능한 타입인지 확인
+            if (!['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(inventoryItem.type)) {
+                await interaction.update({ content: '장착할 수 없는 아이템입니다!', embeds: [], components: [] });
+                return;
+            }
+
+            // 장착 전 전투력 계산
+            const prevCombatPower = calculateCombatPower(freshUser);
+            
+            // 이전에 장착된 아이템이 있다면 해제
+            const prevSlotIndex = freshUser.equipment[inventoryItem.type];
+            
+            // ObjectId인 경우 강제로 -1로 설정 (구식 데이터 처리)
+            if (prevSlotIndex && typeof prevSlotIndex === 'object') {
+                console.log(`⚠️ 구식 ObjectId 데이터 감지: ${prevSlotIndex} → -1로 변경`);
+                freshUser.equipment[inventoryItem.type] = -1;
+            } else if (typeof prevSlotIndex === 'number' && prevSlotIndex !== -1) {
+                // 이전 장착 아이템의 equipped 상태 해제
+                const prevItem = freshUser.inventory.find(item => item.inventorySlot === prevSlotIndex);
+                if (prevItem) {
+                    prevItem.equipped = false;
+                }
+            }
+            
+            // 장착 처리 - 신식 시스템 (슬롯 번호 참조)
+            freshUser.equipment[inventoryItem.type] = inventoryItem.inventorySlot;
+            inventoryItem.equipped = true;
+            
+            await freshUser.save();
+            
+            // 장착 후 전투력 계산
+            const newCombatPower = calculateCombatPower(freshUser);
+            const powerChange = newCombatPower - prevCombatPower;
+            const changeText = powerChange > 0 ? `(+${powerChange})` : powerChange < 0 ? `(${powerChange})` : '(변화 없음)';
 
             const equipEmbed = new EmbedBuilder()
                 .setColor('#00ff00')
                 .setTitle('⚔️ 장비 착용 완료!')
-                .setDescription(`**${item.name}**을(를) 성공적으로 착용했습니다!`)
+                .setDescription(`**${inventoryItem.name}**을(를) 성공적으로 착용했습니다!`)
                 .addFields(
-                    { name: '착용한 아이템', value: `${item.name}${item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : ''}`, inline: true },
-                    { name: '아이템 등급', value: item.rarity, inline: true },
-                    { name: '새로운 전투력', value: `🔥 ${calculateCombatPower(user).toLocaleString()}`, inline: true }
+                    { name: '착용한 아이템', value: `${inventoryItem.name}${inventoryItem.enhanceLevel > 0 ? ` (+${inventoryItem.enhanceLevel}강)` : ''}`, inline: true },
+                    { name: '아이템 등급', value: inventoryItem.rarity, inline: true },
+                    { name: '변화된 전투력', value: `${prevCombatPower.toLocaleString()} → ${newCombatPower.toLocaleString()} ${changeText}`, inline: true }
                 );
 
-            // 완료 후 돌아가기 버튼들
+            // 돌아가기 버튼들
+            // category를 올바른 형태로 변환 (weapons → weapon)
+            const categoryMap = {
+                'weapons': 'weapon',
+                'armor': 'armor', 
+                'helmets': 'helmet',
+                'gloves': 'gloves',
+                'boots': 'boots',
+                'accessories': 'accessory'
+            };
+            const equipCategory = categoryMap[category] || inventoryItem.type;
+            
             const backButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId('equipment')
-                        .setLabel('🔙 장비 메뉴로 돌아가기')
+                        .setCustomId(`equip_category_${equipCategory}`)
+                        .setLabel('🔙 해당 카테고리로 돌아가기')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId('game_page_1')
-                        .setLabel('🏠 게임 메인으로 돌아가기')
+                        .setCustomId('inventory')
+                        .setLabel('🏠 인벤토리 메인으로 돌아가기')
                         .setStyle(ButtonStyle.Primary)
                 );
 
-            await interaction.reply({
+            await interaction.update({
                 embeds: [equipEmbed],
-                components: [backButtons],
-                flags: 64
+                components: [backButtons]
             });
         }
         
@@ -10207,8 +10287,8 @@ client.on('interactionCreate', async (interaction) => {
                 let itemList = '';
                 currentItems.forEach((item, index) => {
                     const globalIndex = startIndex + index;
-                    const isEquipped = user.equipment[category] && user.equipment[category].id === item.id;
-                    const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
+                    const isEquipped = user.equipment[category] === item.inventorySlot;
+                    const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
                     
                     itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                     itemList += `등급: ${item.rarity} | 레벨: ${item.level}\n`;
@@ -10233,7 +10313,7 @@ client.on('interactionCreate', async (interaction) => {
                 const itemButtons = new ActionRowBuilder();
                 currentItems.forEach((item, index) => {
                     const globalIndex = startIndex + index;
-                    const isEquipped = user.equipment[category] && user.equipment[category].id === item.id;
+                    const isEquipped = user.equipment[category] === item.inventorySlot;
                     
                     itemButtons.addComponents(
                         new ButtonBuilder()
@@ -10285,6 +10365,296 @@ client.on('interactionCreate', async (interaction) => {
                     components: components
                 });
             }
+        }
+        
+        else if (interaction.customId === 'enhancement') {
+            // 강화 메뉴 처리
+            if (user.level < 10) {
+                await interaction.update({ content: '강화는 레벨 10부터 사용할 수 있습니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            // 강화 가능한 장비 확인
+            const equippedItems = [];
+            const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+            
+            equipmentSlots.forEach(slot => {
+                const equippedItem = getEquippedItem(user, slot);
+                if (equippedItem) {
+                    equippedItems.push({
+                        slot: slot,
+                        item: equippedItem,
+                        displayName: getSlotDisplayName(slot)
+                    });
+                }
+            });
+            
+            if (equippedItems.length === 0) {
+                await interaction.update({ 
+                    content: '강화할 장비가 없습니다! 먼저 장비를 착용해주세요.', 
+                    embeds: [], 
+                    components: [] 
+                });
+                return;
+            }
+            
+            // 강화 메뉴 임베드
+            const enhanceEmbed = new EmbedBuilder()
+                .setColor('#9b59b6')
+                .setTitle('⚡ 장비 강화')
+                .setDescription(`**${user.nickname}**님의 강화 메뉴\n\n강화할 장비를 선택하세요!`)
+                .setFooter({ text: '강화는 장비의 성능을 향상시키지만, 실패할 위험이 있습니다!' });
+            
+            // 장착된 장비들 표시
+            let equipmentList = '';
+            equippedItems.forEach((equipped, index) => {
+                const item = equipped.item;
+                const enhanceLevel = item.enhanceLevel || 0;
+                const enhanceText = enhanceLevel > 0 ? ` (+${enhanceLevel}강)` : '';
+                
+                // 스탯 정보 추가
+                const stats = item.stats || {};
+                let statsText = '';
+                if (stats.attack && stats.attack[0] > 0) statsText += ` | 공격: ${stats.attack[0]}-${stats.attack[1]}`;
+                if (stats.defense && stats.defense[0] > 0) statsText += ` | 방어: ${stats.defense[0]}-${stats.defense[1]}`;
+                if (stats.dodge && stats.dodge[0] > 0) statsText += ` | 회피: ${stats.dodge[0]}-${stats.dodge[1]}`;
+                if (stats.luck && stats.luck[0] > 0) statsText += ` | 행운: ${stats.luck[0]}-${stats.luck[1]}`;
+                
+                equipmentList += `**${index + 1}. ${equipped.displayName}**: ${item.name}${enhanceText}${statsText}\n`;
+            });
+            
+            enhanceEmbed.addFields({ name: '💎 장착된 장비', value: equipmentList, inline: false });
+            
+            // 강화 버튼들 (장비별로)
+            const enhanceButtons = new ActionRowBuilder();
+            equippedItems.slice(0, 5).forEach((equipped, index) => {
+                const item = equipped.item;
+                const enhanceLevel = item.enhanceLevel || 0;
+                const isMaxLevel = enhanceLevel >= 30;
+                
+                enhanceButtons.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`enhance_${equipped.slot}`)
+                        .setLabel(`${equipped.displayName} (+${enhanceLevel})`)
+                        .setStyle(isMaxLevel ? ButtonStyle.Secondary : ButtonStyle.Primary)
+                        .setDisabled(isMaxLevel)
+                );
+            });
+            
+            // 뒤로가기 버튼
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 게임 메뉴로 돌아가기')
+                        .setStyle(ButtonStyle.Success)
+                );
+            
+            const components = [enhanceButtons, backButton];
+            
+            await interaction.update({ 
+                embeds: [enhanceEmbed], 
+                components: components
+            });
+        }
+        
+        else if (interaction.customId.startsWith('enhance_')) {
+            // 특정 장비 강화 처리
+            const slotName = interaction.customId.replace('enhance_', '');
+            const equipment = getEquippedItem(user, slotName);
+            
+            if (!equipment) {
+                await interaction.update({ content: '해당 슬롯에 장착된 장비가 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            if (equipment.enhanceLevel >= 30) {
+                await interaction.update({ content: '이미 최대 강화 단계(30강)입니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            // 아이템 레벨 및 강화 비용 계산
+            const itemLevel = ITEM_LEVELS[equipment.setName] || ITEM_LEVELS[equipment.name] || 1;
+            const currentStar = equipment.enhanceLevel || 0;
+            const cost = calculateEnhanceCost(itemLevel, currentStar);
+            
+            if (user.gold < cost) {
+                await interaction.reply({ 
+                    content: `골드가 부족합니다! 필요: ${cost.toLocaleString()}<:currency_emoji:1377404064316522778>, 보유: ${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 강화 확률 및 정보 표시
+            const rates = ENHANCEMENT_RATES[currentStar];
+            const successRate = rates.success;
+            const failRate = rates.fail;
+            const destroyRate = rates.destroy;
+            
+            const confirmEmbed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('⚡ 강화 확인')
+                .setDescription(`**${equipment.name}** (+${currentStar}강 → +${currentStar + 1}강)\n\n정말 강화하시겠습니까?`)
+                .addFields(
+                    { name: '💰 강화 비용', value: `${cost.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                    { name: '✅ 성공 확률', value: `${successRate}%`, inline: true },
+                    { name: '❌ 실패 확률', value: `${failRate}%`, inline: true },
+                    { name: '💀 파괴 확률', value: `${destroyRate}%`, inline: true },
+                    { name: '💎 현재 보유 골드', value: `${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
+                )
+                .setFooter({ text: '강화 후에는 되돌릴 수 없습니다!' });
+            
+            // 강화 실행 버튼
+            const confirmButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`confirm_enhance_${slotName}`)
+                        .setLabel('⚡ 강화 실행!')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('enhancement')
+                        .setLabel('🔙 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [confirmEmbed],
+                components: [confirmButtons]
+            });
+        }
+        
+        else if (interaction.customId.startsWith('confirm_enhance_')) {
+            // 강화 실행
+            const slotName = interaction.customId.replace('confirm_enhance_', '');
+            const equipment = getEquippedItem(user, slotName);
+            
+            if (!equipment) {
+                await interaction.update({ content: '해당 슬롯에 장착된 장비가 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            if (equipment.enhanceLevel >= 30) {
+                await interaction.update({ content: '이미 최대 강화 단계(30강)입니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            // 아이템 레벨 및 강화 비용 계산
+            const itemLevel = ITEM_LEVELS[equipment.setName] || ITEM_LEVELS[equipment.name] || 1;
+            const currentStar = equipment.enhanceLevel || 0;
+            const cost = calculateEnhanceCost(itemLevel, currentStar);
+            
+            if (user.gold < cost) {
+                await interaction.update({ 
+                    content: `골드가 부족합니다! 필요: ${cost.toLocaleString()}<:currency_emoji:1377404064316522778>, 보유: ${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, 
+                    embeds: [], 
+                    components: [] 
+                });
+                return;
+            }
+            
+            // 강화 시도
+            const rates = ENHANCEMENT_RATES[currentStar];
+            const result = attemptEnhanceWithProtection(rates, false, false, currentStar, false);
+            user.gold -= cost;
+            
+            // 강화 통계 업데이트
+            if (!user.enhanceStats) {
+                user.enhanceStats = {
+                    totalAttempts: 0,
+                    successCount: 0,
+                    destroyCount: 0,
+                    totalCost: 0,
+                    maxEnhanceLevel: 0
+                };
+            }
+            
+            user.enhanceStats.totalAttempts += 1;
+            user.enhanceStats.totalCost += cost;
+            
+            let resultEmbed;
+            
+            if (result === 'success') {
+                equipment.enhanceLevel += 1;
+                user.enhanceStats.successCount += 1;
+                user.enhanceStats.maxEnhanceLevel = Math.max(user.enhanceStats.maxEnhanceLevel, equipment.enhanceLevel);
+                
+                // 신식 시스템: getEquippedItem이 이미 인벤토리의 실제 아이템을 참조하므로 별도 업데이트 불필요
+                
+                resultEmbed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('✅ 강화 성공!')
+                    .setDescription(`**${equipment.name}**이(가) 성공적으로 강화되었습니다!`)
+                    .addFields(
+                        { name: '강화 결과', value: `+${currentStar} → **+${equipment.enhanceLevel}**강`, inline: true },
+                        { name: '사용된 골드', value: `${cost.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                        { name: '남은 골드', value: `${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
+                    );
+                    
+                if (equipment.enhanceLevel >= 10) {
+                    resultEmbed.setFooter({ text: '높은 강화 단계에 도달했습니다! 축하합니다!' });
+                }
+                
+                triggerEnhancementEvent(equipment.enhanceLevel, true);
+                
+            } else if (result === 'fail') {
+                resultEmbed = new EmbedBuilder()
+                    .setColor('#ffaa00')
+                    .setTitle('❌ 강화 실패')
+                    .setDescription(`**${equipment.name}** 강화에 실패했습니다.`)
+                    .addFields(
+                        { name: '강화 결과', value: `+${currentStar} (변화 없음)`, inline: true },
+                        { name: '사용된 골드', value: `${cost.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                        { name: '남은 골드', value: `${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
+                    );
+                    
+                triggerEnhancementEvent(equipment.enhanceLevel, false);
+                
+            } else if (result === 'destroy') {
+                const oldLevel = equipment.enhanceLevel;
+                equipment.enhanceLevel = Math.max(0, equipment.enhanceLevel - 1);
+                user.enhanceStats.destroyCount += 1;
+                
+                // 신식 시스템: getEquippedItem이 이미 인벤토리의 실제 아이템을 참조하므로 별도 업데이트 불필요
+                
+                resultEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('💀 강화 파괴!')
+                    .setDescription(`**${equipment.name}**이(가) 파괴되어 강화 단계가 하락했습니다!`)
+                    .addFields(
+                        { name: '강화 결과', value: `+${oldLevel} → **+${equipment.enhanceLevel}**💀`, inline: true },
+                        { name: '사용된 골드', value: `${cost.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                        { name: '남은 골드', value: `${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
+                    )
+                    .setFooter({ text: '파괴는 고위 강화에서만 발생합니다. 다음에는 더 신중하게!' });
+                    
+                triggerEnhancementEvent(equipment.enhanceLevel, false);
+            }
+            
+            await user.save();
+            
+            // 결과 표시 후 다시 강화하기 버튼 추가
+            const afterButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`enhance_${slotName}`)
+                        .setLabel('🔄 다시 강화하기')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(equipment.enhanceLevel >= 30),
+                    new ButtonBuilder()
+                        .setCustomId('enhancement')
+                        .setLabel('⚡ 강화 메뉴')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 게임 메뉴')
+                        .setStyle(ButtonStyle.Success)
+                );
+            
+            await interaction.update({
+                embeds: [resultEmbed],
+                components: [afterButtons]
+            });
         }
         
         else if (interaction.customId === 'prev_page' || interaction.customId === 'next_page') {

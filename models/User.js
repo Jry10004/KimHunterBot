@@ -156,12 +156,12 @@ const userSchema = new mongoose.Schema({
     }],
     maxInventorySlots: { type: Number, default: 50 }, // 인벤토리 최대 슬롯
     equipment: {
-        weapon: { type: mongoose.Schema.Types.Mixed, default: null }, // 아이템 객체 저장
-        armor: { type: mongoose.Schema.Types.Mixed, default: null },
-        helmet: { type: mongoose.Schema.Types.Mixed, default: null },
-        gloves: { type: mongoose.Schema.Types.Mixed, default: null },
-        boots: { type: mongoose.Schema.Types.Mixed, default: null },
-        accessory: { type: mongoose.Schema.Types.Mixed, default: null }
+        weapon: { type: Number, default: -1 }, // 인벤토리 슬롯 번호 (-1은 미착용)
+        armor: { type: Number, default: -1 },
+        helmet: { type: Number, default: -1 },
+        gloves: { type: Number, default: -1 },
+        boots: { type: Number, default: -1 },
+        accessory: { type: Number, default: -1 }
     },
     protectionScrolls: { type: Number, default: 0 }, // 보호권 개수
     enhancementLevel: {
@@ -267,6 +267,20 @@ const userSchema = new mongoose.Schema({
     }
 }, {
     timestamps: true
+});
+
+// ObjectId 장비 데이터를 자동으로 -1로 변환하는 pre-save 미들웨어
+userSchema.pre('save', function(next) {
+    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+    
+    equipmentSlots.forEach(slot => {
+        if (this.equipment[slot] && typeof this.equipment[slot] === 'object') {
+            // ObjectId나 다른 객체 타입이면 -1로 변환
+            this.equipment[slot] = -1;
+        }
+    });
+    
+    next();
 });
 
 module.exports = mongoose.model('User', userSchema);
