@@ -9569,6 +9569,28 @@ client.on('interactionCreate', async (interaction) => {
             
             const inventoryItem = user.inventory.find(inv => inv.id === itemId);
             
+            if (inventoryItem) {
+                console.log(`🔍 찾은 아이템: ${inventoryItem.name}`);
+                console.log(`📦 inventorySlot: ${inventoryItem.inventorySlot}`);
+                console.log(`⚔️ type: ${inventoryItem.type}`);
+                
+                // inventorySlot이 없는 경우 자동 할당
+                if (inventoryItem.inventorySlot === undefined || inventoryItem.inventorySlot === null) {
+                    console.log(`⚠️ inventorySlot이 없는 아이템 발견! 자동 할당 중...`);
+                    const availableSlot = getAvailableInventorySlot(user);
+                    if (availableSlot !== -1) {
+                        inventoryItem.inventorySlot = availableSlot;
+                        console.log(`✅ inventorySlot ${availableSlot}으로 할당 완료`);
+                    } else {
+                        console.log(`❌ 사용 가능한 슬롯이 없음`);
+                        await interaction.reply({ content: '인벤토리가 가득 찼습니다!', flags: 64 });
+                        return;
+                    }
+                }
+                
+                console.log(`🎯 아이템 전체 정보:`, JSON.stringify(inventoryItem, null, 2));
+            }
+            
             if (!inventoryItem) {
                 console.log(`inv_use에서 아이템을 찾을 수 없음 - 요청된 ID: ${itemId}`);
                 console.log('인벤토리 아이템 IDs:', user.inventory.map((inv, idx) => `${idx}: ${inv.name}: ${inv.id || 'NO_ID'}`));
@@ -9578,8 +9600,8 @@ client.on('interactionCreate', async (interaction) => {
             
             // 장비 아이템인 경우 장착 처리
             if (['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(inventoryItem.type)) {
-                // 이미 착용 중인지 확인
-                if (user.equipment[inventoryItem.type] && user.equipment[inventoryItem.type].id === itemId) {
+                // 이미 착용 중인지 확인 (신식 시스템 - 슬롯 번호 비교)
+                if (user.equipment[inventoryItem.type] === inventoryItem.inventorySlot) {
                     await interaction.reply({ content: '이미 착용 중인 아이템입니다!', flags: 64 });
                     return;
                 }
@@ -9612,8 +9634,13 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 
                 // 장착 처리 - 신식 시스템 (슬롯 번호 참조)
+                console.log(`🔧 장착 처리 전 - ${inventoryItem.type} 슬롯: ${user.equipment[inventoryItem.type]}`);
+                console.log(`🔧 설정할 inventorySlot: ${inventoryItem.inventorySlot}`);
+                
                 user.equipment[inventoryItem.type] = inventoryItem.inventorySlot;
                 inventoryItem.equipped = true;
+                
+                console.log(`🔧 장착 처리 후 - ${inventoryItem.type} 슬롯: ${user.equipment[inventoryItem.type]}`);
                 
                 await user.save();
                 
