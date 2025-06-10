@@ -1,152 +1,29 @@
 require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, StringSelectMenuBuilder } = require('discord.js');
 const connectDB = require('./database/connection');
 const User = require('./models/User');
 const { generateVerificationCode, sendVerificationEmail } = require('./services/emailService');
 const { huntingAreas, DROP_ITEMS } = require('./data/huntingAreas');
+const STOCK_MARKET = require('./data/stockMarket');
+const RANDOM_EVENTS = require('./data/randomEvents');
+const shopItems = require('./data/shopItems');
+const MONSTER_BATTLE = require('./data/oddEvenGame');
 
 // 아이템 경매장 시스템
 const AUCTION_HOUSE = {
-    listings: new Map(), // 경매 리스팅 저장소
-    priceHistory: new Map(), // 아이템별 가격 이력
-    marketVolume: new Map(), // 일일 거래량
-    topItems: [], // 인기 아이템 순위
-    events: [] // 시장 이벤트
-};
-
-// 아이템 시세 데이터 (주식처럼 차트 관리)
-const ITEM_MARKET = {
-    categories: {
-        scrolls: { name: '주문서', volatility: 0.25, baseMultiplier: 1.2 },
-        consumables: { name: '소비템', volatility: 0.15, baseMultiplier: 0.8 },
-        currency: { name: '재료/코인', volatility: 0.30, baseMultiplier: 1.0 },
-        rare: { name: '레어템', volatility: 0.40, baseMultiplier: 2.0 }
-    },
-    priceFactors: {
-        supply: 0.4,      // 공급량 (많을수록 가격 하락)
-        demand: 0.3,      // 수요량 (구매 주문량)
-        rarity: 0.2,      // 희귀도 가중치
-        events: 0.1       // 특별 이벤트 영향
-    },
-    dailyEvents: [
-        { name: '대풍작의 날', effect: { type: 'supply_increase', value: 2.0, items: ['currency'] } },
-        { name: '모험가 축제', effect: { type: 'demand_increase', value: 1.5, items: ['scrolls'] } },
-        { name: '마법사 파업', effect: { type: 'price_spike', value: 3.0, items: ['consumables'] } },
-        { name: '용사의 귀환', effect: { type: 'market_crash', value: 0.5, items: ['all'] } },
-        { name: '골드러시', effect: { type: 'price_boost', value: 1.8, items: ['rare'] } }
-    ]
+    listings: new Map(),
+    priceHistory: new Map(),
+    marketVolume: new Map(),
+    topItems: [],
+    events: []
 };
 
 // 현재 시장 상황 저장소
 let currentMarketEvent = null;
 let lastMarketUpdate = 0;
 
-// 🎲 랜덤 재미 컨텐츠 시스템
-const RANDOM_EVENTS = {
-    dailyFortune: [
-        { type: 'lucky', message: '오늘은 행운의 날! 모든 드롭률 +50%', effect: { dropRate: 1.5, duration: 24 } },
-        { type: 'unlucky', message: '불운한 하루... 강화 실패율 +20%', effect: { enhanceFail: 1.2, duration: 24 } },
-        { type: 'gold', message: '황금비가 내린다! 골드 획득량 2배', effect: { goldRate: 2.0, duration: 12 } },
-        { type: 'exp', message: '지혜의 바람이 분다! 경험치 획득량 +100%', effect: { expRate: 2.0, duration: 8 } },
-        { type: 'market', message: '상인들의 축제! 모든 아이템 가격 -30%', effect: { shopDiscount: 0.7, duration: 6 } }
-    ],
-    
-    randomEncounters: [
-        {
-            name: '신비한 상인',
-            rarity: 0.5, // 0.5% 확률
-            description: '수상한 망토를 입은 상인이 나타났다!',
-            options: [
-                { text: '거래하기', result: 'trade', price: 5000, reward: '신비한 상자' },
-                { text: '무시하기', result: 'ignore', message: '상인이 실망스러운 표정을 지으며 사라졌다.' }
-            ]
-        },
-        {
-            name: '행운의 고양이',
-            rarity: 1.0, // 1% 확률
-            description: '길 위에서 새하얀 고양이를 발견했다!',
-            options: [
-                { text: '쓰다듬기', result: 'pet', reward: 'luck_boost', message: '고양이가 행복해하며 행운을 빌어준다!' },
-                { text: '먹이주기', result: 'feed', cost: 100, reward: 'gold_boost', message: '고양이가 골드를 물어다 준다!' }
-            ]
-        },
-        {
-            name: '폐허의 보물상자',
-            rarity: 0.3, // 0.3% 확률  
-            description: '오래된 폐허에서 빛나는 보물상자를 발견했다!',
-            options: [
-                { text: '열어보기', result: 'open', rewards: ['rare_item', 'gold', 'exp'] },
-                { text: '함정일지도?', result: 'trap_check', skill: 'luck', success: 'safe_open', fail: 'explode' }
-            ]
-        }
-    ],
-    
-    weatherEffects: [
-        { name: '맑음', emoji: '☀️', effect: { huntingBonus: 1.1 } },
-        { name: '비', emoji: '🌧️', effect: { expBonus: 1.2 } },
-        { name: '눈', emoji: '❄️', effect: { goldPenalty: 0.9 } },
-        { name: '폭풍', emoji: '⛈️', effect: { huntingPenalty: 0.8, dropBonus: 1.3 } },
-        { name: '무지개', emoji: '🌈', effect: { allBonus: 1.3 } }
-    ],
-    
-    mysteryBoxes: [
-        {
-            name: '낡은 보물상자',
-            price: 1000,
-            rewards: [
-                { item: '골드', amount: [500, 2000], weight: 40 },
-                { item: '경험치', amount: [100, 500], weight: 30 },
-                { item: '랜덤 주문서', rarity: '일반', weight: 20 },
-                { item: '보호권', amount: 1, weight: 10 }
-            ]
-        },
-        {
-            name: '황금 보물상자',
-            price: 10000,
-            rewards: [
-                { item: '골드', amount: [5000, 25000], weight: 30 },
-                { item: '레어 주문서', rarity: '레어', weight: 25 },
-                { item: '스탯 포인트', amount: [1, 3], weight: 20 },
-                { item: '보호권', amount: [3, 5], weight: 15 },
-                { item: '신비한 아이템', rarity: '에픽', weight: 10 }
-            ]
-        },
-        {
-            name: '전설의 보물상자',
-            price: 100000,
-            rewards: [
-                { item: '대량 골드', amount: [50000, 200000], weight: 25 },
-                { item: '전설 주문서', rarity: '레전드리', weight: 20 },
-                { item: '스탯 포인트', amount: [5, 10], weight: 20 },
-                { item: '보호권', amount: [10, 20], weight: 15 },
-                { item: '신화 아이템', rarity: '신화', weight: 15 },
-                { item: '레벨업 스크롤', amount: 1, weight: 5 }
-            ]
-        }
-    ],
-    
-    secretMissions: [
-        {
-            name: '연속 사냥 도전',
-            description: '1시간 내에 몬스터 50마리 처치하기',
-            requirement: { type: 'hunt_count', target: 50, timeLimit: 3600000 },
-            reward: { exp: 5000, gold: 10000, item: '사냥꾼의 증표' }
-        },
-        {
-            name: '강화 도전',
-            description: '강화 성공 5번 연속 달성하기',
-            requirement: { type: 'enhance_streak', target: 5 },
-            reward: { gold: 20000, item: '행운의 부적', protectionScrolls: 3 }
-        },
-        {
-            name: '부자 되기',
-            description: '골드 100만개 모으기',
-            requirement: { type: 'gold_amount', target: 1000000 },
-            reward: { exp: 10000, gold: 50000, statPoints: 5 }
-        }
-    ]
-};
 
 // 현재 활성 이벤트들
 let dailyFortune = null;
@@ -230,63 +107,9 @@ process.on('SIGTERM', () => {
     saveGameData();
     process.exit(0);
 });
-const fs = require('fs');
 const Jimp = require('jimp');
 const GifEncoder = require('gif-encoder-2');
 
-// 상점 아이템 데이터 (레벨 시스템 포함)
-const shopItems = [
-    {
-        id: 'basic_sword',
-        name: '기본 검',
-        type: 'weapon',
-        rarity: '노멀',
-        level: 1,
-        price: 500,
-        stats: { attack: 10, defense: 0, hp: 0, mp: 0 },
-        description: '모험가를 위한 기본적인 검입니다.'
-    },
-    {
-        id: 'basic_armor',
-        name: '기본 갑옷',
-        type: 'armor',
-        rarity: '노멀',
-        level: 1,
-        price: 800,
-        stats: { attack: 0, defense: 15, hp: 50, mp: 0 },
-        description: '기본적인 방어력을 제공하는 갑옷입니다.'
-    },
-    {
-        id: 'steel_sword',
-        name: '강철 검',
-        type: 'weapon',
-        rarity: '레어',
-        level: 10,
-        price: 2000,
-        stats: { attack: 25, defense: 0, hp: 0, mp: 0 },
-        description: '단단한 강철로 만든 검입니다.'
-    },
-    {
-        id: 'health_potion',
-        name: '체력 포션',
-        type: 'consumable',
-        rarity: '노멀',
-        level: 1,
-        price: 100,
-        stats: { attack: 0, defense: 0, hp: 100, mp: 0 },
-        description: '체력을 회복시켜주는 포션입니다.'
-    },
-    {
-        id: 'mana_potion',
-        name: '마나 포션',
-        type: 'consumable',
-        rarity: '노멀',
-        level: 1,
-        price: 100,
-        stats: { attack: 0, defense: 0, hp: 0, mp: 50 },
-        description: '마나를 회복시켜주는 포션입니다.'
-    }
-];
 
 // 상점 카테고리 데이터 정의 (전역으로 사용)
 const SHOP_CATEGORIES = {
@@ -1251,133 +1074,6 @@ const QUEST_CLIENTS = {
     ]
 };
 
-// 🚀 혁신적인 차원 주식 거래소 시스템
-const STOCK_MARKET = {
-    // 12개 환상 지역의 기업들
-    regions: {
-        crystal_cave: {
-            name: '💎 크리스탈 동굴',
-            companies: [
-                { id: 'crystal_mining', name: '크리스탈 채굴공사', price: 1000, change: 0, volume: 0, sector: 'mining' },
-                { id: 'crystal_processing', name: '수정 가공업체', price: 850, change: 0, volume: 0, sector: 'manufacturing' }
-            ]
-        },
-        cloud_castle: {
-            name: '☁️ 솜사탕 구름성',
-            companies: [
-                { id: 'cotton_candy', name: '솜사탕 제과회사', price: 750, change: 0, volume: 0, sector: 'food' },
-                { id: 'cloud_transport', name: '구름 운송업', price: 920, change: 0, volume: 0, sector: 'logistics' }
-            ]
-        },
-        starlight_lake: {
-            name: '⭐ 별빛 호수',
-            companies: [
-                { id: 'starlight_research', name: '별빛 연구소', price: 1200, change: 0, volume: 0, sector: 'research' },
-                { id: 'moonlight_fishing', name: '달빛 어업', price: 680, change: 0, volume: 0, sector: 'fishing' }
-            ]
-        },
-        magic_library: {
-            name: '📚 마법 도서관',
-            companies: [
-                { id: 'wisdom_publishing', name: '지혜 출판사', price: 800, change: 0, volume: 0, sector: 'publishing' },
-                { id: 'magic_research', name: '마법 연구원', price: 1100, change: 0, volume: 0, sector: 'research' }
-            ]
-        },
-        dragon_village: {
-            name: '🐲 용용이 마을',
-            companies: [
-                { id: 'dragon_weapons', name: '드래곤 무기점', price: 1350, change: 0, volume: 0, sector: 'weapons' },
-                { id: 'dragon_armor', name: '용린 방어구', price: 1180, change: 0, volume: 0, sector: 'armor' }
-            ]
-        },
-        time_garden: {
-            name: '⏰ 시간의 정원',
-            companies: [
-                { id: 'time_management', name: '시공 관리공사', price: 1500, change: 0, volume: 0, sector: 'technology' },
-                { id: 'garden_agriculture', name: '정원 농업', price: 550, change: 0, volume: 0, sector: 'agriculture' }
-            ]
-        },
-        dream_palace: {
-            name: '💫 꿈의 궁전',
-            companies: [
-                { id: 'fantasy_entertainment', name: '환상 엔터테인먼트', price: 980, change: 0, volume: 0, sector: 'entertainment' },
-                { id: 'dream_healing', name: '꿈결 힐링센터', price: 720, change: 0, volume: 0, sector: 'healthcare' }
-            ]
-        },
-        heaven_bridge: {
-            name: '👼 천상의 구름다리',
-            companies: [
-                { id: 'angel_medical', name: '천사 의료원', price: 1400, change: 0, volume: 0, sector: 'healthcare' },
-                { id: 'cloud_construction', name: '구름다리 건설', price: 950, change: 0, volume: 0, sector: 'construction' }
-            ]
-        },
-        galaxy_temple: {
-            name: '🌌 은하수 사원',
-            companies: [
-                { id: 'space_development', name: '우주 개발공사', price: 1800, change: 0, volume: 0, sector: 'aerospace' },
-                { id: 'stellar_energy', name: '성운 에너지', price: 1250, change: 0, volume: 0, sector: 'energy' }
-            ]
-        },
-        aurora_palace: {
-            name: '🌨️ 오로라 빙궁',
-            companies: [
-                { id: 'ice_storage', name: '빙설 냉동업', price: 650, change: 0, volume: 0, sector: 'storage' },
-                { id: 'aurora_tourism', name: '오로라 관광', price: 880, change: 0, volume: 0, sector: 'tourism' }
-            ]
-        },
-        chaos_realm: {
-            name: '👹 혼돈의 마경',
-            companies: [
-                { id: 'dark_mining', name: '어둠 광업', price: 1050, change: 0, volume: 0, sector: 'mining' },
-                { id: 'chaos_mercenary', name: '마경 용병단', price: 1300, change: 0, volume: 0, sector: 'military' }
-            ]
-        },
-        creation_temple: {
-            name: '🏛️ 창조의 신전',
-            companies: [
-                { id: 'creation_tech', name: '창조 기술원', price: 2000, change: 0, volume: 0, sector: 'technology' },
-                { id: 'divine_service', name: '신성 서비스', price: 1600, change: 0, volume: 0, sector: 'service' }
-            ]
-        }
-    },
-    
-    // 전 지역 체인 기업들
-    chains: [
-        { id: 'potion_shop', name: '만능 포션샵', price: 900, change: 0, volume: 0, sector: 'retail' },
-        { id: 'weapon_store', name: '범용 무기고', price: 1000, change: 0, volume: 0, sector: 'retail' },
-        { id: 'adventure_tailor', name: '모험가 의상실', price: 750, change: 0, volume: 0, sector: 'retail' },
-        { id: 'general_store', name: '만물상 마트', price: 600, change: 0, volume: 0, sector: 'retail' },
-        { id: 'traveler_inn', name: '여행자 여관', price: 800, change: 0, volume: 0, sector: 'hospitality' }
-    ],
-
-    // NPC 감정 상태
-    npc_emotions: {
-        villagers: { happiness: 50, stress: 30, excitement: 40 },
-        merchants: { greed: 60, satisfaction: 45, anxiety: 35 },
-        scammers: { confidence: 70, suspicion: 20, desperation: 40 },
-        travelers: { wanderlust: 80, homesickness: 25, curiosity: 90 }
-    },
-
-    // 글로벌 시장 상태
-    market_state: {
-        overall_trend: 0, // -100 to +100
-        volatility: 30, // 0 to 100
-        player_actions: {
-            total_enhancement_attempts: 0,
-            successful_enhancements: 0,
-            legendary_crafts: 0,
-            shop_purchases: 0,
-            hunt_sessions: 0
-        }
-    },
-    
-    // 실시간 차트 데이터 (최대 50개 데이터포인트)
-    chart_history: {
-        timestamps: [],
-        market_index: [], // 전체 시장 지수
-        top_companies: {} // 주요 기업별 가격 히스토리
-    }
-};
 
 // 혁신적인 이벤트 시스템
 const MARKET_EVENTS = [
@@ -1774,11 +1470,11 @@ setInterval(() => {
 // 초기 차트 데이터 생성
 updateChartData();
 
-// 임시: 차트 데이터 빠르게 채우기 (개발용)
+// 임시: 차트 데이터 빠르게 채우기 (개발용) - 메모리 최적화
 function fillChartDataForDevelopment() {
     console.log('차트 데이터 초기화 중...');
-    // 최근 1시간 데이터를 시뮬레이션 (5분 간격으로 12개)
-    for (let i = 0; i < 12; i++) {
+    // 최근 30분 데이터를 시뮬레이션 (5분 간격으로 6개로 감소)
+    for (let i = 0; i < 6; i++) {
         updateStockPrices();
         updateChartData();
     }
@@ -2029,7 +1725,7 @@ class BettingRaceSystem {
     }
     
     // 레이싱 GIF 생성
-    async createRaceGIF(racers, finalResults = null) {
+    async createRaceGIF(racers, finalResults = null, raceFrames = null) {
         console.log(`🏁 GIF 생성 시작: ${racers.length}명 레이서, 최종결과: ${finalResults}`);
         const startTime = Date.now();
         
@@ -2242,42 +1938,56 @@ class BettingRaceSystem {
                         // 애니메이션 진행 (랜덤하지만 3등까지 확실히 도착)
                         const frameProgress = frame / this.frameCount;
                         
-                        // 각 레이서의 기본 속도 (약간의 차이)
-                        if (!racer.fixedSpeed) {
-                            racer.fixedSpeed = Math.random() * 1.2 + 0.7; // 0.7-1.9 범위
-                        }
-                        
-                        // 랜덤성 추가 (재미를 위해!)
-                        const mainRandomness = Math.sin(frame * 0.1 + i) * 0.08; // 큰 랜덤성
-                        const microRandomness = (Math.random() - 0.5) * 0.05; // 미세한 랜덤성
-                        const totalRandomness = mainRandomness + microRandomness;
-                        
-                        // 기본 진행률 계산
-                        let baseProgress = frameProgress * 0.85; // 85% 기본 진행
-                        const speedMultiplier = racer.fixedSpeed;
-                        
-                        progress = Math.min(
-                            (baseProgress + totalRandomness) * speedMultiplier * 100,
-                            100
-                        );
-                        
-                        // 각 레이서 위치 업데이트
-                        racer.currentProgress = progress;
-                        
-                        // 후반부에서 뒤처진 레이서들 부스트 (3등까지 보장하되 랜덤성 유지)
-                        if (frame >= this.frameCount * 0.8) {
-                            const currentRanking = [...sortedRacers]
-                                .map(r => ({ ...r, currentProgress: r.currentProgress || 0 }))
-                                .sort((a, b) => b.currentProgress - a.currentProgress);
+                        // 실제 레이스 데이터가 있으면 사용, 없으면 기존 로직
+                        if (raceFrames && raceFrames.length > 0) {
+                            // 실제 레이스 프레임에서 해당 프레임의 데이터 찾기
+                            const frameIndex = Math.floor((frame / this.frameCount) * raceFrames.length);
+                            const currentFrame = raceFrames[Math.min(frameIndex, raceFrames.length - 1)];
                             
-                            const currentPosition = currentRanking.findIndex(r => r.userId === racer.userId) + 1;
+                            if (currentFrame) {
+                                const racerData = currentFrame.players.find(p => p.userId === racer.userId);
+                                if (racerData) {
+                                    progress = racerData.position;
+                                    racer.currentProgress = progress;
+                                } else {
+                                    progress = 0;
+                                }
+                            } else {
+                                progress = 0;
+                            }
+                        } else {
+                            // 기존 랜덤 로직 (백업용)
+                            if (!racer.fixedSpeed) {
+                                racer.fixedSpeed = Math.random() * 1.2 + 0.7;
+                            }
                             
-                            // 4위 이하인 레이서들에게만 부스트 (상위 3명은 자연스럽게)
-                            if (currentPosition > 3) {
-                                const boostProgress = (frame - this.frameCount * 0.8) / (this.frameCount * 0.2);
-                                const boost = boostProgress * 12; // 점진적 부스트
-                                progress = Math.min(progress + boost, 100);
-                                racer.currentProgress = progress;
+                            const mainRandomness = Math.sin(frame * 0.1 + i) * 0.08;
+                            const microRandomness = (Math.random() - 0.5) * 0.05;
+                            const totalRandomness = mainRandomness + microRandomness;
+                            
+                            let baseProgress = frameProgress * 0.85;
+                            const speedMultiplier = racer.fixedSpeed;
+                            
+                            progress = Math.min(
+                                (baseProgress + totalRandomness) * speedMultiplier * 100,
+                                100
+                            );
+                            
+                            racer.currentProgress = progress;
+                            
+                            if (frame >= this.frameCount * 0.8) {
+                                const currentRanking = [...sortedRacers]
+                                    .map(r => ({ ...r, currentProgress: r.currentProgress || 0 }))
+                                    .sort((a, b) => b.currentProgress - a.currentProgress);
+                                
+                                const currentPosition = currentRanking.findIndex(r => r.userId === racer.userId) + 1;
+                                
+                                if (currentPosition > 3) {
+                                    const boostProgress = (frame - this.frameCount * 0.8) / (this.frameCount * 0.2);
+                                    const boost = boostProgress * 12;
+                                    progress = Math.min(progress + boost, 100);
+                                    racer.currentProgress = progress;
+                                }
                             }
                         }
                     }
@@ -2752,8 +2462,8 @@ class BettingRaceSystem {
             // 레이싱 GIF 생성 및 표시
             if (channel) {
                 try {
-                    // 레이싱 애니메이션 GIF 생성
-                    const raceGifBuffer = await this.createRaceGIF(players, false);
+                    // 레이싱 애니메이션 GIF 생성 (실제 레이스 데이터 사용)
+                    const raceGifBuffer = await this.createRaceGIF(players, false, raceFrames);
                     
                     if (raceGifBuffer) {
                         console.log('📤 GIF 전송 시작...');
@@ -2975,6 +2685,750 @@ class BettingRaceSystem {
 
 // 레이싱 시스템 인스턴스
 const raceSystem = new BettingRaceSystem();
+
+// 🐉 몬스터 배틀 아레나 시스템 클래스
+class MonsterBattleSystem {
+    constructor() {
+        this.gameStats = {
+            totalGames: 0,
+            recentNumbers: [], // 최근 100개 결과
+            hotNumbers: new Map(), // 숫자별 등장 횟수
+            biggestWins: [] // 최대 당첨 기록
+        };
+        this.activeGames = new Map(); // userId -> 게임 상태
+    }
+
+    // 몬스터 배틀 아레나 메인 메뉴
+    async showMonsterBattleMenu(interaction) {
+        const user = await User.findOne({ discordId: interaction.user.id });
+        if (!user) {
+            return interaction.reply({ content: '❌  등록되지 않은 사용자입니다.', flags: 64 });
+        }
+
+        const stats = user.oddEvenStats || {};
+        const winRate = stats.totalGames > 0 ? ((stats.wins / stats.totalGames) * 100).toFixed(1) : '0.0';
+
+        const embed = new EmbedBuilder()
+            .setTitle('🐉 몬스터 배틀 아레나 🐉')
+            .setDescription('**⚔️ 배틀 방식:** 1~100 레벨 몬스터가 랜덤 등장! 몬스터의 특성을 예측하여 승부!\n' +
+                '**✨ 다중 예측:** 여러 특성에 동시 예측 가능! (예: 홀수레벨+약한몬스터)\n\n' +
+                '**🎯 예측 옵션:**\n' +
+                '⚡ **홀수 레벨** (1,3,5,7...) - 보상 1.95배\n' +
+                '🌙 **짝수 레벨** (2,4,6,8...) - 보상 1.95배\n' +
+                '🐛 **약한 몬스터** (1~50레벨) - 보상 1.95배\n' +
+                '🐲 **강한 몬스터** (51~100레벨) - 보상 1.95배\n' +
+                '🍀 **세븐 배수 레벨** (7,14,21...) - 보상 13.0배\n' +
+                '💎 **정확한 레벨 예측** (1~100레벨) - 보상 99.0배\n\n' +
+                '**⚔️ 예시:** 레벨 42 오크가 등장!\n' +
+                '✅ 짝수 레벨 적중! ✅ 약한 몬스터 적중! ✅ 세븐 배수 적중!')
+            .addFields(
+                { name: '💰 현재 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                { name: '🎯 승률', value: `${winRate}%`, inline: true },
+                { name: '🔥 연승', value: `${stats.currentStreak || 0}회`, inline: true },
+                { name: '⚔️ 총 배틀', value: `${stats.totalGames || 0}회`, inline: true },
+                { name: '💎 최대 보상', value: `${(stats.biggestWin || 0).toLocaleString()}G`, inline: true },
+                { name: '📈 총 수익', value: `${((stats.totalWinnings || 0) - (stats.totalBets || 0)).toLocaleString()}G`, inline: true }
+            )
+            .setColor('#FFD700');
+
+        // 최근 몬스터 등장 기록
+        if (this.gameStats.recentNumbers.length > 0) {
+            const recent = this.gameStats.recentNumbers.slice(-10).reverse();
+            embed.addFields({
+                name: '👹 최근 등장 몬스터',
+                value: recent.map(level => {
+                    const isOdd = level % 2 === 1;
+                    const isWeak = level <= 50;
+                    return `\`Lv.${level}\` ${isOdd ? '⚡' : '🌙'}${isWeak ? '🐛' : '🐲'}`;
+                }).join(' '),
+                inline: false
+            });
+        }
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('monster_battle')
+                    .setLabel('⚔️ 배틀 참가')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('monster_stats')
+                    .setLabel('📊 헌터 기록')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('monster_history')
+                    .setLabel('📜 배틀 기록')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('monster_ranking')
+                    .setLabel('🏆 헌터 랭킹')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+        await interaction.reply({ embeds: [embed], components: [row] });
+    }
+
+    // 베팅 메뉴 표시 (중복 베팅 지원)
+    async showBettingMenu(interaction) {
+        const user = await User.findOne({ discordId: interaction.user.id });
+        
+        // 현재 베팅 초기화 (새로운 베팅 시작)
+        if (!user.oddEvenStats) {
+            user.oddEvenStats = {};
+        }
+        if (!user.oddEvenStats.currentBets) {
+            user.oddEvenStats.currentBets = [];
+        }
+        
+        let description = `**현재 골드:** ${user.gold.toLocaleString()}G\n`;
+        description += `**최소 베팅:** ${MONSTER_BATTLE.betLimits.min.toLocaleString()}G | **최대 베팅:** ${(user.level >= 50 ? MONSTER_BATTLE.betLimits.vip_max : MONSTER_BATTLE.betLimits.max).toLocaleString()}G\n\n`;
+        
+        // 현재 베팅 목록 표시
+        if (user.oddEvenStats.currentBets && user.oddEvenStats.currentBets.length > 0) {
+            const totalBetAmount = user.oddEvenStats.currentBets.reduce((sum, bet) => sum + (bet.amount || 0), 0);
+            description += `**🎯 현재 베팅 목록:**\n`;
+            user.oddEvenStats.currentBets.forEach(bet => {
+                const option = MONSTER_BATTLE.betOptions[bet.betType];
+                const amount = bet.amount || 0;
+                const betInfo = bet.targetNumber ? 
+                    `${option?.emoji || '🎲'} ${option?.name || bet.betType} (${bet.targetNumber}) - ${amount.toLocaleString()}G` :
+                    `${option?.emoji || '🎲'} ${option?.name || bet.betType} - ${amount.toLocaleString()}G`;
+                description += `${betInfo}\n`;
+            });
+            description += `**💰 총 베팅금:** ${totalBetAmount.toLocaleString()}G\n\n`;
+            description += `**추가 베팅하거나 게임을 시작하세요!**`;
+        } else {
+            description += `**베팅할 옵션을 선택하세요:**\n*(여러 옵션에 중복 베팅 가능!)*`;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('🎲 베팅 선택 (중복 가능)')
+            .setDescription(description)
+            .setColor('#FF6B6B');
+
+        const row1 = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('bet_odd')
+                    .setLabel('🔥 홀 (1.95x)')
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('bet_even')
+                    .setLabel('❄️ 짝 (1.95x)')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('bet_small')
+                    .setLabel('🔻 소 (1.95x)')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('bet_big')
+                    .setLabel('🔺 대 (1.95x)')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        const row2 = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('bet_lucky7')
+                    .setLabel('🍀 7배수 (13x)')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('bet_jackpot')
+                    .setLabel('💎 정확한 숫자 (99x)')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+        // 베팅이 있을 때만 게임 시작/초기화 버튼 추가
+        if (user.oddEvenStats.currentBets && user.oddEvenStats.currentBets.length > 0) {
+            row2.addComponents(
+                new ButtonBuilder()
+                    .setCustomId('start_game')
+                    .setLabel('🎲 게임 시작!')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('clear_bets')
+                    .setLabel('🗑️ 베팅 초기화')
+                    .setStyle(ButtonStyle.Danger)
+            );
+        }
+
+        const row3 = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('oddeven_back')
+                    .setLabel('🔙 돌아가기')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        const components = user.oddEvenStats.currentBets?.length > 0 ? [row1, row2, row3] : [row1, row2, row3];
+        
+        // Modal submission은 update를 사용할 수 없으므로 reply 사용
+        if (interaction.isModalSubmit()) {
+            await interaction.reply({ embeds: [embed], components });
+        } else {
+            await interaction.update({ embeds: [embed], components });
+        }
+    }
+
+    // 개별 베팅 추가
+    async addBet(interaction, betType, betAmount, specificNumber = null) {
+        const user = await User.findOne({ discordId: interaction.user.id });
+        
+        // 최소 베팅 금액 확인
+        if (betAmount < MONSTER_BATTLE.betLimits.min) {
+            return interaction.reply({ 
+                content: `❌ 최소 베팅 금액은 ${MONSTER_BATTLE.betLimits.min.toLocaleString()}G 입니다!`, 
+                flags: 64 
+            });
+        }
+        
+        // 골드 확인
+        if (user.gold < betAmount) {
+            return interaction.reply({ 
+                content: `❌ 골드가 부족합니다! 현재: ${user.gold.toLocaleString()}G`, 
+                flags: 64 
+            });
+        }
+
+        // 베팅 한도 확인
+        const maxBet = user.level >= 50 ? MONSTER_BATTLE.betLimits.vip_max : MONSTER_BATTLE.betLimits.max;
+        if (betAmount > maxBet) {
+            return interaction.reply({ 
+                content: `❌ 최대 베팅 한도를 초과했습니다! 최대: ${maxBet.toLocaleString()}G`, 
+                flags: 64 
+            });
+        }
+
+        // 중복 베팅 확인 (같은 타입의 베팅이 이미 있는지)
+        if (!user.oddEvenStats) {
+            user.oddEvenStats = {};
+        }
+        if (!user.oddEvenStats.currentBets) {
+            user.oddEvenStats.currentBets = [];
+        }
+
+        const existingBet = user.oddEvenStats.currentBets.find(bet => bet.betType === betType);
+        if (existingBet) {
+            return interaction.reply({ 
+                content: `❌ 이미 ${MONSTER_BATTLE.betOptions[betType]?.name || betType}에 베팅했습니다!`, 
+                flags: 64 
+            });
+        }
+
+        // 베팅 추가
+        const newBet = {
+            betType,
+            amount: betAmount,
+            targetNumber: specificNumber,
+            timestamp: new Date()
+        };
+
+        user.oddEvenStats.currentBets.push(newBet);
+        await user.save();
+
+        // 베팅 메뉴 새로고침
+        await this.showBettingMenu(interaction);
+    }
+
+    // 중복 베팅 게임 실행
+    async playMultipleBets(interaction) {
+        const user = await User.findOne({ discordId: interaction.user.id });
+        
+        console.log('playMultipleBets - user.oddEvenStats:', user.oddEvenStats);
+        console.log('playMultipleBets - currentBets:', user.oddEvenStats?.currentBets);
+        
+        if (!user.oddEvenStats?.currentBets || user.oddEvenStats.currentBets.length === 0) {
+            return interaction.reply({ 
+                content: '❌ 베팅이 없습니다!', 
+                flags: 64 
+            });
+        }
+
+        // 총 베팅 금액 계산
+        const totalBetAmount = user.oddEvenStats.currentBets.reduce((sum, bet) => sum + (bet.amount || 0), 0);
+        
+        // 골드 확인
+        if (user.gold < totalBetAmount) {
+            return interaction.reply({ 
+                content: `❌ 골드가 부족합니다! 필요: ${totalBetAmount.toLocaleString()}G, 현재: ${user.gold.toLocaleString()}G`, 
+                flags: 64 
+            });
+        }
+
+        // 골드 차감
+        user.gold -= totalBetAmount;
+
+        // 랜덤 숫자 생성 (1-100)
+        const resultNumber = Math.floor(Math.random() * 100) + 1;
+        const isOdd = resultNumber % 2 === 1;
+        const isSmall = resultNumber <= 50;
+        const isLucky7 = resultNumber % 7 === 0;
+
+        // 각 베팅별로 당첨 확인
+        let totalPayout = 0;
+        const betResults = [];
+
+        for (const bet of user.oddEvenStats.currentBets) {
+            let won = false;
+            let multiplier = 0;
+
+            switch (bet.betType) {
+                case 'odd':
+                    won = isOdd;
+                    multiplier = MONSTER_BATTLE.betOptions.odd.multiplier;
+                    break;
+                case 'even':
+                    won = !isOdd;
+                    multiplier = MONSTER_BATTLE.betOptions.even.multiplier;
+                    break;
+                case 'small':
+                    won = isSmall;
+                    multiplier = MONSTER_BATTLE.betOptions.small.multiplier;
+                    break;
+                case 'big':
+                    won = !isSmall;
+                    multiplier = MONSTER_BATTLE.betOptions.big.multiplier;
+                    break;
+                case 'lucky7':
+                    won = isLucky7;
+                    multiplier = MONSTER_BATTLE.betOptions.lucky7.multiplier;
+                    break;
+                case 'jackpot':
+                    won = resultNumber === bet.targetNumber;
+                    multiplier = MONSTER_BATTLE.betOptions.jackpot.multiplier;
+                    break;
+            }
+
+            const payout = won ? Math.floor(bet.amount * multiplier) : 0;
+            totalPayout += payout;
+
+            betResults.push({
+                ...bet,
+                won,
+                payout,
+                multiplier
+            });
+        }
+
+        // 당첨금 지급
+        if (totalPayout > 0) {
+            user.gold += totalPayout;
+        }
+
+        // 통계 업데이트
+        this.updateMultipleBetStats(user, betResults, resultNumber, totalBetAmount, totalPayout);
+        this.updateGameStats(resultNumber, totalPayout, user.nickname);
+
+        // 베팅 목록 초기화
+        user.oddEvenStats.currentBets = [];
+        await user.save();
+
+        // 결과 표시
+        await this.showMultipleBetResult(interaction, {
+            user,
+            resultNumber,
+            betResults,
+            totalBetAmount,
+            totalPayout
+        });
+    }
+
+    // 단일 베팅 게임 실행 (기존 함수 - 호환성 유지)
+    async playGame(interaction, betType, betAmount, specificNumber = null) {
+        const user = await User.findOne({ discordId: interaction.user.id });
+        
+        // 골드 확인
+        if (user.gold < betAmount) {
+            return interaction.reply({ 
+                content: `❌ 골드가 부족합니다! 현재: ${user.gold.toLocaleString()}G`, 
+                flags: 64 
+            });
+        }
+
+        // 베팅 한도 확인
+        const maxBet = user.level >= 50 ? MONSTER_BATTLE.betLimits.vip_max : MONSTER_BATTLE.betLimits.max;
+        if (betAmount > maxBet) {
+            return interaction.reply({ 
+                content: `❌ 최대 베팅 한도를 초과했습니다! 최대: ${maxBet.toLocaleString()}G`, 
+                flags: 64 
+            });
+        }
+
+        // 골드 차감
+        user.gold -= betAmount;
+
+        // 랜덤 숫자 생성 (1-100)
+        const resultNumber = Math.floor(Math.random() * 100) + 1;
+        const isOdd = resultNumber % 2 === 1;
+        const isSmall = resultNumber <= 50;
+        const isLucky7 = resultNumber % 7 === 0;
+
+        // 특수 이벤트 확인
+        let specialEvent = null;
+        for (const event of MONSTER_BATTLE.specialEvents) {
+            if (Math.random() < event.probability) {
+                specialEvent = event;
+                break;
+            }
+        }
+
+        // 당첨 확인
+        let won = false;
+        let multiplier = 0;
+
+        switch (betType) {
+            case 'odd':
+                won = isOdd;
+                multiplier = MONSTER_BATTLE.betOptions.odd.multiplier;
+                break;
+            case 'even':
+                won = !isOdd;
+                multiplier = MONSTER_BATTLE.betOptions.even.multiplier;
+                break;
+            case 'small':
+                won = isSmall;
+                multiplier = MONSTER_BATTLE.betOptions.small.multiplier;
+                break;
+            case 'big':
+                won = !isSmall;
+                multiplier = MONSTER_BATTLE.betOptions.big.multiplier;
+                break;
+            case 'lucky7':
+                won = isLucky7;
+                multiplier = MONSTER_BATTLE.betOptions.lucky7.multiplier;
+                break;
+            case 'jackpot':
+                won = resultNumber === specificNumber;
+                multiplier = MONSTER_BATTLE.betOptions.jackpot.multiplier;
+                break;
+        }
+
+        // 연승 보너스 적용
+        let streakBonus = 0;
+        if (won && user.oddEvenStats?.currentStreak > 0) {
+            const streak = user.oddEvenStats.currentStreak;
+            for (const bonus of MONSTER_BATTLE.streakBonuses) {
+                if (streak >= bonus.streak) {
+                    streakBonus = bonus.bonus;
+                }
+            }
+        }
+
+        // 특수 이벤트 효과 적용
+        if (specialEvent && won) {
+            switch (specialEvent.effect.type) {
+                case 'multiply_payout':
+                    multiplier *= specialEvent.effect.value;
+                    break;
+                case 'chaos_result':
+                    won = Math.random() < 0.5; // 50% 확률로 재결정
+                    break;
+            }
+        }
+
+        // 최종 배율 계산
+        const finalMultiplier = multiplier * (1 + streakBonus);
+        const payout = won ? Math.floor(betAmount * finalMultiplier) : 0;
+        
+        if (won) {
+            user.gold += payout;
+        }
+
+        // 통계 업데이트
+        this.updateUserStats(user, betType, betAmount, won, payout, resultNumber);
+        this.updateGameStats(resultNumber, payout, user.nickname);
+
+        await user.save();
+
+        // 결과 표시
+        await this.showGameResult(interaction, {
+            user,
+            betType,
+            betAmount,
+            resultNumber,
+            won,
+            payout,
+            specialEvent,
+            streakBonus,
+            finalMultiplier
+        });
+    }
+
+    // 유저 통계 업데이트
+    updateUserStats(user, betType, betAmount, won, payout, resultNumber) {
+        if (!user.oddEvenStats) {
+            user.oddEvenStats = {
+                totalGames: 0,
+                totalBets: 0,
+                totalWinnings: 0,
+                wins: 0,
+                losses: 0,
+                currentStreak: 0,
+                longestWinStreak: 0,
+                longestLossStreak: 0,
+                biggestWin: 0,
+                biggestLoss: 0,
+                recentResults: []
+            };
+        }
+
+        const stats = user.oddEvenStats;
+        stats.totalGames++;
+        stats.totalBets += betAmount;
+        stats.lastPlayDate = new Date();
+
+        if (won) {
+            stats.wins++;
+            stats.totalWinnings += payout;
+            stats.currentStreak = stats.currentStreak > 0 ? stats.currentStreak + 1 : 1;
+            stats.longestWinStreak = Math.max(stats.longestWinStreak, stats.currentStreak);
+            stats.biggestWin = Math.max(stats.biggestWin, payout);
+        } else {
+            stats.losses++;
+            stats.currentStreak = stats.currentStreak < 0 ? stats.currentStreak - 1 : -1;
+            stats.longestLossStreak = Math.max(stats.longestLossStreak, Math.abs(stats.currentStreak));
+            stats.biggestLoss = Math.max(stats.biggestLoss, betAmount);
+        }
+
+        // 최근 결과 기록 (최대 10개)
+        stats.recentResults.unshift({
+            number: resultNumber,
+            bet: betType,
+            amount: betAmount,
+            won: won,
+            payout: payout,
+            date: new Date()
+        });
+
+        if (stats.recentResults.length > 10) {
+            stats.recentResults = stats.recentResults.slice(0, 10);
+        }
+    }
+
+    // 전체 게임 통계 업데이트
+    updateGameStats(resultNumber, payout, nickname) {
+        this.gameStats.totalGames++;
+        this.gameStats.recentNumbers.push(resultNumber);
+        
+        // 최근 100개만 유지
+        if (this.gameStats.recentNumbers.length > 100) {
+            this.gameStats.recentNumbers.shift();
+        }
+
+        // 핫 넘버 업데이트
+        const count = this.gameStats.hotNumbers.get(resultNumber) || 0;
+        this.gameStats.hotNumbers.set(resultNumber, count + 1);
+
+        // 대박 당첨 기록
+        if (payout > 100000) {
+            this.gameStats.biggestWins.push({
+                amount: payout,
+                user: nickname,
+                date: new Date()
+            });
+            // 최대 10개만 유지
+            this.gameStats.biggestWins.sort((a, b) => b.amount - a.amount);
+            if (this.gameStats.biggestWins.length > 10) {
+                this.gameStats.biggestWins = this.gameStats.biggestWins.slice(0, 10);
+            }
+        }
+    }
+
+    // 게임 결과 표시
+    async showGameResult(interaction, gameData) {
+        const { user, betType, betAmount, resultNumber, won, payout, specialEvent, streakBonus, finalMultiplier } = gameData;
+        
+        const isOdd = resultNumber % 2 === 1;
+        const isSmall = resultNumber <= 50;
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎲 홀짝 게임 결과 🎲')
+            .setDescription(`**결과 숫자: \`${resultNumber}\`**\n${isOdd ? '🔥 홀' : '❄️ 짝'} | ${isSmall ? '🔻 소' : '🔺 대'}`)
+            .addFields(
+                { name: '🎯 베팅', value: `${MONSTER_BATTLE.betOptions[betType]?.name || betType} - ${betAmount.toLocaleString()}G`, inline: true },
+                { name: '📊 결과', value: won ? '🎉 당첨!' : '😭 꽝!', inline: true },
+                { name: '💰 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+            )
+            .setColor(won ? '#00FF00' : '#FF0000');
+
+        if (won) {
+            embed.addFields(
+                { name: '💎 당첨금', value: `${payout.toLocaleString()}G`, inline: true },
+                { name: '📈 배율', value: `${finalMultiplier.toFixed(2)}x`, inline: true },
+                { name: '🔥 연승', value: `${user.oddEvenStats.currentStreak}회`, inline: true }
+            );
+        }
+
+        if (specialEvent) {
+            embed.addFields({
+                name: `✨ ${specialEvent.name}`,
+                value: specialEvent.description,
+                inline: false
+            });
+        }
+
+        if (streakBonus > 0) {
+            embed.addFields({
+                name: '🔥 연승 보너스',
+                value: `+${(streakBonus * 100).toFixed(0)}% 배율 증가!`,
+                inline: false
+            });
+        }
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('oddeven_play_again')
+                    .setLabel('🎲 다시하기')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('oddeven_main')
+                    .setLabel('🌲 몬스터 메뉴')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('game_page_1')
+                    .setLabel('🏠 게임 메인')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+        // Interaction 상태에 따라 적절히 응답
+        if (interaction.replied || interaction.deferred) {
+            await interaction.editReply({ embeds: [embed], components: [row] });
+        } else {
+            await interaction.update({ embeds: [embed], components: [row] });
+        }
+    }
+
+    // 중복 베팅 통계 업데이트
+    updateMultipleBetStats(user, betResults, resultNumber, totalBetAmount, totalPayout) {
+        if (!user.oddEvenStats) {
+            user.oddEvenStats = {
+                totalGames: 0,
+                totalBets: 0,
+                totalWinnings: 0,
+                wins: 0,
+                losses: 0,
+                currentStreak: 0,
+                longestWinStreak: 0,
+                longestLossStreak: 0,
+                biggestWin: 0,
+                biggestLoss: 0,
+                recentResults: []
+            };
+        }
+
+        const stats = user.oddEvenStats;
+        stats.totalGames++;
+        stats.totalBets += totalBetAmount;
+        stats.lastPlayDate = new Date();
+
+        const hasWin = betResults.some(bet => bet.won);
+        
+        if (hasWin) {
+            stats.wins++;
+            stats.totalWinnings += totalPayout;
+            stats.currentStreak = stats.currentStreak > 0 ? stats.currentStreak + 1 : 1;
+            stats.longestWinStreak = Math.max(stats.longestWinStreak, stats.currentStreak);
+            stats.biggestWin = Math.max(stats.biggestWin, totalPayout);
+        } else {
+            stats.losses++;
+            stats.currentStreak = stats.currentStreak < 0 ? stats.currentStreak - 1 : -1;
+            stats.longestLossStreak = Math.max(stats.longestLossStreak, Math.abs(stats.currentStreak));
+            stats.biggestLoss = Math.max(stats.biggestLoss, totalBetAmount);
+        }
+
+        // 최근 결과 기록 (최대 10개)
+        stats.recentResults.unshift({
+            number: resultNumber,
+            bet: 'multiple',
+            amount: totalBetAmount,
+            won: hasWin,
+            payout: totalPayout,
+            date: new Date()
+        });
+
+        if (stats.recentResults.length > 10) {
+            stats.recentResults = stats.recentResults.slice(0, 10);
+        }
+    }
+
+    // 중복 베팅 결과 표시
+    async showMultipleBetResult(interaction, gameData) {
+        const { user, resultNumber, betResults, totalBetAmount, totalPayout } = gameData;
+        
+        const isOdd = resultNumber % 2 === 1;
+        const isSmall = resultNumber <= 50;
+        const isLucky7 = resultNumber % 7 === 0;
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎲 홀짝 게임 결과 (중복 베팅) 🎲')
+            .setDescription(`**결과 숫자: \`${resultNumber}\`**\n${isOdd ? '🔥 홀' : '❄️ 짝'} | ${isSmall ? '🔻 소' : '🔺 대'} | ${isLucky7 ? '🍀 7배수' : ''}`)
+            .addFields(
+                { name: '💰 총 베팅금', value: `${totalBetAmount.toLocaleString()}G`, inline: true },
+                { name: '💎 총 당첨금', value: `${totalPayout.toLocaleString()}G`, inline: true },
+                { name: '📈 수익', value: `${(totalPayout - totalBetAmount).toLocaleString()}G`, inline: true }
+            )
+            .setColor(totalPayout > 0 ? '#00FF00' : '#FF0000');
+
+        // 각 베팅별 결과 표시
+        let betResultText = '';
+        betResults.forEach(bet => {
+            const option = MONSTER_BATTLE.betOptions[bet.betType];
+            const emoji = bet.won ? '✅' : '❌';
+            const amount = bet.amount || 0;
+            const payout = bet.payout || 0;
+            
+            const betInfo = bet.targetNumber ? 
+                `${emoji} ${option?.emoji || '🎲'} ${option?.name || bet.betType} (${bet.targetNumber}) - ${amount.toLocaleString()}G` :
+                `${emoji} ${option?.emoji || '🎲'} ${option?.name || bet.betType} - ${amount.toLocaleString()}G`;
+            
+            if (bet.won) {
+                betResultText += `${betInfo} → **${payout.toLocaleString()}G 당첨!**\n`;
+            } else {
+                betResultText += `${betInfo}\n`;
+            }
+        });
+
+        embed.addFields({
+            name: '🎯 베팅 결과',
+            value: betResultText || '베팅 없음',
+            inline: false
+        });
+
+        embed.addFields(
+            { name: '💰 현재 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+            { name: '🔥 연승', value: `${user.oddEvenStats.currentStreak || 0}회`, inline: true },
+            { name: '🎯 승률', value: `${user.oddEvenStats.totalGames > 0 ? ((user.oddEvenStats.wins / user.oddEvenStats.totalGames) * 100).toFixed(1) : '0.0'}%`, inline: true }
+        );
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('oddeven_bet')
+                    .setLabel('🎲 다시 베팅')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('oddeven_main')
+                    .setLabel('🌲 몬스터 메뉴')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('game_page_1')
+                    .setLabel('🏠 게임 메인')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+        // Interaction 상태에 따라 적절히 응답
+        if (interaction.replied || interaction.deferred) {
+            await interaction.editReply({ embeds: [embed], components: [row] });
+        } else {
+            await interaction.update({ embeds: [embed], components: [row] });
+        }
+    }
+}
+
+// 몬스터 배틀 아레나 시스템 인스턴스
+const monsterBattle = new MonsterBattleSystem();
+const oddEvenGame = monsterBattle;
 
 // PVP 시스템 클래스
 class PVPSystem {
@@ -4588,22 +5042,32 @@ function calculateCombatPower(user) {
     let equipmentBonus = 0;
     let starforceBonus = 0;
     
-    // 각 장비슬롯별 계산
+    // 각 장비슬롯별 계산 (새로운 시스템)
     Object.entries(user.equipment).forEach(([slot, equipment]) => {
-        if (equipment) {
+        if (equipment && typeof equipment === 'object' && equipment.stats) {
             // 기본 장비 스탯
-            const attack = equipment.stats.attack || 0;
-            const defense = equipment.stats.defense || 0;
-            equipmentBonus += attack + defense;
+            const attack = equipment.stats?.attack || 0;
+            const defense = equipment.stats?.defense || 0;
+            const dodge = equipment.stats?.dodge || 0;
+            const luck = equipment.stats?.luck || 0;
+            
+            const itemBonus = attack + defense + dodge + luck;
+            equipmentBonus += itemBonus;
+            
+            console.log(`장비 ${slot}: ${equipment.name} - 스탯 보너스: ${itemBonus} (공격: ${attack}, 방어: ${defense}, 회피: ${dodge}, 행운: ${luck})`);
             
             // 스타포스 보너스 계산
             if (equipment.enhanceLevel > 0) {
-                const itemLevel = ITEM_LEVELS[equipment.setName] || ITEM_LEVELS[equipment.name] || equipment.level || 1;
+                const itemLevel = equipment.level || 1;
                 const bonus = calculateStarforceBonus(itemLevel, equipment.enhanceLevel);
-                starforceBonus += bonus.attack + bonus.defense;
+                const enhanceBonus = (bonus.attack || 0) + (bonus.defense || 0);
+                starforceBonus += enhanceBonus;
+                console.log(`강화 보너스: ${enhanceBonus} (+${equipment.enhanceLevel}성)`);
             }
         }
     });
+    
+    console.log(`전투력 계산 - 기본: ${basePower}, 장비: ${equipmentBonus}, 강화: ${starforceBonus}, 레벨: ${user.level * 5}`);
     
     // 레벨 보너스
     let levelBonus = user.level * 5;
@@ -4977,7 +5441,11 @@ const commands = [
     
     new SlashCommandBuilder()
         .setName('융합수동')
-        .setDescription('🎯 특정 단계의 조각을 선택하여 수동으로 융합합니다')
+        .setDescription('🎯 특정 단계의 조각을 선택하여 수동으로 융합합니다'),
+    
+    new SlashCommandBuilder()
+        .setName('홀짝')
+        .setDescription('🎲 홀짝 게임을 플레이합니다')
 ];
 
 // 봇이 준비되었을 때
@@ -6810,6 +7278,17 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
         }
         
+        else if (commandName === '홀짝') {
+            const user = await getUser(interaction.user.id);
+            
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+
+            await oddEvenGame.showMonsterBattleMenu(interaction);
+        }
+        
     } catch (error) {
         console.error('명령어 처리 오류:', error);
         try {
@@ -6826,7 +7305,16 @@ client.on('interactionCreate', async (interaction) => {
 
 // 버튼 클릭 및 선택 메뉴 처리
 client.on('interactionCreate', async (interaction) => {
+    // 모든 버튼 클릭을 로깅
+    if (interaction.isButton()) {
+        console.log(`🔴 버튼 클릭됨: ${interaction.customId}`);
+    }
+    
     if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+    
+    if (interaction.customId && interaction.customId.includes('equip')) {
+        console.log(`🟢 첫 번째 핸들러에서 equip 처리: ${interaction.customId}`);
+    }
 
     // 개발 모드에서 채널 제한
     if (DEV_MODE && DEV_CHANNEL_IDS.length > 0 && !DEV_CHANNEL_IDS.includes(interaction.channelId)) {
@@ -8540,7 +9028,6 @@ client.on('interactionCreate', async (interaction) => {
             let purchaseAttachment = null;
             const gifPath = path.join(__dirname, 'resource', purchaseGif);
             try {
-                const fs = require('fs');
                 if (fs.existsSync(gifPath)) {
                     purchaseAttachment = new AttachmentBuilder(gifPath, { name: purchaseGif });
                 }
@@ -8619,7 +9106,6 @@ client.on('interactionCreate', async (interaction) => {
             if (gachaGif) {
                 const gachaPath = path.join(__dirname, 'resource', gachaGif);
                 try {
-                    const fs = require('fs');
                     if (fs.existsSync(gachaPath)) {
                         gachaAttachment = new AttachmentBuilder(gachaPath, { name: gachaGif });
                     }
@@ -8872,10 +9358,19 @@ client.on('interactionCreate', async (interaction) => {
             let itemList = '';
             currentItems.forEach((item, index) => {
                 const globalIndex = startIndex + index;
-                const isEquipped = user.equipment[item.type] && user.equipment[item.type].id === item.id;
+                
+                // 더 안전한 장착 상태 확인
+                let isEquipped = false;
+                if (user.equipment && user.equipment[item.type]) {
+                    const equippedItem = user.equipment[item.type];
+                    if (typeof equippedItem === 'object' && equippedItem.id) {
+                        isEquipped = (equippedItem.id === item.id);
+                    }
+                }
+                
                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
                 
-                itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? '🔴' : ''}\n`;
+                itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                 itemList += `등급: ${item.rarity} | 수량: x${item.quantity}\n`;
                 
                 // 장비 아이템인 경우 스탯 표시
@@ -8902,8 +9397,22 @@ client.on('interactionCreate', async (interaction) => {
             const itemButtons = new ActionRowBuilder();
             currentItems.forEach((item, index) => {
                 const globalIndex = startIndex + index;
-                const isEquipped = user.equipment[item.type] && user.equipment[item.type].id === item.id;
+                
+                console.log(`아이템 ${item.name} (${item.id}) - type: ${item.type}`);
+                console.log(`현재 장착된 ${item.type}:`, user.equipment[item.type]);
+                
+                // 더 안전한 장착 상태 확인
+                let isEquipped = false;
+                if (user.equipment && user.equipment[item.type]) {
+                    const equippedItem = user.equipment[item.type];
+                    if (typeof equippedItem === 'object' && equippedItem.id) {
+                        isEquipped = (equippedItem.id === item.id);
+                    }
+                }
+                
                 const isEquipment = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(item.type);
+                
+                console.log(`${item.name} - isEquipped: ${isEquipped}, equippedId: ${user.equipment[item.type]?.id || 'none'}`);
                 
                 itemButtons.addComponents(
                     new ButtonBuilder()
@@ -8965,15 +9474,25 @@ client.on('interactionCreate', async (interaction) => {
         
         // 인벤토리 아이템 사용/장착 처리
         else if (interaction.customId.startsWith('inv_use_')) {
-            const parts = interaction.customId.split('_');
-            const itemId = parts[2];
-            const category = parts[3];
-            const currentPage = parseInt(parts[4]);
+            console.log('=== inv_use 핸들러 진입 ===');
+            
+            // customId 파싱: inv_use_{itemId}_{category}_{currentPage}
+            // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
+            const customId = interaction.customId;
+            const parts = customId.split('_');
+            const currentPage = parseInt(parts[parts.length - 1]); // 마지막 부분
+            const category = parts[parts.length - 2]; // 마지막에서 두 번째 부분
+            const itemId = parts.slice(2, parts.length - 2).join('_'); // 나머지 부분들을 합쳐서 itemId
+            
+            console.log(`inv_use - itemId: ${itemId}, category: ${category}`);
+            console.log(`사용자 인벤토리 아이템 수: ${user.inventory.length}`);
             
             const inventoryItem = user.inventory.find(inv => inv.id === itemId);
             
             if (!inventoryItem) {
-                await interaction.reply({ content: '해당 아이템을 찾을 수 없습니다!', flags: 64 });
+                console.log(`inv_use에서 아이템을 찾을 수 없음 - 요청된 ID: ${itemId}`);
+                console.log('인벤토리 아이템 IDs:', user.inventory.map((inv, idx) => `${idx}: ${inv.name}: ${inv.id || 'NO_ID'}`));
+                await interaction.reply({ content: `해당 아이템을 찾을 수 없습니다! (ID: ${itemId})`, flags: 64 });
                 return;
             }
             
@@ -8994,9 +9513,30 @@ client.on('interactionCreate', async (interaction) => {
                     return;
                 }
 
-                // 장착 처리
+                // 장착 전 전투력 계산
+                const prevCombatPower = calculateCombatPower(user);
+                
+                // 이전에 장착된 아이템이 있다면 인벤토리에 다시 추가
+                if (user.equipment[inventoryItem.type]) {
+                    const previousItem = user.equipment[inventoryItem.type];
+                    if (typeof previousItem === 'object' && previousItem.id) {
+                        // 이전 장착 아이템을 인벤토리에 추가
+                        user.inventory.push(previousItem);
+                    }
+                }
+                
+                // 장착 처리 - 아이템을 장비 슬롯에 설정
                 user.equipment[inventoryItem.type] = inventoryItem;
+                
+                // 인벤토리에서 장착한 아이템 제거
+                user.inventory = user.inventory.filter(item => item.id !== inventoryItem.id);
+                
                 await user.save();
+                
+                // 장착 후 전투력 계산
+                const newCombatPower = calculateCombatPower(user);
+                const powerChange = newCombatPower - prevCombatPower;
+                const changeText = powerChange > 0 ? `(+${powerChange})` : powerChange < 0 ? `(${powerChange})` : '(변화 없음)';
 
                 const equipEmbed = new EmbedBuilder()
                     .setColor('#00ff00')
@@ -9005,12 +9545,36 @@ client.on('interactionCreate', async (interaction) => {
                     .addFields(
                         { name: '착용한 아이템', value: `${inventoryItem.name}${inventoryItem.enhanceLevel > 0 ? ` (+${inventoryItem.enhanceLevel}성)` : ''}`, inline: true },
                         { name: '아이템 등급', value: inventoryItem.rarity, inline: true },
-                        { name: '새로운 전투력', value: calculateCombatPower(user).toLocaleString(), inline: true }
+                        { name: '변화된 전투력', value: `${prevCombatPower.toLocaleString()} → ${newCombatPower.toLocaleString()} ${changeText}`, inline: true }
                     );
 
-                await interaction.reply({
+                // 돌아가기 버튼들
+                // category를 올바른 형태로 변환 (weapons → weapon)
+                const categoryMap = {
+                    'weapons': 'weapon',
+                    'armor': 'armor', 
+                    'helmets': 'helmet',
+                    'gloves': 'gloves',
+                    'boots': 'boots',
+                    'accessories': 'accessory'
+                };
+                const equipCategory = categoryMap[category] || inventoryItem.type;
+                
+                const backButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`equip_category_${equipCategory}`)
+                            .setLabel('🔙 해당 카테고리로 돌아가기')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('inventory')
+                            .setLabel('🏠 인벤토리 메인으로 돌아가기')
+                            .setStyle(ButtonStyle.Primary)
+                    );
+
+                await interaction.update({
                     embeds: [equipEmbed],
-                    flags: 64
+                    components: [backButtons]
                 });
             } else {
                 // 소비 아이템 사용
@@ -9025,6 +9589,60 @@ client.on('interactionCreate', async (interaction) => {
                     flags: 64 
                 });
             }
+        }
+        
+        // 장비 해제 처리
+        else if (interaction.customId.startsWith('unequip_')) {
+            const equipSlot = interaction.customId.replace('unequip_', '');
+            
+            if (!user.equipment[equipSlot] || typeof user.equipment[equipSlot] !== 'object') {
+                await interaction.reply({ content: '해제할 장비가 없습니다!', flags: 64 });
+                return;
+            }
+            
+            // 해제 전 전투력 계산
+            const prevCombatPower = calculateCombatPower(user);
+            
+            // 장착된 아이템을 인벤토리에 다시 추가
+            const unequippedItem = user.equipment[equipSlot];
+            user.inventory.push(unequippedItem);
+            
+            // 장비 슬롯 비우기
+            user.equipment[equipSlot] = null;
+            await user.save();
+            
+            // 해제 후 전투력 계산
+            const newCombatPower = calculateCombatPower(user);
+            const powerChange = newCombatPower - prevCombatPower;
+            const changeText = powerChange > 0 ? `(+${powerChange})` : powerChange < 0 ? `(${powerChange})` : '(변화 없음)';
+            
+            const unequipEmbed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle('🔓 장비 해제 완료!')
+                .setDescription(`**${unequippedItem.name}**을(를) 해제했습니다!`)
+                .addFields(
+                    { name: '해제한 아이템', value: `${unequippedItem.name}${unequippedItem.enhanceLevel > 0 ? ` (+${unequippedItem.enhanceLevel}성)` : ''}`, inline: true },
+                    { name: '아이템 등급', value: unequippedItem.rarity, inline: true },
+                    { name: '변화된 전투력', value: `${prevCombatPower.toLocaleString()} → ${newCombatPower.toLocaleString()} ${changeText}`, inline: true }
+                );
+
+            // 돌아가기 버튼들 (장비 해제는 장비 메뉴에서 진행되므로)
+            const backButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('equipment')
+                        .setLabel('🔙 장비 메뉴로 돌아가기')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('game_page_1')
+                        .setLabel('🏠 게임 메인으로 돌아가기')
+                        .setStyle(ButtonStyle.Primary)
+                );
+
+            await interaction.update({
+                embeds: [unequipEmbed],
+                components: [backButtons]
+            });
         }
         
         // 인벤토리 카테고리 페이지네이션 처리
@@ -9106,7 +9724,7 @@ client.on('interactionCreate', async (interaction) => {
                     const isEquipped = user.equipment[item.type] && user.equipment[item.type].id === item.id;
                     const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
                     
-                    itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? '🔴' : ''}\n`;
+                    itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                     itemList += `등급: ${item.rarity} | 수량: x${item.quantity}\n`;
                     
                     // 장비 아이템인 경우 스탯 표시
@@ -9232,7 +9850,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setImage('attachment://kim_equipment.gif')
                 .addFields(
                     { name: '⚔️ 무기', value: user.equipment.weapon ? `${user.equipment.weapon.name}${user.equipment.weapon.enhanceLevel > 0 ? ` (+${user.equipment.weapon.enhanceLevel}성)` : ''}\n공격력: +${user.equipment.weapon.stats.attack}` : '없음', inline: true },
-                    { name: '🛡️ 갑옷', value: user.equipment.armor ? `${user.equipment.armor.name}${user.equipment.armor.enhanceLevel > 0 ? ` (+${user.equipment.armor.enhanceLevel}성)` : ''}\n방어력: +${user.equipment.armor.stats.defense}` : '없음', inline: true },
+                    { name: '🛡️ 갑옷', value: user.equipment.armor ? `${user.equipment.armor.name}${user.equipment.armor.enhanceLevel > 0 ? ` (+${user.equipment.armor.enhanceLevel}성)` : ''}\n방어력: +${user.equipment.armor.stats?.defense || 0}` : '없음', inline: true },
                     { name: '⛑️ 헬멧', value: user.equipment.helmet ? `${user.equipment.helmet.name}${user.equipment.helmet.enhanceLevel > 0 ? ` (+${user.equipment.helmet.enhanceLevel}성)` : ''}` : '없음', inline: true },
                     { name: '🧤 장갑', value: user.equipment.gloves ? `${user.equipment.gloves.name}${user.equipment.gloves.enhanceLevel > 0 ? ` (+${user.equipment.gloves.enhanceLevel}성)` : ''}` : '없음', inline: true },
                     { name: '👢 부츠', value: user.equipment.boots ? `${user.equipment.boots.name}${user.equipment.boots.enhanceLevel > 0 ? ` (+${user.equipment.boots.enhanceLevel}성)` : ''}` : '없음', inline: true },
@@ -9272,9 +9890,30 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Primary)
                 );
 
+            // 장착된 아이템 해제 버튼들
+            const unequipButtons = new ActionRowBuilder();
+            const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+            const buttonLabels = ['⚔️', '🛡️', '⛑️', '🧤', '👢', '💎'];
+            
+            equipmentSlots.forEach((slot, index) => {
+                if (user.equipment[slot] && typeof user.equipment[slot] === 'object') {
+                    unequipButtons.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`unequip_${slot}`)
+                            .setLabel(`${buttonLabels[index]} 해제`)
+                            .setStyle(ButtonStyle.Danger)
+                    );
+                }
+            });
+
+            const components = [categoryButtons, categoryButtons2];
+            if (unequipButtons.components.length > 0) {
+                components.push(unequipButtons);
+            }
+
             await interaction.reply({ 
                 embeds: [equipmentEmbed], 
-                components: [categoryButtons, categoryButtons2],
+                components: components,
                 files: [equipmentAttachment],
                 flags: 64 
             });
@@ -9302,6 +9941,9 @@ client.on('interactionCreate', async (interaction) => {
             const startIndex = currentPage * itemsPerPage;
             const currentItems = categoryItems.slice(startIndex, startIndex + itemsPerPage);
 
+            console.log(`${category} 카테고리 아이템 표시 - 총 ${categoryItems.length}개, 현재 페이지: ${currentPage + 1}`);
+            console.log('현재 페이지 아이템들:', currentItems.map((item, idx) => `${idx}: ${item.name} (ID: ${item.id || 'NO_ID'})`));
+
             // 카테고리 임베드 생성
             const categoryEmbed = new EmbedBuilder()
                 .setColor('#3498db')
@@ -9316,7 +9958,7 @@ client.on('interactionCreate', async (interaction) => {
                 const isEquipped = user.equipment[category] && user.equipment[category].id === item.id;
                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
                 
-                itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? '🔴' : ''}\n`;
+                itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                 itemList += `등급: ${item.rarity} | 레벨: ${item.level}\n`;
                 
                 // 스탯 표시
@@ -9339,11 +9981,27 @@ client.on('interactionCreate', async (interaction) => {
             const itemButtons = new ActionRowBuilder();
             currentItems.forEach((item, index) => {
                 const globalIndex = startIndex + index;
-                const isEquipped = user.equipment[category] && user.equipment[category].id === item.id;
+                const currentEquipped = user.equipment[category];
+                
+                // 장착 상태 확인 (호환성 고려)
+                let isEquipped = false;
+                if (currentEquipped) {
+                    if (typeof currentEquipped === 'object' && currentEquipped.id === item.id) {
+                        isEquipped = true;
+                    } else if (typeof currentEquipped === 'number') {
+                        const itemIndex = user.inventory.findIndex(inv => inv.id === item.id);
+                        isEquipped = (currentEquipped === itemIndex);
+                    }
+                }
+                
+                // 아이템 ID가 없으면 인덱스 사용
+                const itemIdentifier = item.id || (startIndex + index);
+                
+                console.log(`버튼 생성 - ${item.name}: itemIdentifier=${itemIdentifier}, customId=equip_item_${itemIdentifier}_${category}_${currentPage}`);
                 
                 itemButtons.addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`equip_item_${item.id}_${category}_${currentPage}`)
+                        .setCustomId(`equip_item_${itemIdentifier}_${category}_${currentPage}`)
                         .setLabel(`${globalIndex + 1}. ${item.name} 장착`)
                         .setStyle(isEquipped ? ButtonStyle.Success : ButtonStyle.Primary)
                         .setDisabled(isEquipped)
@@ -9395,21 +10053,75 @@ client.on('interactionCreate', async (interaction) => {
         
         // 장비 아이템 착용 처리
         else if (interaction.customId.startsWith('equip_item_')) {
-            const parts = interaction.customId.split('_');
-            const itemId = parts[2];
-            const category = parts[3];
-            const currentPage = parseInt(parts[4]);
+            console.log('=== 장착 핸들러 진입 ===');
             
-            const item = user.inventory.find(inv => inv.id === itemId);
+            // customId 파싱: equip_item_{itemId}_{category}_{currentPage}
+            // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
+            const customId = interaction.customId;
+            const parts = customId.split('_');
+            const currentPage = parseInt(parts[parts.length - 1]); // 마지막 부분
+            const category = parts[parts.length - 2]; // 마지막에서 두 번째 부분
+            const itemId = parts.slice(2, parts.length - 2).join('_'); // 나머지 부분들을 합쳐서 itemId
+            
+            console.log(`장착 시도 - itemId: ${itemId}, category: ${category}`);
+            console.log(`사용자 인벤토리 아이템 수: ${user.inventory.length}`);
+            
+            // 아이템 검색 - ID로 찾거나 없으면 인덱스로 찾기 (호환성)
+            let item = user.inventory.find(inv => inv.id === itemId);
+            
+            // ID로 찾지 못했을 경우, 인덱스로 시도 (기존 데이터 호환성)
             if (!item) {
-                await interaction.reply({ content: '해당 아이템을 찾을 수 없습니다!', flags: 64 });
+                const itemIndex = parseInt(itemId);
+                if (!isNaN(itemIndex) && itemIndex >= 0 && itemIndex < user.inventory.length) {
+                    item = user.inventory[itemIndex];
+                    console.log(`ID로 찾지 못해 인덱스 ${itemIndex}로 아이템 발견: ${item?.name}`);
+                }
+            }
+            
+            // 여전히 찾지 못한 경우, 이름으로 시도 (마지막 방법)
+            if (!item) {
+                // customId에서 카테고리 기반으로 해당 카테고리의 첫 번째 아이템 시도
+                const categoryItems = user.inventory.filter(inv => {
+                    if (category === 'weapon') return inv.type === 'weapon';
+                    if (category === 'armor') return inv.type === 'armor';
+                    if (category === 'helmet') return inv.type === 'helmet';
+                    if (category === 'gloves') return inv.type === 'gloves';
+                    if (category === 'boots') return inv.type === 'boots';
+                    if (category === 'accessory') return inv.type === 'accessory';
+                    return false;
+                });
+                
+                // 숫자라면 해당 순서의 아이템
+                const numericId = parseInt(itemId);
+                if (!isNaN(numericId) && numericId < categoryItems.length) {
+                    item = categoryItems[numericId];
+                    console.log(`카테고리별 인덱스 ${numericId}로 아이템 발견: ${item?.name}`);
+                }
+            }
+            
+            if (!item) {
+                console.log(`아이템을 찾을 수 없음 - 요청된 ID: ${itemId}`);
+                console.log('인벤토리 아이템 IDs:', user.inventory.map((inv, idx) => `${idx}: ${inv.name}: ${inv.id || 'NO_ID'}`));
+                await interaction.reply({ content: `해당 아이템을 찾을 수 없습니다! (ID: ${itemId})`, flags: 64 });
                 return;
             }
 
-            // 이미 착용 중인지 확인
-            if (user.equipment[category] && user.equipment[category].id === itemId) {
-                await interaction.reply({ content: '이미 착용 중인 아이템입니다!', flags: 64 });
-                return;
+            // 이미 착용 중인지 확인 (기존 데이터 호환성 고려)
+            const currentEquipped = user.equipment[category];
+            if (currentEquipped) {
+                // 새로운 방식 (아이템 객체)
+                if (typeof currentEquipped === 'object' && currentEquipped.id === itemId) {
+                    await interaction.reply({ content: '이미 착용 중인 아이템입니다!', flags: 64 });
+                    return;
+                }
+                // 기존 방식 (슬롯 번호) - 아이템 인덱스 비교
+                if (typeof currentEquipped === 'number') {
+                    const itemIndex = user.inventory.findIndex(inv => inv.id === itemId);
+                    if (currentEquipped === itemIndex) {
+                        await interaction.reply({ content: '이미 착용 중인 아이템입니다!', flags: 64 });
+                        return;
+                    }
+                }
             }
 
             // 레벨 확인
@@ -9432,11 +10144,25 @@ client.on('interactionCreate', async (interaction) => {
                 .addFields(
                     { name: '착용한 아이템', value: `${item.name}${item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : ''}`, inline: true },
                     { name: '아이템 등급', value: item.rarity, inline: true },
-                    { name: '새로운 전투력', value: calculateCombatPower(user).toLocaleString(), inline: true }
+                    { name: '새로운 전투력', value: `🔥 ${calculateCombatPower(user).toLocaleString()}`, inline: true }
+                );
+
+            // 완료 후 돌아가기 버튼들
+            const backButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('equipment')
+                        .setLabel('🔙 장비 메뉴로 돌아가기')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('game_page_1')
+                        .setLabel('🏠 게임 메인으로 돌아가기')
+                        .setStyle(ButtonStyle.Primary)
                 );
 
             await interaction.reply({
                 embeds: [equipEmbed],
+                components: [backButtons],
                 flags: 64
             });
         }
@@ -9484,7 +10210,7 @@ client.on('interactionCreate', async (interaction) => {
                     const isEquipped = user.equipment[category] && user.equipment[category].id === item.id;
                     const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}성)` : '';
                     
-                    itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? '🔴' : ''}\n`;
+                    itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
                     itemList += `등급: ${item.rarity} | 레벨: ${item.level}\n`;
                     
                     // 스탯 표시
@@ -11058,6 +11784,156 @@ client.on('interactionCreate', async (interaction) => {
                 files: [attachment] 
             });
         }
+        
+        else if (interaction.customId === 'game_page_1') {
+            // game_page_1과 back_to_game_menu 동일한 기능으로 처리
+            // 시간대별 이미지 및 인사말 설정
+            const now = new Date();
+            const hour = now.getHours();
+            
+            let timeImage = '';
+            let timeColor = '';
+            
+            if (hour >= 6 && hour < 12) {
+                timeImage = 'kim_main_morning.png';
+                timeColor = '#ffeb3b';
+            } else if (hour >= 12 && hour < 18) {
+                timeImage = 'kim_main_lunch.png';
+                timeColor = '#ff9800';
+            } else {
+                timeImage = 'kim_main_night.png';
+                timeColor = '#3f51b5';
+            }
+
+            const greetings = [
+                '🌟 강화왕 김헌터에 오신 것을 환영합니다!',
+                '⚔️ 오늘도 모험을 떠날 준비가 되셨나요?',
+                '🏆 새로운 도전이 당신을 기다리고 있습니다!',
+                '💎 운명의 강화석이 당신을 부르고 있어요!',
+                '🎯 목표를 향해 전진하세요, 용감한 모험가!'
+            ];
+            
+            const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+            const user = await User.findOne({ discordId: interaction.user.id });
+            const combatPower = calculateCombatPower(user);
+            
+            const statusEmbed = new EmbedBuilder()
+                .setColor(timeColor)
+                .setTitle('🎮 김헌터 게임 메뉴')
+                .setDescription(`${randomGreeting}\n\n**${getUserTitle(user)} ${user.nickname}**님\n레벨: ${user.level} | 🔥 전투력: ${combatPower.toLocaleString()}\n💰 골드: ${user.gold.toLocaleString()}`)
+                .setImage('attachment://' + timeImage)
+                .setFooter({ text: '버튼을 클릭하여 다양한 기능을 이용하세요!' })
+                .setTimestamp();
+
+            const pages = [
+                {
+                    buttons: [
+                        new ButtonBuilder()
+                            .setCustomId('daily')
+                            .setLabel('📅 출석체크')
+                            .setStyle(ButtonStyle.Success),
+                        new ButtonBuilder()
+                            .setCustomId('work')
+                            .setLabel('💼 일하기')
+                            .setStyle(ButtonStyle.Success),
+                        new ButtonBuilder()
+                            .setCustomId('hunting')
+                            .setLabel('🏹 사냥')
+                            .setStyle(ButtonStyle.Success)
+                    ]
+                },
+                {
+                    buttons: [
+                        new ButtonBuilder()
+                            .setCustomId('monster_battle')
+                            .setLabel('🐲 몬스터 배틀')
+                            .setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder()
+                            .setCustomId('racing')
+                            .setLabel('🏁 레이싱')
+                            .setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder()
+                            .setCustomId('pvp_menu')
+                            .setLabel('⚔️ PvP')
+                            .setStyle(ButtonStyle.Danger)
+                    ]
+                },
+                {
+                    buttons: [
+                        new ButtonBuilder()
+                            .setCustomId('stats')
+                            .setLabel('💪 능력치')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('skills')
+                            .setLabel('🔮 스킬')
+                            .setStyle(ButtonStyle.Primary)
+                    ]
+                },
+                {
+                    buttons: [
+                        new ButtonBuilder()
+                            .setCustomId('shop')
+                            .setLabel('🛒 상점')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('inventory')
+                            .setLabel('🎒 인벤토리')
+                            .setStyle(ButtonStyle.Secondary)
+                    ]
+                },
+                {
+                    buttons: [
+                        new ButtonBuilder()
+                            .setCustomId('equipment')
+                            .setLabel('⚔️ 장비')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('enhancement')
+                            .setLabel('⚡ 강화')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(user.level < 10),
+                        new ButtonBuilder()
+                            .setCustomId('ranking')
+                            .setLabel('🏆 랭킹')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('info')
+                            .setLabel('👤 내정보')
+                            .setStyle(ButtonStyle.Secondary)
+                    ]
+                }
+            ];
+
+            const navigationRow = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('prev_page')
+                        .setLabel('◀')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
+                    new ButtonBuilder()
+                        .setCustomId('page_info')
+                        .setLabel('1/5')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
+                    new ButtonBuilder()
+                        .setCustomId('next_page')
+                        .setLabel('▶')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            const contentRow = new ActionRowBuilder()
+                .addComponents(pages[0].buttons);
+                
+            const attachment = new AttachmentBuilder(path.join(__dirname, 'resource', timeImage), { name: timeImage });
+
+            await interaction.update({ 
+                embeds: [statusEmbed], 
+                components: [contentRow, navigationRow], 
+                files: [attachment] 
+            });
+        }
     } catch (error) {
         console.error('인터렉션 처리 오류:', error);
     }
@@ -11213,6 +12089,75 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `❌ ${result.message}`, flags: 64 });
         }
     }
+    
+    // 베팅 모달 처리 (홀/짝, 소/대, 럭키7)
+    else if (interaction.customId === 'bet_modal_odd' || interaction.customId === 'bet_modal_even' || 
+             interaction.customId === 'bet_modal_small' || interaction.customId === 'bet_modal_big' || 
+             interaction.customId === 'bet_modal_lucky7') {
+        
+        const betAmountText = interaction.fields.getTextInputValue('bet_amount');
+        const betAmount = parseInt(betAmountText.replace(/[^\d]/g, '')); // 숫자만 추출
+        
+        if (isNaN(betAmount) || betAmount <= 0) {
+            await interaction.reply({ content: '올바른 베팅 금액을 입력해주세요!', flags: 64 });
+            return;
+        }
+        
+        // 베팅 타입 결정
+        let betType;
+        switch (interaction.customId) {
+            case 'bet_modal_odd':
+                betType = 'odd';
+                break;
+            case 'bet_modal_even':
+                betType = 'even';
+                break;
+            case 'bet_modal_small':
+                betType = 'small';
+                break;
+            case 'bet_modal_big':
+                betType = 'big';
+                break;
+            case 'bet_modal_lucky7':
+                betType = 'lucky7';
+                break;
+        }
+        
+        try {
+            await oddEvenGame.addBet(interaction, betType, betAmount);
+        } catch (error) {
+            console.error('베팅 처리 오류:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: '베팅 처리 중 오류가 발생했습니다!', flags: 64 });
+            }
+        }
+    }
+    
+    // 잭팟 모달 처리
+    else if (interaction.customId === 'jackpot_modal') {
+        const betAmountText = interaction.fields.getTextInputValue('bet_amount');
+        const targetNumberText = interaction.fields.getTextInputValue('target_number');
+        
+        const betAmount = parseInt(betAmountText.replace(/[^\d]/g, ''));
+        const targetNumber = parseInt(targetNumberText.replace(/[^\d]/g, ''));
+        
+        if (isNaN(betAmount) || betAmount <= 0) {
+            await interaction.reply({ content: '올바른 베팅 금액을 입력해주세요!', flags: 64 });
+            return;
+        }
+        
+        if (isNaN(targetNumber) || targetNumber < 1 || targetNumber > 100) {
+            await interaction.reply({ content: '1부터 100까지의 숫자를 입력해주세요!', flags: 64 });
+            return;
+        }
+        
+        try {
+            await oddEvenGame.addBet(interaction, 'jackpot', betAmount, targetNumber);
+        } catch (error) {
+            console.error('잭팟 베팅 처리 오류:', error);
+            await interaction.reply({ content: '잭팟 베팅 처리 중 오류가 발생했습니다!', flags: 64 });
+        }
+    }
 });
 
 // 이모지 반응 추가 이벤트
@@ -11298,6 +12243,16 @@ client.on('messageReactionRemove', async (reaction, user) => {
 // 엠블럼 시스템 상호작용 처리
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
+    
+    // 첫 번째 handler에서 처리하는 버튼들은 건너뛰기
+    if (interaction.isButton() && ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'bet_', 'oddeven_', 'monster_', 'start_game', 'clear_bets', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_'].some(id => interaction.customId.includes(id))) {
+        console.log(`🟡 두 번째 핸들러에서 제외됨: ${interaction.customId}`);
+        return;
+    }
+    
+    if (interaction.isButton()) {
+        console.log(`🔵 두 번째 핸들러에서 처리: ${interaction.customId}`);
+    }
     
     try {
         const user = await getUser(interaction.user.id);
@@ -11760,8 +12715,133 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
+        // 몬스터 배틀 참가 버튼
+        else if (interaction.customId === 'monster_battle') {
+            await oddEvenGame.showBettingMenu(interaction);
+        }
+        
+        // 홀짝 게임 베팅 메뉴
+        else if (interaction.customId === 'oddeven_bet') {
+            await oddEvenGame.showBettingMenu(interaction);
+        }
+
+        // 몬스터 배틀 통계
+        else if (interaction.customId === 'monster_stats') {
+            // 몬스터 배틀 통계 처리 (추후 구현)
+            await interaction.reply({ content: '몬스터 헌터 통계 기능이 곧 출시됩니다!', flags: 64 });
+        }
+        
+        // 홀짝 게임 통계
+        else if (interaction.customId === 'oddeven_stats') {
+            // 홀짝 게임 통계 처리 (추후 구현)
+            await interaction.reply({ content: '홀짝 게임 통계 기능이 곧 출시됩니다!', flags: 64 });
+        }
+
+        // 몬스터 배틀 기록
+        else if (interaction.customId === 'monster_history') {
+            // 몬스터 배틀 기록 처리 (추후 구현)
+            await interaction.reply({ content: '배틀 히스토리 기능이 곧 출시됩니다!', flags: 64 });
+        }
+
+        // 홀짝 게임 기록
+        else if (interaction.customId === 'oddeven_history') {
+            // 홀짝 게임 기록 처리 (추후 구현)
+            await interaction.reply({ content: '홀짝 게임 기록 기능이 곧 출시됩니다!', flags: 64 });
+        }
+
+        // 몬스터 배틀 랭킹
+        else if (interaction.customId === 'monster_ranking') {
+            // 몬스터 배틀 랭킹 처리 (추후 구현)
+            await interaction.reply({ content: '헌터 랭킹 기능이 곧 출시됩니다!', flags: 64 });
+        }
+
+        // 홀짝 게임 랭킹
+        else if (interaction.customId === 'oddeven_ranking') {
+            // 홀짝 게임 랭킹 처리 (추후 구현)
+            await interaction.reply({ content: '홀짝 게임 랭킹 기능이 곧 출시됩니다!', flags: 64 });
+        }
+
+        // 홀짝 베팅 버튼들
+        else if (interaction.customId.startsWith('bet_')) {
+            const betType = interaction.customId.replace('bet_', '');
+            
+            // 잭팟 베팅은 숫자도 입력받아야 함
+            if (betType === 'jackpot') {
+                const modal = new ModalBuilder()
+                    .setCustomId(`jackpot_modal`)
+                    .setTitle('💎 잭팟 베팅');
+
+                const amountInput = new TextInputBuilder()
+                    .setCustomId('bet_amount')
+                    .setLabel('베팅 금액')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('1000 ~ 1000000')
+                    .setRequired(true);
+
+                const numberInput = new TextInputBuilder()
+                    .setCustomId('target_number')
+                    .setLabel('예상 숫자 (1-100)')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('1부터 100까지의 숫자')
+                    .setRequired(true);
+
+                const firstRow = new ActionRowBuilder().addComponents(amountInput);
+                const secondRow = new ActionRowBuilder().addComponents(numberInput);
+                modal.addComponents(firstRow, secondRow);
+
+                await interaction.showModal(modal);
+            } else {
+                // 일반 베팅 (금액만 입력)
+                const modal = new ModalBuilder()
+                    .setCustomId(`bet_modal_${betType}`)
+                    .setTitle(`${MONSTER_BATTLE.betOptions[betType]?.emoji || '🎲'} ${MONSTER_BATTLE.betOptions[betType]?.name || betType} 베팅`);
+
+                const amountInput = new TextInputBuilder()
+                    .setCustomId('bet_amount')
+                    .setLabel('베팅 금액')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('1000 ~ 1000000')
+                    .setRequired(true);
+
+                const row = new ActionRowBuilder().addComponents(amountInput);
+                modal.addComponents(row);
+
+                await interaction.showModal(modal);
+            }
+        }
+
+        // 홀짝 게임 뒤로가기
+        else if (interaction.customId === 'oddeven_back') {
+            await oddEvenGame.showMonsterBattleMenu(interaction);
+        }
+
+        // 홀짝 게임 다시하기
+        else if (interaction.customId === 'oddeven_play_again') {
+            await oddEvenGame.showBettingMenu(interaction);
+        }
+
+        // 홀짝 게임 메인으로
+        else if (interaction.customId === 'oddeven_main') {
+            await oddEvenGame.showMonsterBattleMenu(interaction);
+        }
+
+        // 홀짝 게임 시작
+        else if (interaction.customId === 'start_game') {
+            await oddEvenGame.playMultipleBets(interaction);
+        }
+
+        // 홀짝 게임 베팅 초기화
+        else if (interaction.customId === 'clear_bets') {
+            const user = await User.findOne({ discordId: interaction.user.id });
+            if (user.oddEvenStats?.currentBets) {
+                user.oddEvenStats.currentBets = [];
+                await user.save();
+            }
+            await oddEvenGame.showBettingMenu(interaction);
+        }
+
     } catch (error) {
-        console.error('엠블럼 시스템 오류:', error);
+        console.error('인터렉션 처리 오류:', error);
         
         // 인터랙션 응답 처리
         try {

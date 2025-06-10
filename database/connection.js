@@ -4,7 +4,9 @@ const connectDB = async () => {
     try {
         await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kimhunter', {
             useNewUrlParser: true,
-            useUnifiedTopology: true
+            useUnifiedTopology: true,
+            serverSelectionTimeoutMS: 5000,
+            connectTimeoutMS: 5000
         });
         console.log('✅ MongoDB 연결 성공!');
     } catch (error) {

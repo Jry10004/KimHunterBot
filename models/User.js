@@ -152,16 +152,16 @@ const userSchema = new mongoose.Schema({
         price: { type: Number, default: 0 },
         description: { type: String, default: '' },
         equipped: { type: Boolean, default: false }, // 장착 여부
-        inventorySlot: { type: Number, required: true } // 인벤토리 슬롯 번호
+        inventorySlot: { type: Number, required: false } // 인벤토리 슬롯 번호
     }],
     maxInventorySlots: { type: Number, default: 50 }, // 인벤토리 최대 슬롯
     equipment: {
-        weapon: { type: Number, default: -1 }, // 인벤토리 슬롯 번호 (-1 = 미장착)
-        armor: { type: Number, default: -1 },
-        helmet: { type: Number, default: -1 },
-        gloves: { type: Number, default: -1 },
-        boots: { type: Number, default: -1 },
-        accessory: { type: Number, default: -1 }
+        weapon: { type: mongoose.Schema.Types.Mixed, default: null }, // 아이템 객체 저장
+        armor: { type: mongoose.Schema.Types.Mixed, default: null },
+        helmet: { type: mongoose.Schema.Types.Mixed, default: null },
+        gloves: { type: mongoose.Schema.Types.Mixed, default: null },
+        boots: { type: mongoose.Schema.Types.Mixed, default: null },
+        accessory: { type: mongoose.Schema.Types.Mixed, default: null }
     },
     protectionScrolls: { type: Number, default: 0 }, // 보호권 개수
     enhancementLevel: {
@@ -232,6 +232,37 @@ const userSchema = new mongoose.Schema({
             result: String, // 'win' or 'lose'
             ratingChange: Number, // 레이팅 변화량
             date: { type: Date, default: Date.now }
+        }]
+    },
+    // 홀짝 게임 통계
+    oddEvenStats: {
+        totalGames: { type: Number, default: 0 }, // 총 게임 횟수
+        totalBets: { type: Number, default: 0 }, // 총 베팅 금액
+        totalWinnings: { type: Number, default: 0 }, // 총 획득 금액
+        wins: { type: Number, default: 0 }, // 승리 횟수
+        losses: { type: Number, default: 0 }, // 패배 횟수
+        currentStreak: { type: Number, default: 0 }, // 현재 연승/연패
+        longestWinStreak: { type: Number, default: 0 }, // 최장 연승
+        longestLossStreak: { type: Number, default: 0 }, // 최장 연패
+        biggestWin: { type: Number, default: 0 }, // 최대 당첨금
+        biggestLoss: { type: Number, default: 0 }, // 최대 손실
+        lastPlayDate: { type: Date, default: null }, // 마지막 플레이 날짜
+        favoriteNumbers: [{ type: Number }], // 선호하는 숫자들
+        luckyNumbers: [{ type: Number }], // 행운의 숫자들 (당첨시 기록)
+        recentResults: [{ // 최근 10게임 결과
+            number: Number, // 나온 숫자
+            bet: String, // 베팅 타입
+            amount: Number, // 베팅 금액
+            won: Boolean, // 당첨 여부
+            payout: Number, // 당첨금
+            date: { type: Date, default: Date.now }
+        }],
+        // 현재 진행 중인 베팅 (중복 베팅용)
+        currentBets: [{
+            betType: String, // 'odd', 'even', 'small', 'big', 'lucky7', 'jackpot'
+            amount: Number,
+            targetNumber: Number, // 잭팟용
+            timestamp: { type: Date, default: Date.now }
         }]
     }
 }, {
