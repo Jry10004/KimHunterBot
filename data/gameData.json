@@ -1,0 +1,16 @@
+{
+  "auctionHouse": {
+    "listings": {},
+    "priceHistory": {},
+    "marketVolume": {},
+    "topItems": [],
+    "events": []
+  },
+  "currentWeather": null,
+  "dailyFortune": null,
+  "activeMissions": {},
+  "lastWeatherUpdate": 0,
+  "lastFortuneUpdate": 0,
+  "lastMarketUpdate": 0,
+  "currentMarketEvent": null
+}

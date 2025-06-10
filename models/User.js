@@ -150,16 +150,20 @@ const userSchema = new mongoose.Schema({
             luck: { type: Number, default: 0 }
         },
         price: { type: Number, default: 0 },
-        description: { type: String, default: '' }
+        description: { type: String, default: '' },
+        equipped: { type: Boolean, default: false }, // 장착 여부
+        inventorySlot: { type: Number, required: true } // 인벤토리 슬롯 번호
     }],
+    maxInventorySlots: { type: Number, default: 50 }, // 인벤토리 최대 슬롯
     equipment: {
-        weapon: { type: Object, default: null },
-        armor: { type: Object, default: null },
-        helmet: { type: Object, default: null },
-        gloves: { type: Object, default: null },
-        boots: { type: Object, default: null },
-        accessory: { type: Object, default: null }
+        weapon: { type: Number, default: -1 }, // 인벤토리 슬롯 번호 (-1 = 미장착)
+        armor: { type: Number, default: -1 },
+        helmet: { type: Number, default: -1 },
+        gloves: { type: Number, default: -1 },
+        boots: { type: Number, default: -1 },
+        accessory: { type: Number, default: -1 }
     },
+    protectionScrolls: { type: Number, default: 0 }, // 보호권 개수
     enhancementLevel: {
         type: Number,
         default: 0
@@ -176,6 +180,59 @@ const userSchema = new mongoose.Schema({
     emblem: {
         type: String,
         default: null // null이면 엠블럼 없음, 문자열이면 엠블럼 이름
+    },
+    // 레이싱 통계
+    racingStats: {
+        totalRaces: { type: Number, default: 0 }, // 총 참가 횟수
+        wins: { type: Number, default: 0 }, // 우승 횟수
+        totalWinnings: { type: Number, default: 0 }, // 총 획득 상금
+        totalSpent: { type: Number, default: 0 }, // 총 베팅 금액
+        longestWinStreak: { type: Number, default: 0 }, // 최장 연승
+        currentWinStreak: { type: Number, default: 0 }, // 현재 연승
+        biggestWin: { type: Number, default: 0 }, // 최대 상금
+        lastRaceDate: { type: Date, default: null } // 마지막 레이스 참가일
+    },
+    // 에너지 조각 시스템
+    energyFragments: {
+        fragments: { type: Map, of: Number, default: new Map() }, // 단계별 조각 보유량 (key: 단계, value: 개수)
+        lastMine: { type: Date, default: null }, // 마지막 채굴 시간
+        dailyFusions: { type: Number, default: 0 }, // 오늘 융합 횟수
+        dailyFusionDate: { type: String, default: null }, // 융합 횟수 날짜
+        totalFusions: { type: Number, default: 0 }, // 총 융합 시도
+        successfulFusions: { type: Number, default: 0 }, // 성공한 융합
+        failureStack: { type: Number, default: 0 }, // 실패 스택
+        highestLevel: { type: Number, default: 0 }, // 최고 달성 레벨
+        fusionTickets: { type: Number, default: 0 }, // 무제한 융합권
+        permanentSuccessBonus: { type: Number, default: 0 }, // 영구 성공률 보너스
+        weeklyRankingBonus: { type: Number, default: 0 }, // 주간 랭킹 보너스
+        consecutiveSuccess: { type: Number, default: 0 }, // 연속 성공
+        totalInvested: { type: Number, default: 0 }, // 총 투자 골드
+        godBlessingUsed: { type: Date, default: null } // 강화신의 축복 사용일
+    },
+    // PVP 시스템
+    pvp: {
+        rating: { type: Number, default: 1000 }, // ELO 레이팅
+        tier: { type: String, default: 'Bronze' }, // 티어
+        division: { type: Number, default: 5 }, // 티어 내 등급 (5-1)
+        duelTickets: { type: Number, default: 20 }, // 결투권
+        lastTicketRegen: { type: Date, default: null }, // 마지막 티켓 충전 시간
+        lastDuelDate: { type: String, default: null }, // 마지막 결투 날짜
+        totalDuels: { type: Number, default: 0 }, // 총 결투 횟수
+        wins: { type: Number, default: 0 }, // 승리 횟수
+        losses: { type: Number, default: 0 }, // 패배 횟수
+        winStreak: { type: Number, default: 0 }, // 연승
+        maxWinStreak: { type: Number, default: 0 }, // 최고 연승
+        seasonWins: { type: Number, default: 0 }, // 시즌 승리
+        seasonLosses: { type: Number, default: 0 }, // 시즌 패배
+        highestRating: { type: Number, default: 1000 }, // 최고 레이팅
+        lastMatchTime: { type: Date, default: null }, // 마지막 매치 시간
+        matchHistory: [{ // 최근 10경기 기록
+            opponent: String, // 상대방 닉네임
+            opponentRating: Number, // 상대방 레이팅
+            result: String, // 'win' or 'lose'
+            ratingChange: Number, // 레이팅 변화량
+            date: { type: Date, default: Date.now }
+        }]
     }
 }, {
     timestamps: true
