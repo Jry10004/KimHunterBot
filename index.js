@@ -33,6 +33,7 @@ let activeMissions = new Map();
 
 // 독버섯 게임 세션 관리
 const mushroomGameSessions = new Map();
+const mushroomMatchmakingQueue = new Map(); // userId -> {timestamp, difficulty}
 
 // 데이터 저장/로드 시스템
 const DATA_FILE_PATH = path.join(__dirname, 'data', 'gameData.json');
@@ -3454,16 +3455,170 @@ class MushroomGameSystem {
     async startGame(interaction, user, difficulty) {
         const userId = interaction.user.id;
         
-        // 이미 진행 중인 게임이 있는지 확인
-        if (this.sessions.has(userId)) {
+        // 이미 진행 중인 게임이나 매칭 중인지 확인
+        if (this.sessions.has(userId) || mushroomMatchmakingQueue.has(userId)) {
             await interaction.reply({ 
-                content: '이미 진행 중인 게임이 있습니다!', 
+                content: '이미 진행 중인 게임이나 매칭이 있습니다!', 
                 flags: 64 
             });
             return;
         }
 
-        // 게임 세션 생성
+        if (difficulty === 'pvp') {
+            // 유저와 대결: 매칭 시스템 사용
+            await this.startMatchmaking(interaction, user);
+        } else {
+            // 혼자 플레이 또는 봇과 대결: 바로 게임 시작
+            await this.createGameSession(interaction, user, difficulty);
+        }
+    }
+
+    // 매칭 시스템
+    async startMatchmaking(interaction, user) {
+        const userId = interaction.user.id;
+        
+        // 대기 중인 플레이어 찾기
+        const waitingPlayer = Array.from(mushroomMatchmakingQueue.entries())
+            .find(([id, data]) => id !== userId && data.difficulty === 'pvp');
+
+        if (waitingPlayer) {
+            // 매칭 성공
+            const [opponentId, opponentData] = waitingPlayer;
+            mushroomMatchmakingQueue.delete(opponentId);
+
+            // PvP 게임 세션 생성
+            await this.createPvPSession(interaction, user, opponentId, opponentData.user);
+        } else {
+            // 매칭 대기열에 추가
+            mushroomMatchmakingQueue.set(userId, {
+                timestamp: Date.now(),
+                difficulty: 'pvp',
+                user: user,
+                interaction: interaction
+            });
+
+            const waitingEmbed = new EmbedBuilder()
+                .setColor('#ffff00')
+                .setTitle('🔍 상대방을 찾고 있습니다...')
+                .setDescription(`${user.nickname}님, 다른 플레이어를 찾고 있습니다!\n\n⏰ 30초 후 봇과 대결로 자동 전환됩니다.`)
+                .setThumbnail(`attachment://${MUSHROOM_GAME.effects.thinking}`);
+
+            const cancelButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_cancel_${userId}`)
+                        .setLabel('❌ 매칭 취소')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+            const thinkingAttachment = new AttachmentBuilder(`resource/${MUSHROOM_GAME.effects.thinking}`);
+
+            await interaction.reply({
+                embeds: [waitingEmbed],
+                components: [cancelButton],
+                files: [thinkingAttachment]
+            });
+
+            // 30초 후 봇 매칭으로 전환
+            setTimeout(async () => {
+                if (mushroomMatchmakingQueue.has(userId)) {
+                    mushroomMatchmakingQueue.delete(userId);
+                    
+                    const timeoutEmbed = new EmbedBuilder()
+                        .setColor('#ff9900')
+                        .setTitle('⏰ 매칭 시간 초과')
+                        .setDescription('상대방을 찾지 못해 봇과 대결로 전환됩니다!');
+
+                    await interaction.editReply({
+                        embeds: [timeoutEmbed],
+                        components: []
+                    });
+
+                    // 1초 후 봇 게임 시작
+                    setTimeout(async () => {
+                        await this.createGameSession(interaction, user, 'bot', true);
+                    }, 1000);
+                }
+            }, MUSHROOM_GAME.gameSettings.matchmakingTimeout);
+        }
+    }
+
+    // PvP 게임 세션 생성
+    async createPvPSession(interaction, user1, user2Id, user2) {
+        const sessionId = `pvp_${user1.discordId}_${user2Id}`;
+        
+        const session = {
+            sessionId: sessionId,
+            type: 'pvp',
+            players: {
+                [user1.discordId]: {
+                    userId: user1.discordId,
+                    userName: user1.nickname,
+                    isAlive: true,
+                    survivedRounds: 0,
+                    totalReward: 0,
+                    lastChoice: null
+                },
+                [user2Id]: {
+                    userId: user2Id,
+                    userName: user2.nickname,
+                    isAlive: true,
+                    survivedRounds: 0,
+                    totalReward: 0,
+                    lastChoice: null
+                }
+            },
+            currentRound: 1,
+            startTime: Date.now(),
+            currentMushrooms: [],
+            waitingForChoices: new Set([user1.discordId, user2Id])
+        };
+
+        this.sessions.set(user1.discordId, session);
+        this.sessions.set(user2Id, session);
+
+        // 매칭 성공 알림
+        const matchEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('⚔️ 매칭 성공!')
+            .setDescription(`${user1.nickname} VS ${user2.nickname}\n\n버섯 사냥 대결이 시작됩니다!`)
+            .setImage(`attachment://${MUSHROOM_GAME.backgrounds.gameStart}`)
+            .setThumbnail(`attachment://${MUSHROOM_GAME.effects.gameStart}`);
+
+        const startButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`mushroom_pvp_start_${sessionId}`)
+                    .setLabel('🍄 대결 시작!')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+        const gameStartAttachment = new AttachmentBuilder(`resource/${MUSHROOM_GAME.backgrounds.gameStart}`);
+        const effectAttachment = new AttachmentBuilder(`resource/${MUSHROOM_GAME.effects.gameStart}`);
+
+        await interaction.editReply({
+            embeds: [matchEmbed],
+            components: [startButton],
+            files: [gameStartAttachment, effectAttachment]
+        });
+
+        // 상대방에게도 알림 (DM 또는 채널)
+        try {
+            const opponent = await client.users.fetch(user2Id);
+            await opponent.send({
+                embeds: [matchEmbed.setDescription(`${user2.nickname} VS ${user1.nickname}\n\n버섯 사냥 대결이 시작됩니다!`)],
+                components: [startButton],
+                files: [gameStartAttachment, effectAttachment]
+            });
+        } catch (error) {
+            console.log('상대방 DM 전송 실패:', error);
+        }
+    }
+
+    // 게임 세션 생성 (솔로/봇)
+    async createGameSession(interaction, user, difficulty, isTimeout = false) {
+        const userId = interaction.user.id;
+
         const session = {
             userId: userId,
             userName: user.nickname,
@@ -3473,8 +3628,8 @@ class MushroomGameSystem {
             isAlive: true,
             totalReward: 0,
             startTime: Date.now(),
-            bot: difficulty !== 'easy' ? this.selectBot() : null,
-            botAlive: difficulty !== 'easy',
+            bot: difficulty === 'bot' ? this.selectBot() : null,
+            botAlive: difficulty === 'bot',
             currentMushrooms: []
         };
 
@@ -3484,7 +3639,7 @@ class MushroomGameSystem {
         const startEmbed = new EmbedBuilder()
             .setColor('#00ff00')
             .setTitle(MUSHROOM_GAME.messages.gameStart)
-            .setDescription(`${user.nickname}님의 버섯 사냥이 시작됩니다!\n\n난이도: ${this.getDifficultyName(difficulty)}`)
+            .setDescription(`${user.nickname}님의 버섯 사냥이 시작됩니다!\n\n모드: ${this.getDifficultyName(difficulty)}`)
             .setImage(`attachment://${MUSHROOM_GAME.backgrounds.gameStart}`)
             .setThumbnail(`attachment://${MUSHROOM_GAME.effects.gameStart}`);
 
@@ -3499,21 +3654,29 @@ class MushroomGameSystem {
         const gameStartAttachment = new AttachmentBuilder(`resource/${MUSHROOM_GAME.backgrounds.gameStart}`);
         const effectAttachment = new AttachmentBuilder(`resource/${MUSHROOM_GAME.effects.gameStart}`);
 
-        await interaction.reply({
-            embeds: [startEmbed],
-            components: [startButton],
-            files: [gameStartAttachment, effectAttachment]
-        });
+        if (isTimeout) {
+            await interaction.editReply({
+                embeds: [startEmbed],
+                components: [startButton],
+                files: [gameStartAttachment, effectAttachment]
+            });
+        } else {
+            await interaction.reply({
+                embeds: [startEmbed],
+                components: [startButton],
+                files: [gameStartAttachment, effectAttachment]
+            });
+        }
     }
 
     // 난이도 이름 반환
     getDifficultyName(difficulty) {
         const names = {
-            easy: '🌱 초급 (혼자서)',
-            medium: '🤖 중급 (봇과 함께)',
-            hard: '⚔️ 고급 (봇과 대결)'
+            solo: '🌱 혼자 플레이',
+            pvp: '⚔️ 유저와 대결',
+            bot: '🤖 봇과 대결'
         };
-        return names[difficulty] || names.easy;
+        return names[difficulty] || names.solo;
     }
 
     // 봇 선택
@@ -3571,8 +3734,8 @@ class MushroomGameSystem {
             files: [backgroundAttachment]
         });
 
-        // 봇이 있는 경우 봇 선택 처리
-        if (session.bot && session.botAlive) {
+        // 봇 대결 모드인 경우 봇 선택 처리
+        if (session.difficulty === 'bot' && session.bot && session.botAlive) {
             setTimeout(() => this.processBotChoice(interaction, userId), MUSHROOM_GAME.gameSettings.botThinkingTime);
         }
     }
@@ -3753,10 +3916,10 @@ class MushroomGameSystem {
                 { name: '⏱️ 플레이 시간', value: `${Math.floor((Date.now() - session.startTime) / 1000)}초`, inline: true }
             );
 
-        if (session.difficulty !== 'easy' && session.bot) {
+        if (session.difficulty === 'bot' && session.bot) {
             victoryEmbed.addFields({
-                name: '🤖 봇 상태',
-                value: session.botAlive ? `${session.bot.emoji} ${session.bot.name} 생존!` : `${session.bot.emoji} ${session.bot.name} 탈락!`,
+                name: '🤖 봇 대결 결과',
+                value: session.botAlive ? `${session.bot.emoji} ${session.bot.name} 생존! 무승부!` : `${session.bot.emoji} ${session.bot.name} 탈락! 승리!`,
                 inline: false
             });
         }
@@ -5889,9 +6052,9 @@ const commands = [
                 .setDescription('게임 난이도 선택')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🌱 초급 (혼자서)', value: 'easy' },
-                    { name: '🤖 중급 (봇과 함께)', value: 'medium' },
-                    { name: '⚔️ 고급 (봇과 대결)', value: 'hard' }
+                    { name: '🌱 혼자 플레이', value: 'solo' },
+                    { name: '⚔️ 유저와 대결', value: 'pvp' },
+                    { name: '🤖 봇과 대결', value: 'bot' }
                 ))
 ];
 
@@ -7751,7 +7914,7 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
-            const difficulty = interaction.options.getString('난이도') || 'easy';
+            const difficulty = interaction.options.getString('난이도') || 'solo';
             await mushroomGame.startGame(interaction, user, difficulty);
         }
         
@@ -13689,6 +13852,28 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             await mushroomGame.endGame(interaction, userId);
+        }
+        
+        else if (interaction.customId.startsWith('mushroom_cancel_')) {
+            const userId = interaction.customId.split('_')[2];
+            if (userId !== interaction.user.id) {
+                await interaction.reply({ content: '다른 플레이어의 매칭입니다!', flags: 64 });
+                return;
+            }
+            
+            if (mushroomMatchmakingQueue.has(userId)) {
+                mushroomMatchmakingQueue.delete(userId);
+                
+                const cancelEmbed = new EmbedBuilder()
+                    .setColor('#808080')
+                    .setTitle('❌ 매칭이 취소되었습니다')
+                    .setDescription('언제든지 다시 도전해보세요!');
+
+                await interaction.update({
+                    embeds: [cancelEmbed],
+                    components: []
+                });
+            }
         }
 
     } catch (error) {

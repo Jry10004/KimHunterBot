@@ -88,7 +88,8 @@ const MUSHROOM_GAME = {
         survivalBonus: 500,
         perfectBonus: 5000,
         botThinkingTime: 3000, // 3초
-        revealDelay: 1500 // 1.5초
+        revealDelay: 1500, // 1.5초
+        matchmakingTimeout: 30000 // 30초 매칭 타임아웃
     },
 
     // 배경 GIF
