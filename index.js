@@ -11,6 +11,7 @@ const RANDOM_EVENTS = require('./data/randomEvents');
 const shopItems = require('./data/shopItems');
 const MONSTER_BATTLE = require('./data/oddEvenGame');
 const MUSHROOM_GAME = require('./data/mushroomGame');
+const ARTIFACT_SYSTEM = require('./data/artifactSystem');
 
 // 아이템 경매장 시스템
 const AUCTION_HOUSE = {
@@ -34,6 +35,150 @@ let activeMissions = new Map();
 // 독버섯 게임 세션 관리
 const mushroomGameSessions = new Map();
 const mushroomMatchmakingQueue = new Map(); // userId -> {timestamp, difficulty}
+
+// 메뉴 시스템 정의
+const MENU_DEFINITIONS = {
+    // 일일 활동
+    daily: {
+        label: '🎁 일일보상',
+        description: '매일 받을 수 있는 보상',
+        emoji: '🎁',
+        category: 'daily'
+    },
+    work: {
+        label: '⚒️ 일하기',
+        description: '일해서 골드 획득',
+        emoji: '⚒️',
+        category: 'daily'
+    },
+    quest: {
+        label: '📜 의뢰',
+        description: '다양한 퀘스트 수행',
+        emoji: '📜',
+        category: 'daily'
+    },
+    // 게임 콘텐츠
+    hunting: {
+        label: '🎯 사냥하기',
+        description: '몬스터를 사냥하여 경험치와 골드 획득',
+        emoji: '🎯',
+        category: 'game'
+    },
+    racing: {
+        label: '🏁 레이싱',
+        description: '경마 베팅 게임',
+        emoji: '🏁',
+        category: 'game'
+    },
+    pvp: {
+        label: '⚔️ PVP',
+        description: '다른 플레이어와 결투',
+        emoji: '⚔️',
+        category: 'game'
+    },
+    mushroom: {
+        label: '🍄 독버섯게임',
+        description: '독버섯을 피하는 게임',
+        emoji: '🍄',
+        category: 'game'
+    },
+    oddeven: {
+        label: '🎲 홀짝게임',
+        description: '몬스터와 홀짝 대결',
+        emoji: '🎲',
+        category: 'game'
+    },
+    // 캐릭터 관리
+    stats: {
+        label: '💪 능력치',
+        description: '능력치 확인 및 분배',
+        emoji: '💪',
+        category: 'character'
+    },
+    skills: {
+        label: '🔮 스킬',
+        description: '스킬 확인 및 업그레이드',
+        emoji: '🔮',
+        category: 'character'
+    },
+    equipment: {
+        label: '⚔️ 장비관리',
+        description: '장비 착용 및 관리',
+        emoji: '⚔️',
+        category: 'character'
+    },
+    enhancement: {
+        label: '💎 장비강화',
+        description: '에너지 조각으로 장비 강화',
+        emoji: '💎',
+        category: 'character'
+    },
+    // 경제 시스템
+    shop: {
+        label: '🛒 상점',
+        description: '아이템 구매 및 판매',
+        emoji: '🛒',
+        category: 'economy'
+    },
+    inventory: {
+        label: '🎒 인벤토리',
+        description: '보유 아이템 확인',
+        emoji: '🎒',
+        category: 'economy'
+    },
+    stocks: {
+        label: '📈 주식거래소',
+        description: '환상 지역 기업 주식 거래',
+        emoji: '📈',
+        category: 'economy'
+    },
+    artifacts: {
+        label: '🏺 유물탐사',
+        description: '고대 유물 발견 및 거래',
+        emoji: '🏺',
+        category: 'economy'
+    },
+    auction: {
+        label: '🏛️ 경매장',
+        description: '아이템 경매 거래',
+        emoji: '🏛️',
+        category: 'economy'
+    },
+    // 기타
+    ranking: {
+        label: '🏆 랭킹',
+        description: '각종 순위 확인',
+        emoji: '🏆',
+        category: 'utility'
+    },
+    profile: {
+        label: '👤 프로필',
+        description: '내 정보 및 통계 확인',
+        emoji: '👤',
+        category: 'utility'
+    },
+    settings: {
+        label: '⚙️ 설정',
+        description: '메뉴 커스터마이징 및 설정',
+        emoji: '⚙️',
+        category: 'utility'
+    }
+};
+
+// 관리자 전용 메뉴
+const ADMIN_MENUS = {
+    admin_panel: {
+        label: '🛠️ 관리자 패널',
+        description: '서버 관리 및 시스템 제어',
+        emoji: '🛠️',
+        category: 'admin'
+    }
+};
+
+// 관리자 ID 목록 (환경변수에서 읽어오거나 하드코딩)
+const ADMIN_IDS = [
+    process.env.ADMIN_ID || '1036681976354160670' // 기본 관리자 ID
+];
 
 // 데이터 저장/로드 시스템
 const DATA_FILE_PATH = path.join(__dirname, 'data', 'gameData.json');
@@ -124,6 +269,350 @@ function getSlotDisplayName(slot) {
         'accessory': '액세서리'
     };
     return slotNames[slot] || slot;
+}
+
+// 관리자 권한 확인 함수
+function isAdmin(userId) {
+    return ADMIN_IDS.includes(userId);
+}
+
+// 사용자별 커스터마이징된 메뉴 생성
+async function createCustomizedMenu(userId) {
+    try {
+        const user = await User.findOne({ discordId: userId });
+        const isUserAdmin = isAdmin(userId);
+        
+        // 기본 메뉴 순서 또는 사용자 설정
+        let menuOrder = user?.menuSettings?.menuOrder || [
+            'daily', 'work', 'quest', 
+            'hunting', 'racing', 'pvp', 'mushroom', 'oddeven',
+            'stats', 'skills', 'equipment', 'enhancement',
+            'shop', 'inventory', 'stocks', 'artifacts', 'auction',
+            'ranking', 'profile'
+        ];
+        const hiddenMenus = user?.menuSettings?.hiddenMenus || [];
+        const favoriteMenus = user?.menuSettings?.favoriteMenus || [];
+        
+        // 숨겨진 메뉴 제외
+        menuOrder = menuOrder.filter(menuId => !hiddenMenus.includes(menuId));
+        
+        // 즐겨찾기 메뉴를 맨 앞으로
+        const nonFavorites = menuOrder.filter(menuId => !favoriteMenus.includes(menuId));
+        const orderedFavorites = favoriteMenus.filter(menuId => menuOrder.includes(menuId));
+        menuOrder = [...orderedFavorites, ...nonFavorites];
+        
+        // 메뉴 옵션 생성
+        const menuOptions = [];
+        
+        for (const menuId of menuOrder) {
+            const menuDef = MENU_DEFINITIONS[menuId];
+            if (menuDef) {
+                const isFavorite = favoriteMenus.includes(menuId);
+                menuOptions.push({
+                    label: `${isFavorite ? '⭐ ' : ''}${menuDef.label}`,
+                    description: menuDef.description,
+                    value: menuId,
+                    emoji: menuDef.emoji
+                });
+            }
+        }
+        
+        // 관리자라면 관리자 메뉴 추가
+        if (isUserAdmin) {
+            menuOptions.push({
+                label: '🛠️ 관리자 패널',
+                description: '서버 관리 및 시스템 제어',
+                value: 'admin_panel',
+                emoji: '🛠️'
+            });
+        }
+        
+        // 설정 메뉴는 항상 마지막에
+        if (!hiddenMenus.includes('settings')) {
+            menuOptions.push({
+                label: '⚙️ 설정',
+                description: '메뉴 커스터마이징 및 설정',
+                value: 'settings',
+                emoji: '⚙️'
+            });
+        }
+        
+        return new StringSelectMenuBuilder()
+            .setCustomId('main_menu')
+            .setPlaceholder('✨ 김헌터 월드에 오신 것을 환영합니다!')
+            .addOptions(menuOptions.slice(0, 25)); // Discord 제한: 최대 25개
+            
+    } catch (error) {
+        console.error('메뉴 생성 오류:', error);
+        // 기본 메뉴 반환
+        return createDefaultMenu();
+    }
+}
+
+// 기본 메뉴 생성
+function createDefaultMenu() {
+    const defaultOptions = [
+        {
+            label: '🎯 사냥하기',
+            description: '몬스터를 사냥하여 경험치와 골드 획득',
+            value: 'hunting',
+            emoji: '🎯'
+        },
+        {
+            label: '⚔️ 장비관리',
+            description: '장비 착용, 강화 및 관리',
+            value: 'equipment',
+            emoji: '⚔️'
+        },
+        {
+            label: '🛒 상점',
+            description: '아이템 구매 및 판매',
+            value: 'shop',
+            emoji: '🛒'
+        },
+        {
+            label: '📈 주식거래소',
+            description: '환상 지역 기업 주식 거래',
+            value: 'stocks',
+            emoji: '📈'
+        }
+    ];
+    
+    return new StringSelectMenuBuilder()
+        .setCustomId('main_menu')
+        .setPlaceholder('✨ 김헌터 월드에 오신 것을 환영합니다!')
+        .addOptions(defaultOptions);
+}
+
+// 메뉴 커스터마이징 드롭다운 생성
+function createMenuCustomizer() {
+    return new StringSelectMenuBuilder()
+        .setCustomId('customize_menu')
+        .setPlaceholder('⚙️ 메뉴 커스터마이징')
+        .addOptions([
+            {
+                label: '📋 메뉴 순서 변경',
+                description: '자주 사용하는 메뉴를 위로 배치하세요',
+                value: 'reorder_menu',
+                emoji: '📋'
+            },
+            {
+                label: '⭐ 즐겨찾기 설정',
+                description: '자주 사용하는 메뉴를 즐겨찾기에 추가',
+                value: 'favorite_menu',
+                emoji: '⭐'
+            },
+            {
+                label: '👁️ 메뉴 숨기기/보이기',
+                description: '사용하지 않는 메뉴를 숨기세요',
+                value: 'toggle_menu',
+                emoji: '👁️'
+            },
+            {
+                label: '🎨 메뉴 스타일 변경',
+                description: '메뉴 표시 방식을 변경하세요',
+                value: 'menu_style',
+                emoji: '🎨'
+            },
+            {
+                label: '🔄 기본값으로 초기화',
+                description: '모든 설정을 초기 상태로 되돌립니다',
+                value: 'reset_menu',
+                emoji: '🔄'
+            }
+        ]);
+}
+
+// 관리자 패널 메뉴 생성
+function createAdminPanel() {
+    return new StringSelectMenuBuilder()
+        .setCustomId('admin_panel')
+        .setPlaceholder('🛠️ 관리자 패널 - 신중하게 사용하세요')
+        .addOptions([
+            {
+                label: '👥 사용자 관리',
+                description: '사용자 정보 조회 및 수정',
+                value: 'admin_users',
+                emoji: '👥'
+            },
+            {
+                label: '💰 경제 관리',
+                description: '골드, 아이템 지급 및 시장 조작',
+                value: 'admin_economy',
+                emoji: '💰'
+            },
+            {
+                label: '📊 서버 통계',
+                description: '서버 사용 통계 및 성능 모니터링',
+                value: 'admin_stats',
+                emoji: '📊'
+            },
+            {
+                label: '🎮 게임 시스템',
+                description: '게임 밸런스 및 이벤트 관리',
+                value: 'admin_game',
+                emoji: '🎮'
+            },
+            {
+                label: '📈 주식 시장 관리',
+                description: '주식 가격 조작 및 시장 이벤트',
+                value: 'admin_stocks',
+                emoji: '📈'
+            },
+            {
+                label: '🗄️ 데이터베이스',
+                description: '데이터베이스 백업 및 정리',
+                value: 'admin_database',
+                emoji: '🗄️'
+            },
+            {
+                label: '🔧 시스템 제어',
+                description: '봇 재시작, 공지사항 등',
+                value: 'admin_system',
+                emoji: '🔧'
+            },
+            {
+                label: '🚨 긴급 상황',
+                description: '긴급 상황 대응 도구',
+                value: 'admin_emergency',
+                emoji: '🚨'
+            }
+        ]);
+}
+
+// 사용자 관리 메뉴
+function createUserManagementMenu() {
+    return new StringSelectMenuBuilder()
+        .setCustomId('admin_user_management')
+        .setPlaceholder('👥 사용자 관리')
+        .addOptions([
+            {
+                label: '🔍 사용자 검색',
+                description: '특정 사용자 정보 조회',
+                value: 'search_user',
+                emoji: '🔍'
+            },
+            {
+                label: '💎 골드 지급/차감',
+                description: '사용자에게 골드 지급 또는 차감',
+                value: 'modify_gold',
+                emoji: '💎'
+            },
+            {
+                label: '🎒 아이템 지급',
+                description: '사용자에게 아이템 지급',
+                value: 'give_item',
+                emoji: '🎒'
+            },
+            {
+                label: '📊 레벨/경험치 수정',
+                description: '사용자 레벨 및 경험치 조정',
+                value: 'modify_level',
+                emoji: '📊'
+            },
+            {
+                label: '🔒 계정 관리',
+                description: '계정 차단/해제 등',
+                value: 'account_management',
+                emoji: '🔒'
+            },
+            {
+                label: '📈 사용자 통계',
+                description: '전체 사용자 통계 조회',
+                value: 'user_statistics',
+                emoji: '📈'
+            }
+        ]);
+}
+
+// 경제 관리 메뉴
+function createEconomyManagementMenu() {
+    return new StringSelectMenuBuilder()
+        .setCustomId('admin_economy_management')
+        .setPlaceholder('💰 경제 관리')
+        .addOptions([
+            {
+                label: '📈 주식 가격 조작',
+                description: '특정 주식의 가격 직접 조정',
+                value: 'manipulate_stocks',
+                emoji: '📈'
+            },
+            {
+                label: '🏺 유물 시장 조작',
+                description: '유물 시장 가치 조정',
+                value: 'manipulate_artifacts',
+                emoji: '🏺'
+            },
+            {
+                label: '🛒 상점 관리',
+                description: '상점 아이템 및 가격 관리',
+                value: 'manage_shop',
+                emoji: '🛒'
+            },
+            {
+                label: '🎁 전체 골드 지급',
+                description: '모든 사용자에게 골드 지급',
+                value: 'global_gold_distribution',
+                emoji: '🎁'
+            },
+            {
+                label: '📊 경제 통계',
+                description: '전체 경제 상황 분석',
+                value: 'economy_statistics',
+                emoji: '📊'
+            },
+            {
+                label: '⚖️ 인플레이션 제어',
+                description: '경제 밸런스 조정 도구',
+                value: 'inflation_control',
+                emoji: '⚖️'
+            }
+        ]);
+}
+
+// 시스템 제어 메뉴
+function createSystemControlMenu() {
+    return new StringSelectMenuBuilder()
+        .setCustomId('admin_system_control')
+        .setPlaceholder('🔧 시스템 제어')
+        .addOptions([
+            {
+                label: '📢 공지사항 발송',
+                description: '전체 서버에 공지사항 발송',
+                value: 'send_announcement',
+                emoji: '📢'
+            },
+            {
+                label: '🔄 봇 재시작',
+                description: '봇을 안전하게 재시작',
+                value: 'restart_bot',
+                emoji: '🔄'
+            },
+            {
+                label: '💾 데이터 저장',
+                description: '현재 게임 데이터 강제 저장',
+                value: 'force_save',
+                emoji: '💾'
+            },
+            {
+                label: '🧹 캐시 정리',
+                description: '메모리 캐시 정리',
+                value: 'clear_cache',
+                emoji: '🧹'
+            },
+            {
+                label: '📊 시스템 상태',
+                description: '서버 및 봇 상태 확인',
+                value: 'system_status',
+                emoji: '📊'
+            },
+            {
+                label: '🎪 이벤트 생성',
+                description: '특별 이벤트 생성 및 관리',
+                value: 'create_event',
+                emoji: '🎪'
+            }
+        ]);
 }
 
 const Jimp = require('jimp');
@@ -1173,7 +1662,7 @@ const MARKET_EVENTS = [
 ];
 
 // 플레이어별 포트폴리오 저장용 글로벌 변수
-global.playerPortfolios = new Map();
+// global.playerPortfolios = new Map(); // 더 이상 사용하지 않음 - 데이터베이스 사용
 
 // 🚀 혁신적인 주식 시스템 핵심 함수들
 
@@ -1208,13 +1697,13 @@ function updateNPCEmotions() {
     
     // 감정에 따른 주식 변동
     if (emotions.villagers.happiness > 70) {
-        adjustStockPrice('traveler_inn', 5);
-        adjustStockPrice('cotton_candy', 3);
+        adjustStockPrice('traveler_inn', 0.25);
+        adjustStockPrice('cotton_candy', 0.15);
     }
     
     if (emotions.merchants.greed > 80) {
-        adjustStockPrice('weapon_store', 8);
-        adjustStockPrice('potion_shop', 6);
+        adjustStockPrice('weapon_store', 0.4);
+        adjustStockPrice('potion_shop', 0.3);
     }
 }
 
@@ -1222,16 +1711,16 @@ function updateNPCEmotions() {
 function applyTimeBasedEffects(hour) {
     if (hour >= 2 && hour <= 6) {
         // 새벽 시간 - 야행성 서비스 상승
-        adjustStockPrice('potion_shop', 3);
-        adjustStockPrice('angel_medical', 2);
+        adjustStockPrice('potion_shop', 0.15);
+        adjustStockPrice('angel_medical', 0.1);
     } else if (hour >= 12 && hour <= 14) {
         // 점심 시간 - 음식 관련 상승
-        adjustStockPrice('cotton_candy', 4);
-        adjustStockPrice('traveler_inn', 3);
+        adjustStockPrice('cotton_candy', 0.2);
+        adjustStockPrice('traveler_inn', 0.15);
     } else if (hour >= 18 && hour <= 22) {
         // 저녁 시간 - 엔터테인먼트 상승
-        adjustStockPrice('fantasy_entertainment', 5);
-        adjustStockPrice('dream_healing', 3);
+        adjustStockPrice('fantasy_entertainment', 0.25);
+        adjustStockPrice('dream_healing', 0.15);
     }
 }
 
@@ -1243,8 +1732,8 @@ function triggerEnhancementEvent(enhanceLevel, success) {
         STOCK_MARKET.market_state.player_actions.successful_enhancements++;
     } else if (!success) {
         // 강화 실패시 힐링 관련주 상승
-        adjustStockPrice('dream_healing', 8);
-        adjustStockPrice('angel_medical', 5);
+        adjustStockPrice('dream_healing', 0.4);
+        adjustStockPrice('angel_medical', 0.25);
     }
     
     STOCK_MARKET.market_state.player_actions.total_enhancement_attempts++;
@@ -1257,25 +1746,25 @@ function recordPlayerAction(actionType, details = {}) {
     switch(actionType) {
         case 'shop_purchase':
             actions.shop_purchases++;
-            adjustStockPrice('general_store', 1);
+            adjustStockPrice('general_store', 0.05);
             break;
         case 'hunt_start':
             actions.hunt_sessions++;
-            adjustStockPrice('weapon_store', 2);
-            adjustStockPrice('potion_shop', 2);
+            adjustStockPrice('weapon_store', 0.1);
+            adjustStockPrice('potion_shop', 0.1);
             break;
         case 'legendary_craft':
             actions.legendary_crafts++;
-            adjustStockPrice('creation_tech', 20);
+            adjustStockPrice('creation_tech', 1);
             break;
         case 'racing_event':
             // 레이싱 이벤트가 주식 시장에 미치는 영향
             if (details.potSize > 30000) {
-                adjustStockPrice('fantasy_entertainment', 15); // 엔터테인먼트
-                adjustStockPrice('traveler_inn', 10);           // 여관업
+                adjustStockPrice('fantasy_entertainment', 0.75); // 엔터테인먼트
+                adjustStockPrice('traveler_inn', 0.5);           // 여관업
             }
             if (details.participants >= 6) {
-                adjustStockPrice('aurora_tourism', 8); // 관광업
+                adjustStockPrice('aurora_tourism', 0.4); // 관광업
             }
             break;
     }
@@ -1330,38 +1819,64 @@ function adjustStockPrice(companyId, changePercent) {
     }
 }
 
-// 기본 시장 변동성 적용
+// 기본 시장 변동성 적용 (밸런스 조정)
 function applyBaseVolatility() {
     const volatility = STOCK_MARKET.market_state.volatility;
     
-    // 모든 주식에 기본 랜덤 변동 적용
+    // 모든 주식에 기본 랜덤 변동 적용 (변동폭 대폭 축소)
     for (const region of Object.values(STOCK_MARKET.regions)) {
         region.companies.forEach(company => {
-            const randomChange = (Math.random() - 0.5) * (volatility / 10);
+            // 기존 volatility / 10에서 volatility / 200으로 변경 (20배 감소)
+            const randomChange = (Math.random() - 0.5) * (volatility / 200);
             adjustStockPrice(company.id, randomChange);
         });
     }
     
     STOCK_MARKET.chains.forEach(company => {
-        const randomChange = (Math.random() - 0.5) * (volatility / 10);
+        // 기존 volatility / 10에서 volatility / 200으로 변경 (20배 감소)
+        const randomChange = (Math.random() - 0.5) * (volatility / 200);
         adjustStockPrice(company.id, randomChange);
     });
 }
 
 // 포트폴리오 관리 함수들
-function getPlayerPortfolio(userId) {
-    if (!global.playerPortfolios.has(userId)) {
-        global.playerPortfolios.set(userId, {
-            cash: 10000, // 시작 자금
-            stocks: new Map(), // companyId -> { shares, avgPrice }
-            totalValue: 10000
-        });
+async function getPlayerPortfolio(userId) {
+    try {
+        // 실제 유저 데이터에서 골드와 주식 포트폴리오를 가져오기
+        const user = await User.findOne({ discordId: userId }).select('gold stockPortfolio');
+        const userGold = user ? user.gold : 0;
+        
+        // 데이터베이스에서 주식 포트폴리오 로드
+        const portfolio = {
+            cash: userGold,
+            stocks: new Map(),
+            totalValue: userGold
+        };
+        
+        if (user && user.stockPortfolio && user.stockPortfolio.stocks) {
+            // Map 데이터를 복원
+            for (const [companyId, stockData] of user.stockPortfolio.stocks) {
+                portfolio.stocks.set(companyId, {
+                    shares: stockData.shares,
+                    avgPrice: stockData.avgPrice
+                });
+            }
+        }
+        
+        return portfolio;
+    } catch (error) {
+        console.error('포트폴리오 로드 오류:', error);
+        // 기본 포트폴리오 반환
+        return {
+            cash: 0,
+            stocks: new Map(),
+            totalValue: 0
+        };
     }
-    return global.playerPortfolios.get(userId);
 }
 
-function buyStock(userId, companyId, shares) {
-    const portfolio = getPlayerPortfolio(userId);
+async function buyStock(userId, companyId, shares) {
+    const portfolio = await getPlayerPortfolio(userId);
     const company = findCompany(companyId);
     
     if (!company) return { success: false, message: '존재하지 않는 기업입니다!' };
@@ -1371,17 +1886,48 @@ function buyStock(userId, companyId, shares) {
         return { success: false, message: '자금이 부족합니다!' };
     }
     
-    // 구매 실행
-    portfolio.cash -= totalCost;
+    // 실제 유저 골드 차감 및 포트폴리오 업데이트 (원자적 업데이트)
+    const updateResult = await User.updateOne(
+        { 
+            discordId: userId, 
+            gold: { $gte: totalCost } // 충분한 골드가 있는 경우만 업데이트
+        },
+        {
+            $inc: { 
+                gold: -totalCost,
+                'stockPortfolio.totalInvested': totalCost
+            },
+            $set: { 'stockPortfolio.lastUpdate': new Date() }
+        }
+    );
     
-    if (portfolio.stocks.has(companyId)) {
-        const existing = portfolio.stocks.get(companyId);
-        const newAvgPrice = (existing.avgPrice * existing.shares + totalCost) / (existing.shares + shares);
-        existing.shares += shares;
-        existing.avgPrice = newAvgPrice;
-    } else {
-        portfolio.stocks.set(companyId, { shares, avgPrice: company.price });
+    if (updateResult.matchedCount === 0) {
+        return { success: false, message: '자금이 부족합니다!' };
     }
+    
+    // 주식 보유량 업데이트
+    const user = await User.findOne({ discordId: userId });
+    if (!user.stockPortfolio) {
+        user.stockPortfolio = { stocks: new Map(), totalInvested: 0, lastUpdate: new Date() };
+    }
+    
+    const currentStock = user.stockPortfolio.stocks.get(companyId);
+    if (currentStock) {
+        // 기존 주식이 있으면 평균가 계산
+        const newAvgPrice = (currentStock.avgPrice * currentStock.shares + totalCost) / (currentStock.shares + shares);
+        user.stockPortfolio.stocks.set(companyId, {
+            shares: currentStock.shares + shares,
+            avgPrice: newAvgPrice
+        });
+    } else {
+        // 새로운 주식
+        user.stockPortfolio.stocks.set(companyId, {
+            shares: shares,
+            avgPrice: company.price
+        });
+    }
+    
+    await user.save();
     
     // 거래량 증가
     company.volume += shares;
@@ -1389,8 +1935,8 @@ function buyStock(userId, companyId, shares) {
     return { success: true, message: `${company.name} ${shares}주를 ${totalCost.toLocaleString()}골드에 매수했습니다!` };
 }
 
-function sellStock(userId, companyId, shares) {
-    const portfolio = getPlayerPortfolio(userId);
+async function sellStock(userId, companyId, shares) {
+    const portfolio = await getPlayerPortfolio(userId);
     const company = findCompany(companyId);
     
     if (!company) return { success: false, message: '존재하지 않는 기업입니다!' };
@@ -1401,12 +1947,30 @@ function sellStock(userId, companyId, shares) {
     
     // 매도 실행
     const totalValue = company.price * shares;
-    portfolio.cash += totalValue;
-    holding.shares -= shares;
     
-    if (holding.shares === 0) {
-        portfolio.stocks.delete(companyId);
+    // 실제 유저 골드 증가 (원자적 업데이트)
+    await User.updateOne(
+        { discordId: userId },
+        { $inc: { gold: totalValue } }
+    );
+    
+    // 데이터베이스에서 주식 보유량 업데이트
+    const user = await User.findOne({ discordId: userId });
+    const currentStock = user.stockPortfolio.stocks.get(companyId);
+    
+    if (currentStock.shares <= shares) {
+        // 모든 주식을 매도하는 경우
+        user.stockPortfolio.stocks.delete(companyId);
+    } else {
+        // 일부만 매도하는 경우
+        user.stockPortfolio.stocks.set(companyId, {
+            shares: currentStock.shares - shares,
+            avgPrice: currentStock.avgPrice // 평균가는 그대로 유지
+        });
     }
+    
+    user.stockPortfolio.lastUpdate = new Date();
+    await user.save();
     
     // 거래량 증가
     company.volume += shares;
@@ -1422,7 +1986,384 @@ function findCompany(companyId) {
     }
     
     // 체인 기업들 검색
-    return STOCK_MARKET.chains.find(c => c.id === companyId);
+    const chainCompany = STOCK_MARKET.chains.find(c => c.id === companyId);
+    if (chainCompany) return chainCompany;
+    
+    // 유물탐사회사들 검색
+    return STOCK_MARKET.exploration_companies.find(c => c.id === companyId);
+}
+
+// 🏺 유물탐사 시스템 함수들
+
+// 유물탐사 메인 메뉴 표시
+async function showArtifactExplorationMenu(interaction, user) {
+    try {
+        const stats = user.explorationStats || {
+            totalExplorations: 0,
+            totalInvested: 0,
+            totalEarned: 0,
+            successfulFinds: 0,
+            rareFinds: 0
+        };
+        
+        const profitLoss = stats.totalEarned - stats.totalInvested;
+        const successRate = stats.totalExplorations > 0 ? 
+            ((stats.successfulFinds / stats.totalExplorations) * 100).toFixed(1) : 0;
+            
+        const embed = new EmbedBuilder()
+            .setColor('#f39c12')
+            .setTitle('🏺 김헌터 유물탐사 센터')
+            .setDescription(`**신비한 고대 유물을 찾아 떠나는 모험!**\n\n고대 문명의 보물이 당신을 기다리고 있습니다.\n각 지역의 전문 탐사회사와 함께 위험하지만 수익성 높은 모험을 시작하세요!`)
+            .addFields(
+                { name: '📊 탐사 통계', value: `총 탐사: ${stats.totalExplorations}회\n성공률: ${successRate}%\n희귀 발견: ${stats.rareFinds}개`, inline: true },
+                { name: '💰 수익 현황', value: `투자: ${stats.totalInvested.toLocaleString()}G\n수익: ${stats.totalEarned.toLocaleString()}G\n순익: ${profitLoss >= 0 ? '+' : ''}${profitLoss.toLocaleString()}G`, inline: true },
+                { name: '🎒 현재 상태', value: `보유 골드: ${user.gold.toLocaleString()}G\n유물 보관: ${user.artifacts ? user.artifacts.length : 0}개\n레벨: ${user.level}`, inline: true }
+            )
+            .setFooter({ text: '⚠️ 유물탐사는 고위험 고수익 투자입니다! 신중하게 선택하세요.' });
+
+        const menuButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('artifact_direct_explore')
+                    .setLabel('⛏️ 직접 탐사')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('artifact_companies')
+                    .setLabel('🏢 탐사회사 투자')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('artifact_inventory')
+                    .setLabel('🎒 유물 보관함')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('artifact_shop')
+                    .setLabel('🏪 유물 상점')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+        const extraButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('artifact_rankings')
+                    .setLabel('🏆 탐사가 랭킹')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('artifact_guide')
+                    .setLabel('📖 탐사 가이드')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await interaction.reply({
+            embeds: [embed],
+            components: [menuButtons, extraButtons],
+            flags: 64
+        });
+        
+    } catch (error) {
+        console.error('유물탐사 메뉴 표시 오류:', error);
+        await interaction.reply({ content: '❌ 메뉴 로드 중 오류가 발생했습니다!', flags: 64 });
+    }
+}
+
+// 직접 탐사 메뉴
+async function showDirectExplorationMenu(interaction, user) {
+    try {
+        const companies = ARTIFACT_SYSTEM.companies;
+        
+        let companyList = '';
+        for (const [id, company] of Object.entries(companies)) {
+            const costs = ARTIFACT_SYSTEM.explorationCosts[company.specialty];
+            companyList += `${company.emoji} **${company.name}**\n`;
+            companyList += `   지역: ${company.region}\n`;
+            companyList += `   성공률: ${(company.successRate * 100).toFixed(1)}%\n`;
+            companyList += `   비용: ${costs.min.toLocaleString()} ~ ${costs.max.toLocaleString()}G\n\n`;
+        }
+        
+        const embed = new EmbedBuilder()
+            .setColor('#e67e22')
+            .setTitle('⛏️ 직접 유물 탐사')
+            .setDescription('탐사회사를 선택하여 직접 유물을 찾아보세요!\n각 지역마다 특별한 유물과 위험이 기다리고 있습니다.')
+            .addFields(
+                { name: '🗺️ 탐사 지역 & 회사', value: companyList, inline: false },
+                { name: '💡 탐사 팁', value: '• 성공률이 높을수록 안전하지만 수익률은 낮습니다\n• 위험한 지역일수록 레어 유물 확률이 높습니다\n• 투자 금액이 클수록 더 좋은 유물을 찾을 수 있습니다', inline: false }
+            );
+
+        const companyButtons = new ActionRowBuilder();
+        let buttonCount = 0;
+        for (const [id, company] of Object.entries(companies)) {
+            if (buttonCount < 5) {
+                companyButtons.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`explore_${id}`)
+                        .setLabel(`${company.emoji} ${company.name}`)
+                        .setStyle(ButtonStyle.Primary)
+                );
+                buttonCount++;
+            }
+        }
+
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('artifact_main_menu')
+                    .setLabel('🔙 메인 메뉴')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await interaction.update({
+            embeds: [embed],
+            components: [companyButtons, backButton]
+        });
+        
+    } catch (error) {
+        console.error('직접 탐사 메뉴 오류:', error);
+        await interaction.followUp({ content: '❌ 탐사 메뉴 로드 중 오류가 발생했습니다!', flags: 64 });
+    }
+}
+
+// 유물 발굴 실행
+async function executeExploration(interaction, user, companyId, investmentAmount) {
+    try {
+        const company = ARTIFACT_SYSTEM.companies[companyId];
+        if (!company) {
+            await interaction.editReply({ content: '❌ 존재하지 않는 탐사회사입니다!' });
+            return;
+        }
+        
+        // 골드 확인
+        if (user.gold < investmentAmount) {
+            await interaction.editReply({ content: '❌ 골드가 부족합니다!' });
+            return;
+        }
+        
+        // 골드 차감
+        await User.updateOne(
+            { discordId: interaction.user.id },
+            { 
+                $inc: { 
+                    gold: -investmentAmount,
+                    'explorationStats.totalExplorations': 1,
+                    'explorationStats.totalInvested': investmentAmount
+                },
+                $set: { 'explorationStats.lastExploration': new Date() }
+            }
+        );
+        
+        // 탐사 결과 계산
+        const result = calculateExplorationResult(company, investmentAmount);
+        
+        // 결과에 따른 처리
+        let embed;
+        
+        if (result.success) {
+            // 성공 - 유물 발견
+            const artifact = result.artifact;
+            
+            // 유물을 인벤토리에 추가
+            await User.updateOne(
+                { discordId: interaction.user.id },
+                { 
+                    $push: { 
+                        artifacts: {
+                            name: artifact.name,
+                            emoji: artifact.emoji,
+                            rarity: result.rarity,
+                            value: artifact.value,
+                            description: artifact.description,
+                            foundDate: new Date(),
+                            company: company.name,
+                            region: company.region
+                        }
+                    },
+                    $inc: { 
+                        'explorationStats.successfulFinds': 1,
+                        'explorationStats.biggestFind': artifact.value > (user.explorationStats?.biggestFind || 0) ? artifact.value - (user.explorationStats?.biggestFind || 0) : 0
+                    }
+                }
+            );
+            
+            if (result.rarity !== 'common') {
+                await User.updateOne(
+                    { discordId: interaction.user.id },
+                    { $inc: { 'explorationStats.rareFinds': 1 } }
+                );
+            }
+            
+            // 주식 가격에 영향
+            updateExplorationCompanyStock(companyId, true, result.rarity);
+            
+            embed = new EmbedBuilder()
+                .setColor(getRarityColor(result.rarity))
+                .setTitle('🎉 유물 발견 성공!')
+                .setDescription(result.story)
+                .addFields(
+                    { name: `${artifact.emoji} 발견한 유물`, value: `**${artifact.name}**\n${artifact.description}`, inline: false },
+                    { name: '💎 등급', value: getRarityText(result.rarity), inline: true },
+                    { name: '💰 추정 가치', value: `${artifact.value.toLocaleString()}G`, inline: true },
+                    { name: '📍 발견 지역', value: `${company.emoji} ${company.region}`, inline: true }
+                )
+                .setFooter({ text: '유물을 상점에 판매하거나 보관할 수 있습니다!' });
+                
+        } else {
+            // 실패
+            updateExplorationCompanyStock(companyId, false);
+            
+            embed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('💸 탐사 실패...')
+                .setDescription(result.story)
+                .addFields(
+                    { name: '💔 결과', value: `${result.failure.emoji} ${result.failure.name}\n${result.failure.description}`, inline: false },
+                    { name: '📉 손실', value: `${investmentAmount.toLocaleString()}G`, inline: true },
+                    { name: '📍 탐사 지역', value: `${company.emoji} ${company.region}`, inline: true }
+                )
+                .setFooter({ text: '다음 탐사에서는 더 좋은 결과가 있기를!' });
+        }
+        
+        const retryButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('artifact_direct_explore')
+                    .setLabel('🔄 다시 탐사')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('artifact_inventory')
+                    .setLabel('🎒 유물 보관함')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('artifact_main_menu')
+                    .setLabel('🏠 메인 메뉴')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            
+        await interaction.editReply({
+            embeds: [embed],
+            components: [retryButton]
+        });
+        
+    } catch (error) {
+        console.error('유물 탐사 실행 오류:', error);
+        await interaction.editReply({ content: '❌ 탐사 실행 중 오류가 발생했습니다!' });
+    }
+}
+
+// 탐사 결과 계산
+function calculateExplorationResult(company, investment) {
+    const baseSuccessRate = company.successRate;
+    
+    // 투자 금액에 따른 성공률 보너스 (최대 +20%)
+    const costs = ARTIFACT_SYSTEM.explorationCosts[company.specialty];
+    const investmentRatio = (investment - costs.min) / (costs.max - costs.min);
+    const investmentBonus = Math.min(0.2, investmentRatio * 0.2);
+    
+    const finalSuccessRate = baseSuccessRate + investmentBonus;
+    const random = Math.random();
+    
+    if (random <= finalSuccessRate) {
+        // 성공 - 유물 발견
+        const rarityRoll = Math.random();
+        let rarity, artifacts;
+        
+        if (rarityRoll <= 0.02) { // 2% 레전드리
+            rarity = 'legendary';
+            artifacts = ARTIFACT_SYSTEM.artifacts.legendary;
+        } else if (rarityRoll <= 0.10) { // 8% 에픽
+            rarity = 'epic';
+            artifacts = ARTIFACT_SYSTEM.artifacts.epic;
+        } else if (rarityRoll <= 0.30) { // 20% 레어
+            rarity = 'rare';
+            artifacts = ARTIFACT_SYSTEM.artifacts.rare;
+        } else { // 70% 커먼
+            rarity = 'common';
+            artifacts = ARTIFACT_SYSTEM.artifacts.common;
+        }
+        
+        // 특화 유물 확인
+        const specialArtifacts = ARTIFACT_SYSTEM.specialArtifacts[company.specialty];
+        if (specialArtifacts && Math.random() <= 0.05) { // 5% 확률로 특화 유물
+            const specialArtifact = specialArtifacts[Math.floor(Math.random() * specialArtifacts.length)];
+            artifacts = [specialArtifact];
+            rarity = specialArtifact.rarity;
+        }
+        
+        const artifact = artifacts[Math.floor(Math.random() * artifacts.length)];
+        const value = Array.isArray(artifact.value) ? 
+            Math.floor(Math.random() * (artifact.value[1] - artifact.value[0] + 1)) + artifact.value[0] :
+            artifact.value;
+            
+        // 투자 금액에 따른 가치 보너스
+        const valueMultiplier = 1 + (investmentRatio * 0.5); // 최대 50% 보너스
+        const finalValue = Math.floor(value * valueMultiplier);
+        
+        const story = ARTIFACT_SYSTEM.stories.success[rarity][
+            Math.floor(Math.random() * ARTIFACT_SYSTEM.stories.success[rarity].length)
+        ];
+        
+        return {
+            success: true,
+            rarity: rarity,
+            artifact: {
+                ...artifact,
+                value: finalValue
+            },
+            story: story
+        };
+    } else {
+        // 실패
+        const failure = ARTIFACT_SYSTEM.failures[Math.floor(Math.random() * ARTIFACT_SYSTEM.failures.length)];
+        const story = ARTIFACT_SYSTEM.stories.failure[Math.floor(Math.random() * ARTIFACT_SYSTEM.stories.failure.length)];
+        
+        return {
+            success: false,
+            failure: failure,
+            story: story
+        };
+    }
+}
+
+// 등급별 색상
+function getRarityColor(rarity) {
+    switch (rarity) {
+        case 'common': return '#95a5a6';
+        case 'rare': return '#3498db';
+        case 'epic': return '#9b59b6';
+        case 'legendary': return '#f1c40f';
+        default: return '#95a5a6';
+    }
+}
+
+// 등급별 텍스트
+function getRarityText(rarity) {
+    switch (rarity) {
+        case 'common': return '🤍 일반';
+        case 'rare': return '💙 희귀';
+        case 'epic': return '💜 에픽';
+        case 'legendary': return '💛 전설';
+        default: return '🤍 일반';
+    }
+}
+
+// 탐사회사 주식 가격 업데이트
+function updateExplorationCompanyStock(companyId, success, rarity = 'common') {
+    const companies = STOCK_MARKET.exploration_companies;
+    const company = companies.find(c => c.id === companyId);
+    
+    if (company) {
+        let priceChange = 0;
+        
+        if (success) {
+            switch (rarity) {
+                case 'common': priceChange = 0.05; break;
+                case 'rare': priceChange = 0.15; break;
+                case 'epic': priceChange = 0.4; break;
+                case 'legendary': priceChange = 0.75; break;
+            }
+        } else {
+            priceChange = -0.1; // 실패 시 주가 하락
+        }
+        
+        adjustStockPrice(companyId, priceChange);
+    }
 }
 
 // 차트 데이터 업데이트 함수
@@ -1492,12 +2433,14 @@ updateChartData();
 // 임시: 차트 데이터 빠르게 채우기 (개발용) - 메모리 최적화
 function fillChartDataForDevelopment() {
     console.log('차트 데이터 초기화 중...');
-    // 최근 30분 데이터를 시뮬레이션 (5분 간격으로 6개로 감소)
-    for (let i = 0; i < 6; i++) {
+    // 최근 60분 데이터를 시뮬레이션 (5분 간격으로 12개)
+    for (let i = 0; i < 12; i++) {
         updateStockPrices();
         updateChartData();
     }
     console.log('차트 데이터 초기화 완료!');
+    console.log('타임스탬프:', STOCK_MARKET.chart_history.timestamps.length);
+    console.log('시장 지수:', STOCK_MARKET.chart_history.market_index.length);
 }
 
 // 봇 시작시 차트 데이터 채우기
@@ -1513,8 +2456,8 @@ async function generateRealChart(chartData, title, type = 'line') {
             return null;
         }
         
-        // 데이터를 최대 20개로 제한
-        const limitedData = chartData.slice(-20);
+        // 데이터를 최대 25개로 제한 (더 자세한 차트)
+        const limitedData = chartData.slice(-25);
         
         // 간단한 시간 레이블 생성
         const labels = [];
@@ -1544,13 +2487,19 @@ async function generateRealChart(chartData, title, type = 'line') {
                     title: {
                         display: true,
                         text: title
+                    },
+                    legend: {
+                        display: true
                     }
+                },
+                layout: {
+                    padding: 20
                 }
             }
         };
         
-        // QuickChart URL 생성 (간소화)
-        const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=800&height=400`;
+        // QuickChart URL 생성 (워터마크 제거)
+        const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=1000&height=500&format=png`;
         
         console.log('차트 Config:', JSON.stringify(chartConfig, null, 2));
         console.log('차트 URL 생성 완료');
@@ -1569,8 +2518,8 @@ async function generateMarketOverviewChart() {
         
         if (chartHistory.timestamps.length === 0) return null;
         
-        // 최근 15개 데이터만 사용 (URL 길이 단축)
-        const dataPoints = 15;
+        // 최근 20개 데이터 사용 (더 자세한 차트)
+        const dataPoints = Math.min(20, chartHistory.timestamps.length);
         const labels = [];
         for (let i = 0; i < dataPoints; i++) {
             labels.push(`-${(dataPoints - i - 1) * 5}분`);
@@ -1619,12 +2568,18 @@ async function generateMarketOverviewChart() {
                     title: {
                         display: true,
                         text: '김헌터 실시간 차트'
+                    },
+                    legend: {
+                        display: true
                     }
+                },
+                layout: {
+                    padding: 20
                 }
             }
         };
         
-        const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=800&height=400&bkg=rgb(47,49,54)`;
+        const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=1000&height=500&bkg=rgb(47,49,54)&format=png`;
         
         console.log('Market chart URL length:', chartUrl.length);
         
@@ -1643,7 +2598,7 @@ async function generateMarketOverviewChart() {
                 }
             };
             
-            return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(simpleConfig))}&width=800&height=400`;
+            return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(simpleConfig))}&width=1000&height=500&format=png`;
         }
         
         return chartUrl;
@@ -1716,10 +2671,285 @@ async function generateCandlestickChart(companyId, companyName) {
         }
     };
     
-    const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=800&height=400&backgroundColor=rgb(47,49,54)`;
+    const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=1000&height=500&backgroundColor=rgb(47,49,54)&format=png`;
     
     return chartUrl;
 }
+
+// 🏺 유물 시장 시스템
+// 유물 시장 가치 업데이트 함수
+function updateArtifactMarket() {
+    try {
+        const artifactMarket = STOCK_MARKET.artifact_market;
+        const now = Date.now();
+        
+        // 5분마다 업데이트
+        if (now - artifactMarket.last_update < 5 * 60 * 1000) return;
+        
+        // 시장 이벤트 체크
+        checkArtifactMarketEvents();
+        
+        // 각 유물 가치 배율 업데이트
+        for (const [artifactName, currentMultiplier] of Object.entries(artifactMarket.value_multipliers)) {
+            // 기본 변동률 (-2% ~ +2%)
+            const baseVariation = (Math.random() - 0.5) * 0.04;
+            
+            // 변동성에 따른 추가 변동
+            const volatilityMultiplier = artifactMarket.volatility / 100;
+            const volatilityVariation = (Math.random() - 0.5) * 0.02 * volatilityMultiplier;
+            
+            // 총 변동률
+            const totalVariation = baseVariation + volatilityVariation;
+            
+            // 새 배율 계산 (0.5 ~ 2.0 범위로 제한)
+            let newMultiplier = currentMultiplier * (1 + totalVariation);
+            newMultiplier = Math.max(0.5, Math.min(2.0, newMultiplier));
+            
+            // 이벤트 효과 적용
+            newMultiplier = applyArtifactEvents(artifactName, newMultiplier);
+            
+            artifactMarket.value_multipliers[artifactName] = newMultiplier;
+        }
+        
+        // 차트 데이터 업데이트
+        updateArtifactChartData();
+        
+        artifactMarket.last_update = now;
+        console.log('🏺 유물 시장 업데이트 완료');
+        
+    } catch (error) {
+        console.error('유물 시장 업데이트 오류:', error);
+    }
+}
+
+// 유물 시장 이벤트 체크
+function checkArtifactMarketEvents() {
+    const artifactMarket = STOCK_MARKET.artifact_market;
+    const now = Date.now();
+    
+    // 만료된 이벤트 제거
+    artifactMarket.active_events = artifactMarket.active_events.filter(event => {
+        return now < event.start_time + event.duration;
+    });
+    
+    // 새 이벤트 생성 체크
+    for (const eventTemplate of artifactMarket.market_events) {
+        if (Math.random() < eventTemplate.probability) {
+            const newEvent = {
+                ...eventTemplate,
+                start_time: now,
+                id: `${eventTemplate.name}_${now}`
+            };
+            
+            // 동일한 이벤트가 이미 활성화되어 있지 않다면 추가
+            if (!artifactMarket.active_events.some(e => e.name === eventTemplate.name)) {
+                artifactMarket.active_events.push(newEvent);
+                console.log(`🎉 유물 시장 이벤트 시작: ${eventTemplate.name}`);
+            }
+        }
+    }
+}
+
+// 유물에 이벤트 효과 적용
+function applyArtifactEvents(artifactName, baseMultiplier) {
+    const artifactMarket = STOCK_MARKET.artifact_market;
+    let finalMultiplier = baseMultiplier;
+    
+    // 유물 등급 확인 (간단한 매핑)
+    const artifactRarity = getArtifactRarity(artifactName);
+    
+    for (const event of artifactMarket.active_events) {
+        if (event.effect.rarity === artifactRarity) {
+            finalMultiplier *= event.effect.multiplier;
+        }
+    }
+    
+    return finalMultiplier;
+}
+
+// 유물 등급 확인
+function getArtifactRarity(artifactName) {
+    // 레전드리 유물들
+    const legendaryArtifacts = ['창조의 서판', '무한의 보석', '시공간 열쇠', '생명의 나무 가지', '별의 눈물', 
+                               '파라오의 황금 마스크', '해적왕의 보물상자', '설인의 발자국 화석', 
+                               '잃어버린 도시의 열쇠', '외계 문명의 데이터 코어'];
+    
+    // 에픽 유물들
+    const epicArtifacts = ['왕관의 조각', '용의 비늘', '신의 성물', '시간의 모래시계', '불멸의 약초',
+                          '미라의 붕대', '인어의 진주', '얼음 수정', '아즈텍 황금 조각상', '운석 조각'];
+    
+    // 희귀 유물들
+    const rareArtifacts = ['황금 목걸이', '보석 단검', '고대 두루마리', '수정 구슬', '은 잔'];
+    
+    if (legendaryArtifacts.includes(artifactName)) return 'legendary';
+    if (epicArtifacts.includes(artifactName)) return 'epic';
+    if (rareArtifacts.includes(artifactName)) return 'rare';
+    return 'common';
+}
+
+// 유물 차트 데이터 업데이트
+function updateArtifactChartData() {
+    const artifactMarket = STOCK_MARKET.artifact_market;
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString('ko-KR', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+    
+    // 타임스탬프 추가
+    artifactMarket.chart_history.timestamps.push(timestamp);
+    
+    // 전체 유물 시장 지수 계산 (평균 배율)
+    const multipliers = Object.values(artifactMarket.value_multipliers);
+    const averageMultiplier = multipliers.reduce((sum, m) => sum + m, 0) / multipliers.length;
+    const marketIndex = Math.round(averageMultiplier * 1000); // 1000을 기준으로 지수화
+    
+    artifactMarket.chart_history.artifact_index.push(marketIndex);
+    
+    // 개별 유물 데이터 업데이트 (상위 10개만)
+    const topArtifacts = Object.entries(artifactMarket.value_multipliers)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 10);
+    
+    for (const [artifactName, multiplier] of topArtifacts) {
+        if (!artifactMarket.chart_history.individual_artifacts[artifactName]) {
+            artifactMarket.chart_history.individual_artifacts[artifactName] = [];
+        }
+        
+        const value = Math.round(multiplier * 100); // 백분율로 변환
+        artifactMarket.chart_history.individual_artifacts[artifactName].push(value);
+        
+        // 최대 50개 데이터포인트만 유지
+        if (artifactMarket.chart_history.individual_artifacts[artifactName].length > 50) {
+            artifactMarket.chart_history.individual_artifacts[artifactName].shift();
+        }
+    }
+    
+    // 최대 50개 데이터포인트만 유지
+    if (artifactMarket.chart_history.timestamps.length > 50) {
+        artifactMarket.chart_history.timestamps.shift();
+        artifactMarket.chart_history.artifact_index.shift();
+    }
+}
+
+// 유물의 현재 시장 가치 계산
+function calculateArtifactValue(artifact) {
+    const artifactMarket = STOCK_MARKET.artifact_market;
+    const baseValue = artifact.value;
+    const multiplier = artifactMarket.value_multipliers[artifact.name] || 1.0;
+    
+    return Math.round(baseValue * multiplier);
+}
+
+// 유물 시장 차트 생성
+async function generateArtifactChart(type = 'market') {
+    try {
+        const artifactMarket = STOCK_MARKET.artifact_market;
+        const chartHistory = artifactMarket.chart_history;
+        
+        if (chartHistory.timestamps.length < 2) {
+            return null;
+        }
+        
+        const dataPoints = Math.min(25, chartHistory.timestamps.length);
+        const labels = chartHistory.timestamps.slice(-dataPoints);
+        
+        let chartConfig;
+        
+        if (type === 'market') {
+            // 전체 시장 지수 차트
+            chartConfig = {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '유물 시장 지수',
+                        data: chartHistory.artifact_index.slice(-dataPoints),
+                        borderColor: '#f39c12',
+                        backgroundColor: 'rgba(243,156,18,0.1)',
+                        borderWidth: 3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '🏺 유물 시장 종합 지수',
+                            color: '#f39c12',
+                            font: { size: 16 }
+                        },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            ticks: { color: '#ffffff' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        x: {
+                            ticks: { color: '#ffffff' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    }
+                }
+            };
+        } else {
+            // 개별 유물 차트
+            const topArtifacts = Object.entries(chartHistory.individual_artifacts)
+                .filter(([name, data]) => data.length > 1)
+                .slice(0, 5);
+            
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
+            const datasets = topArtifacts.map(([name, data], index) => ({
+                label: name,
+                data: data.slice(-dataPoints),
+                borderColor: colors[index],
+                borderWidth: 2,
+                fill: false
+            }));
+            
+            chartConfig = {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '💎 주요 유물 가치 변동',
+                            color: '#f39c12',
+                            font: { size: 16 }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            ticks: { color: '#ffffff' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        x: {
+                            ticks: { color: '#ffffff' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    }
+                }
+            };
+        }
+        
+        const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=1000&height=500&backgroundColor=rgb(47,49,54)&format=png`;
+        return chartUrl;
+        
+    } catch (error) {
+        console.error('유물 차트 생성 오류:', error);
+        return null;
+    }
+}
+
+// 유물 시장 정기 업데이트 시작
+setInterval(updateArtifactMarket, 5 * 60 * 1000); // 5분마다 업데이트
 
 // 🏁 아바타 레이싱 시스템
 class BettingRaceSystem {
@@ -2784,12 +4014,21 @@ class MonsterBattleSystem {
                     .setStyle(ButtonStyle.Success)
             );
 
-        await interaction.reply({ embeds: [embed], components: [row] });
+        if (interaction.replied || interaction.deferred) {
+            await interaction.editReply({ embeds: [embed], components: [row] });
+        } else {
+            await interaction.reply({ embeds: [embed], components: [row] });
+        }
     }
 
     // 베팅 메뉴 표시 (중복 베팅 지원)
     async showBettingMenu(interaction) {
         const user = await User.findOne({ discordId: interaction.user.id });
+        
+        if (!user) {
+            await interaction.reply({ content: '사용자 정보를 찾을 수 없습니다.', flags: 64 });
+            return;
+        }
         
         // 현재 베팅 초기화 (새로운 베팅 시작)
         if (!user.oddEvenStats) {
@@ -2884,6 +4123,8 @@ class MonsterBattleSystem {
         // Modal submission은 update를 사용할 수 없으므로 reply 사용
         if (interaction.isModalSubmit()) {
             await interaction.reply({ embeds: [embed], components });
+        } else if (interaction.replied || interaction.deferred) {
+            await interaction.editReply({ embeds: [embed], components });
         } else {
             await interaction.update({ embeds: [embed], components });
         }
@@ -3953,7 +5194,10 @@ class MushroomGameSystem {
     // 게임 종료
     async endGame(interaction, userId) {
         const session = this.sessions.get(userId);
-        if (!session) return;
+        if (!session) {
+            await interaction.reply({ content: '진행 중인 게임이 없습니다.', flags: 64 });
+            return;
+        }
 
         await this.saveGameResult(userId);
 
@@ -3965,10 +5209,17 @@ class MushroomGameSystem {
                 { name: '🏆 최종 성과', value: `생존 라운드: ${session.survivedRounds}\n획득 골드: ${session.totalReward}G`, inline: false }
             );
 
-        await interaction.update({
-            embeds: [endEmbed],
-            components: []
-        });
+        if (interaction.replied || interaction.deferred) {
+            await interaction.editReply({
+                embeds: [endEmbed],
+                components: []
+            });
+        } else {
+            await interaction.update({
+                embeds: [endEmbed],
+                components: []
+            });
+        }
     }
 }
 
@@ -6055,7 +7306,31 @@ const commands = [
                     { name: '🌱 혼자 플레이', value: 'solo' },
                     { name: '⚔️ 유저와 대결', value: 'pvp' },
                     { name: '🤖 봇과 대결', value: 'bot' }
-                ))
+                )),
+                
+    new SlashCommandBuilder()
+        .setName('주식복구')
+        .setDescription('📈 잃어버린 주식 데이터를 복구합니다 (관리자 전용)')
+        .addUserOption(option =>
+            option.setName('유저')
+                .setDescription('주식을 복구할 유저')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('기업')
+                .setDescription('기업 ID (예: traveler_inn)')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('수량')
+                .setDescription('보유 주식 수량')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('평균가')
+                .setDescription('평균 매수가')
+                .setRequired(true)),
+                
+    new SlashCommandBuilder()
+        .setName('유물탐사')
+        .setDescription('🏺 유물을 탐사하여 보물을 찾아보세요!')
 ];
 
 // 봇이 준비되었을 때
@@ -6172,6 +7447,922 @@ async function initializeEmblemSystem() {
     }
 }
 
+// 메뉴 시스템 인터랙션 처리
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isStringSelectMenu()) return;
+    
+    const { customId, values, user } = interaction;
+    console.log(`🟣 드롭다운 선택됨: ${customId}, 값: ${values[0]}`);
+    
+    try {
+        // 메인 메뉴 처리
+        if (customId === 'main_menu') {
+            const selectedValue = values[0];
+            
+            // 관리자 패널 접근 권한 확인
+            if (selectedValue === 'admin_panel' && !isAdmin(user.id)) {
+                return await interaction.reply({ 
+                    content: '❌ 관리자만 접근할 수 있습니다!', 
+                    ephemeral: true 
+                });
+            }
+            
+            // 각 메뉴 항목에 따른 처리 - 기존 기능들을 실제로 호출
+            switch (selectedValue) {
+                case 'hunting':
+                    // 기존 사냥 로직 호출
+                    await interaction.deferReply();
+                    
+                    const user = await getUser(interaction.user.id);
+                    if (!user || !user.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    // 사냥터 목록 표시 (기존 hunting 로직 재사용)
+                    const currentPage = 0;
+                    const itemsPerPage = 5;
+                    const availableAreas = huntingAreas.filter(area => user.unlockedAreas.includes(area.id));
+                    const totalPages = Math.ceil(availableAreas.length / itemsPerPage);
+                    
+                    if (availableAreas.length === 0) {
+                        return await interaction.editReply({ content: '❌ 사용 가능한 사냥터가 없습니다!' });
+                    }
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor('#ff6b6b')
+                        .setTitle('🗡️ 사냥터 선택')
+                        .setDescription('사냥할 지역을 선택하세요');
+                    
+                    const huntingButtons = new ActionRowBuilder();
+                    const startIndex = currentPage * itemsPerPage;
+                    const currentAreas = availableAreas.slice(startIndex, startIndex + itemsPerPage);
+                    
+                    currentAreas.forEach(area => {
+                        huntingButtons.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`hunt_area_${area.id}`)
+                                .setLabel(area.name)
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    });
+                    
+                    const navButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('hunt_prev_page')
+                                .setLabel('◀ 이전')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setDisabled(currentPage === 0),
+                            new ButtonBuilder()
+                                .setCustomId('hunt_page_info')
+                                .setLabel(`${currentPage + 1}/${totalPages}`)
+                                .setStyle(ButtonStyle.Secondary)
+                                .setDisabled(true),
+                            new ButtonBuilder()
+                                .setCustomId('hunt_next_page')
+                                .setLabel('다음 ▶')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setDisabled(currentPage >= totalPages - 1),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ 
+                        embeds: [embed], 
+                        components: [huntingButtons, navButtons] 
+                    });
+                    
+                case 'equipment':
+                    // 기존 장비 로직 호출
+                    await interaction.deferReply();
+                    
+                    const equipUser = await getUser(interaction.user.id);
+                    if (!equipUser || !equipUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    // 장비 관리 화면 표시
+                    const equipmentEmbed = new EmbedBuilder()
+                        .setColor('#ffaa00')
+                        .setTitle('⚔️ 장비 관리')
+                        .setDescription('장착 중인 장비를 확인하고 관리하세요');
+                    
+                    const slots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+                    
+                    for (const slot of slots) {
+                        const slotIndex = equipUser.equipment[slot];
+                        let slotInfo = '착용 안함';
+                        
+                        if (slotIndex !== -1) {
+                            const equippedItem = equipUser.inventory.find(item => item.inventorySlot === slotIndex);
+                            if (equippedItem) {
+                                const enhanceText = equippedItem.enhanceLevel > 0 ? ` (+${equippedItem.enhanceLevel}강)` : '';
+                                slotInfo = `${equippedItem.name}${enhanceText}`;
+                            }
+                        }
+                        
+                        equipmentEmbed.addFields({
+                            name: getSlotDisplayName(slot),
+                            value: slotInfo,
+                            inline: true
+                        });
+                    }
+                    
+                    const equipButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('equip_category_weapons')
+                                .setLabel('⚔️ 무기 장착')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('equip_category_armor')
+                                .setLabel('🛡️ 방어구')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('inventory')
+                                .setLabel('🎒 인벤토리')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ 
+                        embeds: [equipmentEmbed], 
+                        components: [equipButtons] 
+                    });
+                    
+                case 'shop':
+                    // 기존 상점 로직 호출
+                    await interaction.deferReply();
+                    
+                    const shopEmbed = new EmbedBuilder()
+                        .setColor('#00ff7f')
+                        .setTitle('🛒 김헌터 상점')
+                        .setDescription('원하는 카테고리를 선택하세요');
+                    
+                    const categoryButtons1 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('shop_weapon')
+                                .setLabel('⚔️ 무기')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('shop_armor')
+                                .setLabel('🛡️ 갑옷')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('shop_helmet')
+                                .setLabel('⛑️ 헬멧')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('shop_gloves')
+                                .setLabel('🧤 장갑')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('shop_boots')
+                                .setLabel('👢 부츠')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    
+                    const categoryButtons2 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('shop_accessory')
+                                .setLabel('💎 액세서리')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('shop_scroll')
+                                .setLabel('📜 주문서')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('shop_consumables')
+                                .setLabel('🧪 소비')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ 
+                        embeds: [shopEmbed], 
+                        components: [categoryButtons1, categoryButtons2] 
+                    });
+                    
+                case 'stocks':
+                    // 기존 주식 로직 호출
+                    await interaction.deferReply();
+                    
+                    const stockEmbed = new EmbedBuilder()
+                        .setColor('#4169e1')
+                        .setTitle('📈 환상 차원 주식거래소')
+                        .setDescription('환상적인 수익을 위한 차원간 투자!')
+                        .setFooter({ text: '투자에는 위험이 따릅니다. 신중하게 결정하세요!' });
+                    
+                    const stockButtons1 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('stock_regions')
+                                .setLabel('🌍 지역별 기업')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('stock_chains')
+                                .setLabel('🏢 체인 기업')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('stock_portfolio')
+                                .setLabel('💼 내 포트폴리오')
+                                .setStyle(ButtonStyle.Success)
+                        );
+                    
+                    const stockButtons2 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('stock_news')
+                                .setLabel('📰 시장 뉴스')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('stock_chart')
+                                .setLabel('📊 실시간 차트')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('stock_analysis')
+                                .setLabel('🔍 시장 분석')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ 
+                        embeds: [stockEmbed], 
+                        components: [stockButtons1, stockButtons2] 
+                    });
+                    
+                case 'artifacts':
+                    // 기존 유물탐사 로직 호출
+                    await interaction.deferReply();
+                    
+                    const artifactEmbed = new EmbedBuilder()
+                        .setColor('#daa520')
+                        .setTitle('🏺 유물 탐사 센터')
+                        .setDescription('고대의 보물을 찾아 부를 축적하세요!')
+                        .setFooter({ text: '탐사에는 위험이 따르지만, 그만큼 큰 보상이 기다립니다!' });
+                    
+                    const menuButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('artifact_direct_explore')
+                                .setLabel('⛏️ 직접 탐사')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('artifact_companies')
+                                .setLabel('🏢 탐사회사 투자')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('artifact_inventory')
+                                .setLabel('🎒 유물 보관함')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('artifact_shop')
+                                .setLabel('🏪 유물 상점')
+                                .setStyle(ButtonStyle.Success)
+                        );
+                    
+                    const extraButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('artifact_rankings')
+                                .setLabel('🏆 탐사가 랭킹')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('artifact_guide')
+                                .setLabel('📖 탐사 가이드')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('artifact_market_chart')
+                                .setLabel('📈 유물 시장 차트')
+                                .setStyle(ButtonStyle.Success)
+                        );
+                    
+                    return await interaction.editReply({ 
+                        embeds: [artifactEmbed], 
+                        components: [menuButtons, extraButtons] 
+                    });
+                    
+                case 'daily':
+                    // 기존 일일보상 로직 호출
+                    await interaction.deferReply();
+                    
+                    const dailyUser = await getUser(interaction.user.id);
+                    if (!dailyUser || !dailyUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const today = new Date().toDateString();
+                    if (dailyUser.lastDaily === today) {
+                        return await interaction.editReply({ content: '오늘은 이미 출석체크를 하셨습니다!' });
+                    }
+                    
+                    // 출석체크 실행
+                    const baseReward = 100;
+                    const streakBonus = dailyUser.attendanceStreak * 10;
+                    const totalReward = baseReward + streakBonus;
+                    
+                    await User.findOneAndUpdate(
+                        { discordId: interaction.user.id },
+                        { 
+                            $inc: { gold: totalReward, attendanceStreak: 1 },
+                            $set: { lastDaily: today }
+                        }
+                    );
+                    
+                    const dailyEmbed = new EmbedBuilder()
+                        .setColor('#00ff00')
+                        .setTitle('🎁 출석체크 완료!')
+                        .setDescription(`**${totalReward}<:currency_emoji:1377404064316522778>** 골드를 획득했습니다!`)
+                        .addFields(
+                            { name: '기본 보상', value: `${baseReward}<:currency_emoji:1377404064316522778>`, inline: true },
+                            { name: '연속 출석 보너스', value: `${streakBonus}<:currency_emoji:1377404064316522778>`, inline: true },
+                            { name: '연속 출석일', value: `${dailyUser.attendanceStreak + 1}일`, inline: true }
+                        );
+                    
+                    return await interaction.editReply({ embeds: [dailyEmbed] });
+                    
+                case 'profile':
+                    // 기존 프로필 로직 호출
+                    await interaction.deferReply();
+                    
+                    const profileUser = await getUser(interaction.user.id);
+                    if (!profileUser || !profileUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const maxExp = profileUser.level * 100;
+                    const profileEmbed = new EmbedBuilder()
+                        .setColor('#9932cc')
+                        .setTitle('👤 내 정보')
+                        .setDescription(`**${profileUser.nickname}**님의 게임 정보`)
+                        .addFields(
+                            { name: '레벨', value: `Lv.${profileUser.level}`, inline: true },
+                            { name: '경험치', value: `${profileUser.exp}/${maxExp} EXP`, inline: true },
+                            { name: '골드', value: `${profileUser.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                            { name: '인기도', value: `${profileUser.popularity} ${profileUser.popularity > 0 ? '❤️' : profileUser.popularity < 0 ? '💔' : ''}`, inline: true },
+                            { name: '출석 연속일', value: `${profileUser.attendanceStreak}일`, inline: true },
+                            { name: '해제된 사냥터', value: `${profileUser.unlockedAreas.length}개`, inline: true }
+                        );
+                    
+                    return await interaction.editReply({ embeds: [profileEmbed] });
+                    
+                case 'work':
+                    // 일하기 기능
+                    await interaction.deferReply();
+                    
+                    const workUser = await getUser(interaction.user.id);
+                    if (!workUser || !workUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const now = Date.now();
+                    const cooldownTime = 60 * 60 * 1000; // 1시간
+                    if (workUser.lastWork && now - workUser.lastWork < cooldownTime) {
+                        const remainingTime = Math.ceil((cooldownTime - (now - workUser.lastWork)) / 60000);
+                        return await interaction.editReply({ content: `⏰ 아직 쉬는 시간입니다! ${remainingTime}분 후에 다시 일할 수 있어요.` });
+                    }
+                    
+                    const workReward = Math.floor(Math.random() * 100) + 50;
+                    await User.findOneAndUpdate(
+                        { discordId: interaction.user.id },
+                        { 
+                            $inc: { gold: workReward },
+                            $set: { lastWork: now }
+                        }
+                    );
+                    
+                    const workEmbed = new EmbedBuilder()
+                        .setColor('#00bfff')
+                        .setTitle('⚒️ 일하기 완료!')
+                        .setDescription(`열심히 일해서 **${workReward}<:currency_emoji:1377404064316522778>** 골드를 벌었습니다!`);
+                    
+                    return await interaction.editReply({ embeds: [workEmbed] });
+                    
+                case 'quest':
+                    // 의뢰 기능
+                    await interaction.deferReply();
+                    
+                    const questUser = await getUser(interaction.user.id);
+                    if (!questUser || !questUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const questEmbed = new EmbedBuilder()
+                        .setColor('#ff00ff')
+                        .setTitle('📜 의뢰 시스템')
+                        .setDescription('의뢰 시스템은 준비 중입니다!\n곧 다양한 퀘스트를 수행할 수 있습니다.');
+                    
+                    return await interaction.editReply({ embeds: [questEmbed] });
+                    
+                case 'pvp':
+                    // PVP 메뉴
+                    await interaction.deferReply();
+                    
+                    const pvpUser = await getUser(interaction.user.id);
+                    if (!pvpUser || !pvpUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const pvpEmbed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('⚔️ PVP 대전장')
+                        .setDescription('다른 플레이어와 실력을 겨뤄보세요!')
+                        .addFields(
+                            { name: '🎖️ 나의 레이팅', value: `${pvpUser.pvp?.rating || 1000}점`, inline: true },
+                            { name: '🏅 티어', value: pvpUser.pvp?.tier || 'Bronze', inline: true },
+                            { name: '🎫 결투권', value: `${pvpUser.pvp?.duelTickets || 20}개`, inline: true }
+                        );
+                    
+                    const pvpButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('pvp_matchmaking')
+                                .setLabel('⚔️ 대전 시작')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('pvp_ranking')
+                                .setLabel('🏆 PVP 랭킹')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('pvp_info')
+                                .setLabel('📖 PVP 정보')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [pvpEmbed], components: [pvpButtons] });
+                    
+                case 'mushroom':
+                    // 독버섯 게임
+                    await interaction.deferReply();
+                    
+                    const mushroomUser = await getUser(interaction.user.id);
+                    if (!mushroomUser || !mushroomUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const mushroomEmbed = new EmbedBuilder()
+                        .setColor('#32cd32')
+                        .setTitle('🍄 독버섯 게임')
+                        .setDescription('독버섯을 피하고 황금버섯을 찾아보세요!')
+                        .addFields(
+                            { name: '🎮 게임 방식', value: '여러 버섯 중 독버섯을 피하고 황금버섯을 찾으세요', inline: false },
+                            { name: '💰 베팅 금액', value: '1라운드당 100골드', inline: true },
+                            { name: '🏆 최대 보상', value: '베팅금의 10배까지!', inline: true }
+                        );
+                    
+                    const mushroomButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('mushroom_solo')
+                                .setLabel('🍄 혼자 플레이')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('mushroom_pvp')
+                                .setLabel('👥 PVP 대전')
+                                .setStyle(ButtonStyle.Danger)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [mushroomEmbed], components: [mushroomButtons] });
+                    
+                case 'oddeven':
+                    // 홀짝 게임
+                    await interaction.deferReply();
+                    
+                    const oddevenUser = await getUser(interaction.user.id);
+                    if (!oddevenUser || !oddevenUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const oddevenEmbed = new EmbedBuilder()
+                        .setColor('#ffd700')
+                        .setTitle('🎲 몬스터 홀짝 대결')
+                        .setDescription('몬스터와 홀짝 대결을 펼쳐보세요!')
+                        .addFields(
+                            { name: '🎲 게임 방식', value: '1-100 사이의 숫자를 맞추세요', inline: false },
+                            { name: '💰 베팅 옵션', value: '홀/짝, 대/소, 럭키7, 잭팟', inline: true },
+                            { name: '🏆 최대 배율', value: '잭팟 99배!', inline: true }
+                        );
+                    
+                    const oddevenButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('oddeven_play')
+                                .setLabel('🎲 게임 시작')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('oddeven_stats')
+                                .setLabel('📊 내 기록')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [oddevenEmbed], components: [oddevenButtons] });
+                    
+                case 'stats':
+                    // 능력치
+                    await interaction.deferReply();
+                    
+                    const statsUser = await getUser(interaction.user.id);
+                    if (!statsUser || !statsUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const statsEmbed = new EmbedBuilder()
+                        .setColor('#ff69b4')
+                        .setTitle('💪 능력치')
+                        .setDescription(`**${statsUser.nickname}**님의 능력치`)
+                        .addFields(
+                            { name: '💪 힘', value: `${statsUser.stats.strength}`, inline: true },
+                            { name: '🏃 민첩', value: `${statsUser.stats.agility}`, inline: true },
+                            { name: '🧠 지능', value: `${statsUser.stats.intelligence}`, inline: true },
+                            { name: '❤️ 체력', value: `${statsUser.stats.vitality}`, inline: true },
+                            { name: '🍀 행운', value: `${statsUser.stats.luck}`, inline: true },
+                            { name: '📊 잔여 포인트', value: `${statsUser.statPoints}`, inline: true }
+                        );
+                    
+                    const statButtons = new ActionRowBuilder();
+                    if (statsUser.statPoints > 0) {
+                        statButtons.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('add_strength')
+                                .setLabel('💪 힘 +1')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('add_agility')
+                                .setLabel('🏃 민첩 +1')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('add_intelligence')
+                                .setLabel('🧠 지능 +1')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('add_vitality')
+                                .setLabel('❤️ 체력 +1')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    } else {
+                        statButtons.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('stats_info')
+                                .setLabel('스탯포인트가 없습니다')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setDisabled(true)
+                        );
+                    }
+                    
+                    return await interaction.editReply({ embeds: [statsEmbed], components: [statButtons] });
+                    
+                case 'skills':
+                    // 스킬
+                    await interaction.deferReply();
+                    
+                    const skillsUser = await getUser(interaction.user.id);
+                    if (!skillsUser || !skillsUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const skillsEmbed = new EmbedBuilder()
+                        .setColor('#9370db')
+                        .setTitle('🔮 스킬 시스템')
+                        .setDescription('스킬 시스템은 준비 중입니다!\n곧 다양한 스킬을 사용할 수 있습니다.');
+                    
+                    return await interaction.editReply({ embeds: [skillsEmbed] });
+                    
+                case 'inventory':
+                    // 인벤토리
+                    await interaction.deferReply();
+                    
+                    const invUser = await getUser(interaction.user.id);
+                    if (!invUser || !invUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const inventoryEmbed = new EmbedBuilder()
+                        .setColor('#8a2be2')
+                        .setTitle('🎒 인벤토리')
+                        .setDescription('보유중인 아이템을 확인하세요')
+                        .setFooter({ text: `슬롯: ${invUser.inventory.length}/${invUser.maxInventorySlots}` });
+                    
+                    const invCategoryButtons1 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_weapons')
+                                .setLabel('⚔️ 무기')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_armor')
+                                .setLabel('🛡️ 갑옷')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_helmet_gloves')
+                                .setLabel('⛑️ 헬멧/장갑')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    
+                    const invCategoryButtons2 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_boots')
+                                .setLabel('👢 부츠')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_accessory')
+                                .setLabel('💎 액세서리')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_scrolls')
+                                .setLabel('📜 주문서')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    const invCategoryButtons3 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_consumables')
+                                .setLabel('🧪 소비')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('inv_category_coins')
+                                .setLabel('🪙 코인')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ 
+                        embeds: [inventoryEmbed], 
+                        components: [invCategoryButtons1, invCategoryButtons2, invCategoryButtons3] 
+                    });
+                    
+                case 'enhancement':
+                    // 장비 강화
+                    await interaction.deferReply();
+                    
+                    const enhanceUser = await getUser(interaction.user.id);
+                    if (!enhanceUser || !enhanceUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    if (enhanceUser.level < 10) {
+                        return await interaction.editReply({ content: '⚠️ 장비 강화는 레벨 10부터 가능합니다!' });
+                    }
+                    
+                    const enhanceEmbed = new EmbedBuilder()
+                        .setColor('#ff1493')
+                        .setTitle('💎 에너지 융합 시스템')
+                        .setDescription('에너지 조각을 융합하여 더 높은 등급의 조각을 만들어보세요!');
+                    
+                    const enhanceButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('energy_mine')
+                                .setLabel('⛏️ 에너지 채굴')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('energy_fusion')
+                                .setLabel('✨ 에너지 융합')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('fusion_ranking')
+                                .setLabel('🏆 융합 랭킹')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [enhanceEmbed], components: [enhanceButtons] });
+                    
+                case 'auction':
+                    // 경매장
+                    await interaction.deferReply();
+                    
+                    const auctionEmbed = new EmbedBuilder()
+                        .setColor('#ffd700')
+                        .setTitle('🏛️ 김헌터 경매장')
+                        .setDescription('아이템을 사고팔 수 있는 경매장입니다!')
+                        .addFields(
+                            { name: '📊 현재 등록된 매물', value: `${AUCTION_HOUSE.listings.size}개`, inline: true },
+                            { name: '💰 24시간 거래량', value: '준비중', inline: true },
+                            { name: '🔥 인기 아이템', value: AUCTION_HOUSE.topItems.length > 0 ? AUCTION_HOUSE.topItems[0] : '없음', inline: true }
+                        );
+                    
+                    const auctionButtons1 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('auction_browse')
+                                .setLabel('🔍 경매 둘러보기')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('auction_sell')
+                                .setLabel('💰 아이템 판매')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('auction_my_listings')
+                                .setLabel('📋 내 경매')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    const auctionButtons2 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('auction_market_price')
+                                .setLabel('📈 시세 조회')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('auction_hot_items')
+                                .setLabel('🔥 인기 아이템')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('auction_trade_history')
+                                .setLabel('📊 거래 내역')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [auctionEmbed], components: [auctionButtons1, auctionButtons2] });
+                    
+                case 'ranking':
+                    // 랭킹
+                    await interaction.deferReply();
+                    
+                    const rankingEmbed = new EmbedBuilder()
+                        .setColor('#ff4500')
+                        .setTitle('🏆 김헌터 랭킹')
+                        .setDescription('다양한 분야의 최강자들을 확인하세요!');
+                    
+                    const rankingButtons1 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('ranking_level')
+                                .setLabel('📊 레벨 랭킹')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('ranking_gold')
+                                .setLabel('💰 재산 랭킹')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('ranking_popularity')
+                                .setLabel('❤️ 인기도 랭킹')
+                                .setStyle(ButtonStyle.Danger)
+                        );
+                    
+                    const rankingButtons2 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('ranking_pvp')
+                                .setLabel('⚔️ PVP 랭킹')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('ranking_racing')
+                                .setLabel('🏁 레이싱 랭킹')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('ranking_energy')
+                                .setLabel('✨ 융합 랭킹')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [rankingEmbed], components: [rankingButtons1, rankingButtons2] });
+                    
+                case 'settings':
+                    await interaction.reply({
+                        content: '⚙️ 메뉴 설정',
+                        components: [new ActionRowBuilder().addComponents(createMenuCustomizer())],
+                        ephemeral: true
+                    });
+                    return;
+                    
+                case 'admin_panel':
+                    await interaction.reply({
+                        content: '🛠️ 관리자 패널에 접근합니다.',
+                        components: [new ActionRowBuilder().addComponents(createAdminPanel())],
+                        ephemeral: true
+                    });
+                    return;
+                    
+                default:
+                    await interaction.reply({ 
+                        content: `❌ 알 수 없는 메뉴: ${selectedValue}`, 
+                        ephemeral: true 
+                    });
+            }
+        }
+        
+        // 메뉴 커스터마이징 처리
+        else if (customId === 'customize_menu') {
+            const selectedValue = values[0];
+            
+            switch (selectedValue) {
+                case 'reorder_menu':
+                    await interaction.reply({
+                        content: '📋 메뉴 순서 변경 기능은 준비 중입니다.',
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'favorite_menu':
+                    await interaction.reply({
+                        content: '⭐ 즐겨찾기 설정 기능은 준비 중입니다.',
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'toggle_menu':
+                    await interaction.reply({
+                        content: '👁️ 메뉴 숨기기/보이기 기능은 준비 중입니다.',
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'menu_style':
+                    await interaction.reply({
+                        content: '🎨 메뉴 스타일 변경 기능은 준비 중입니다.',
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'reset_menu':
+                    // 메뉴 설정 초기화
+                    await User.findOneAndUpdate(
+                        { discordId: user.id },
+                        { 
+                            $unset: { 
+                                'menuSettings.menuOrder': 1,
+                                'menuSettings.favoriteMenus': 1,
+                                'menuSettings.hiddenMenus': 1
+                            }
+                        }
+                    );
+                    await interaction.reply({
+                        content: '🔄 메뉴 설정이 초기화되었습니다!',
+                        ephemeral: true
+                    });
+                    break;
+            }
+        }
+        
+        // 관리자 패널 처리
+        else if (customId === 'admin_panel' && isAdmin(user.id)) {
+            const selectedValue = values[0];
+            
+            switch (selectedValue) {
+                case 'admin_users':
+                    await interaction.reply({
+                        content: '👥 사용자 관리',
+                        components: [new ActionRowBuilder().addComponents(createUserManagementMenu())],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'admin_economy':
+                    await interaction.reply({
+                        content: '💰 경제 관리',
+                        components: [new ActionRowBuilder().addComponents(createEconomyManagementMenu())],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'admin_system':
+                    await interaction.reply({
+                        content: '🔧 시스템 제어',
+                        components: [new ActionRowBuilder().addComponents(createSystemControlMenu())],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'admin_stats':
+                    await interaction.deferReply({ ephemeral: true });
+                    const totalUsers = await User.countDocuments();
+                    const totalGold = await User.aggregate([
+                        { $group: { _id: null, total: { $sum: '$gold' } } }
+                    ]);
+                    
+                    const statsEmbed = new EmbedBuilder()
+                        .setTitle('📊 서버 통계')
+                        .addFields(
+                            { name: '👥 총 사용자 수', value: totalUsers.toString(), inline: true },
+                            { name: '💰 총 골드량', value: (totalGold[0]?.total || 0).toLocaleString(), inline: true },
+                            { name: '🤖 봇 상태', value: '정상 작동', inline: true }
+                        )
+                        .setColor('Blue');
+                        
+                    await interaction.editReply({ embeds: [statsEmbed] });
+                    break;
+                    
+                default:
+                    await interaction.reply({
+                        content: `🔧 ${selectedValue} 기능은 준비 중입니다.`,
+                        ephemeral: true
+                    });
+            }
+        }
+        
+    } catch (error) {
+        console.error('메뉴 시스템 오류:', error);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+                content: '❌ 오류가 발생했습니다. 다시 시도해주세요.', 
+                ephemeral: true 
+            });
+        }
+    }
+});
+
 // 슬래시 명령어 처리
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
@@ -6261,121 +8452,16 @@ client.on('interactionCreate', async (interaction) => {
                 .setImage(`attachment://${timeImage}`)
                 .setFooter({ text: '게임 메뉴에 오신 것을 환영합니다!' });
 
-            // 페이지별 버튼 정의
-            const pages = [
-                // 페이지 1: 일일 활동
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('daily')
-                            .setLabel('🎁 출석체크')
-                            .setStyle(ButtonStyle.Success),
-                        new ButtonBuilder()
-                            .setCustomId('work')
-                            .setLabel('⚒️ 일하기')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('quest')
-                            .setLabel('📜 의뢰')
-                            .setStyle(ButtonStyle.Primary)
-                    ]
-                },
-                // 페이지 2: 전투
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('hunting')
-                            .setLabel('⚔️ 사냥하기')
-                            .setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder()
-                            .setCustomId('racing')
-                            .setLabel('🏁 레이싱')
-                            .setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder()
-                            .setCustomId('pvp_menu')
-                            .setLabel('⚔️ PvP')
-                            .setStyle(ButtonStyle.Danger)
-                    ]
-                },
-                // 페이지 3: 능력치/스킬
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('stats')
-                            .setLabel('💪 능력치')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('skills')
-                            .setLabel('🔮 스킬')
-                            .setStyle(ButtonStyle.Primary)
-                    ]
-                },
-                // 페이지 4: 상점/인벤토리
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('shop')
-                            .setLabel('🛒 상점')
-                            .setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder()
-                            .setCustomId('inventory')
-                            .setLabel('🎒 인벤토리')
-                            .setStyle(ButtonStyle.Secondary)
-                    ]
-                },
-                // 페이지 5: 장비/강화
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('equipment')
-                            .setLabel('⚔️ 장비')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('enhancement')
-                            .setLabel('⚡ 강화')
-                            .setStyle(ButtonStyle.Primary)
-                            .setDisabled(user.level < 10), // 레벨 10 이상만 사용 가능
-                        new ButtonBuilder()
-                            .setCustomId('ranking')
-                            .setLabel('🏆 랭킹')
-                            .setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder()
-                            .setCustomId('info')
-                            .setLabel('👤 내정보')
-                            .setStyle(ButtonStyle.Secondary)
-                    ]
-                }
-            ];
-
-            // 페이지 네비게이션 버튼
-            const navigationRow = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('prev_page')
-                        .setLabel('◀')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(true), // 첫 페이지에서는 비활성화
-                    new ButtonBuilder()
-                        .setCustomId('page_info')
-                        .setLabel('1/5')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(true),
-                    new ButtonBuilder()
-                        .setCustomId('next_page')
-                        .setLabel('▶')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            // 첫 페이지 버튼 row
-            const contentRow = new ActionRowBuilder()
-                .addComponents(pages[0].buttons);
+            // 커스터마이징된 드롭다운 메뉴 생성
+            const mainMenu = await createCustomizedMenu(interaction.user.id);
+            const menuRow = new ActionRowBuilder().addComponents(mainMenu);
 
             // 시간대별 이미지 첨부파일
             const timeAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', timeImage), { name: timeImage });
             
             await interaction.editReply({ 
                 embeds: [statusEmbed], 
-                components: [contentRow, navigationRow], 
+                components: [menuRow], 
                 files: [timeAttachment]
             });
         }
@@ -6863,7 +8949,7 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             // 플레이어 포트폴리오 가져오기
-            const portfolio = getPlayerPortfolio(interaction.user.id);
+            const portfolio = await getPlayerPortfolio(interaction.user.id);
             
             // 상위 5개 기업 정보 수집
             const allCompanies = [];
@@ -7906,6 +9992,71 @@ client.on('interactionCreate', async (interaction) => {
             await oddEvenGame.showMonsterBattleMenu(interaction);
         }
         
+        else if (commandName === '주식복구') {
+            // 주식 데이터 복구 명령어 (관리자 전용)
+            if (interaction.user.id !== '1123609568397836309') { // 본인 디스코드 ID로 변경
+                await interaction.reply({ content: '❌ 관리자만 사용할 수 있는 명령어입니다!', flags: 64 });
+                return;
+            }
+            
+            const targetUser = interaction.options.getUser('유저');
+            const companyId = interaction.options.getString('기업');
+            const shares = interaction.options.getInteger('수량');
+            const avgPrice = interaction.options.getInteger('평균가');
+            
+            try {
+                const user = await User.findOne({ discordId: targetUser.id });
+                if (!user) {
+                    await interaction.reply({ content: '❌ 유저를 찾을 수 없습니다!', flags: 64 });
+                    return;
+                }
+                
+                if (!user.stockPortfolio) {
+                    user.stockPortfolio = { stocks: new Map(), totalInvested: 0, lastUpdate: new Date() };
+                }
+                
+                // 주식 복구
+                user.stockPortfolio.stocks.set(companyId, {
+                    shares: shares,
+                    avgPrice: avgPrice
+                });
+                
+                await user.save();
+                
+                const company = findCompany(companyId);
+                const companyName = company ? company.name : companyId;
+                
+                await interaction.reply({
+                    content: `✅ **${user.nickname}**님의 주식이 복구되었습니다!\n🏢 ${companyName}: ${shares}주 (평균가: ${avgPrice.toLocaleString()}골드)`,
+                    flags: 64
+                });
+                
+            } catch (error) {
+                console.error('주식 복구 오류:', error);
+                await interaction.reply({ content: '❌ 주식 복구 중 오류가 발생했습니다!', flags: 64 });
+            }
+        }
+        
+        else if (commandName === '유물탐사') {
+            const user = await getUser(interaction.user.id);
+            
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 레벨 제한 (레벨 15 이상)
+            if (user.level < 15) {
+                await interaction.reply({ 
+                    content: `유물탐사는 **레벨 15 이상**부터 이용할 수 있습니다! (현재 레벨: ${user.level})`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            await showArtifactExplorationMenu(interaction, user);
+        }
+        
         else if (commandName === '독버섯') {
             const user = await getUser(interaction.user.id);
             
@@ -7960,8 +10111,76 @@ client.on('interactionCreate', async (interaction) => {
     const now = Date.now();
 
     try {
+        // 주식 매수 버튼 처리 (최우선 처리)
+        if (interaction.customId.startsWith('buy_stock_')) {
+            const companyId = interaction.customId.replace('buy_stock_', '');
+            const company = findCompany(companyId);
+            
+            if (!company) {
+                await interaction.reply({ content: '존재하지 않는 기업입니다!', flags: 64 });
+                return;
+            }
+            
+            // 매수 모달 생성
+            const buyModal = new ModalBuilder()
+                .setCustomId(`buy_modal_${companyId}`)
+                .setTitle(`${company.name} 주식 매수`);
+            
+            const sharesInput = new TextInputBuilder()
+                .setCustomId('shares')
+                .setLabel('매수할 주식 수량')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('1 ~ 1000')
+                .setRequired(true)
+                .setMaxLength(4);
+            
+            const actionRow = new ActionRowBuilder().addComponents(sharesInput);
+            buyModal.addComponents(actionRow);
+            
+            await interaction.showModal(buyModal);
+            return;
+        }
+        
+        // 주식 매도 버튼 처리 (최우선 처리)
+        else if (interaction.customId.startsWith('sell_stock_')) {
+            const companyId = interaction.customId.replace('sell_stock_', '');
+            const company = findCompany(companyId);
+            const portfolio = await getPlayerPortfolio(interaction.user.id);
+            
+            if (!company) {
+                await interaction.reply({ content: '존재하지 않는 기업입니다!', flags: 64 });
+                return;
+            }
+            
+            if (!portfolio.stocks.has(companyId)) {
+                await interaction.reply({ content: '보유하지 않은 주식입니다!', flags: 64 });
+                return;
+            }
+            
+            const holding = portfolio.stocks.get(companyId);
+            
+            // 매도 모달 생성
+            const sellModal = new ModalBuilder()
+                .setCustomId(`sell_modal_${companyId}`)
+                .setTitle(`${company.name} 주식 매도`);
+            
+            const sharesInput = new TextInputBuilder()
+                .setCustomId('shares')
+                .setLabel('매도할 주식 수량')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder(`1 ~ ${holding.shares}`)
+                .setRequired(true)
+                .setMaxLength(4);
+            
+            const actionRow = new ActionRowBuilder().addComponents(sharesInput);
+            sellModal.addComponents(actionRow);
+            
+            await interaction.showModal(sellModal);
+            return;
+        }
+        
         // 메인화면의 게임하기 버튼 처리
-        if (interaction.customId === 'game_start') {
+        else if (interaction.customId === 'game_start') {
             const user = await getUser(interaction.user.id);
             if (!user) {
                 await interaction.reply({ content: '유저 데이터를 불러올 수 없습니다!', flags: 64 });
@@ -10493,8 +12712,24 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`**${getUserTitle(user)} ${user.nickname}**님의 현재 장비 상태\n\n🔥 **총 전투력**: ${combatPower.toLocaleString()}`)
                 .setImage('attachment://kim_equipment.gif')
                 .addFields(
-                    { name: '⚔️ 무기', value: getEquippedItem(user, 'weapon') ? `${getEquippedItem(user, 'weapon').name}${(getEquippedItem(user, 'weapon').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'weapon').enhanceLevel}강)` : ''}\n공격력: ${getEquippedItem(user, 'weapon').stats?.attack?.[0] || 0}-${getEquippedItem(user, 'weapon').stats?.attack?.[1] || 0}` : '미착용', inline: true },
-                    { name: '🛡️ 갑옷', value: getEquippedItem(user, 'armor') ? `${getEquippedItem(user, 'armor').name}${(getEquippedItem(user, 'armor').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'armor').enhanceLevel}강)` : ''}\n방어력: ${getEquippedItem(user, 'armor').stats?.defense?.[0] || 0}-${getEquippedItem(user, 'armor').stats?.defense?.[1] || 0}` : '미착용', inline: true },
+                    { name: '⚔️ 무기', value: getEquippedItem(user, 'weapon') ? (() => {
+                        const weapon = getEquippedItem(user, 'weapon');
+                        const enhanceLevel = weapon.enhanceLevel || 0;
+                        const baseAttack = weapon.stats?.attack || [0, 0];
+                        const minAttack = Array.isArray(baseAttack) ? baseAttack[0] : baseAttack;
+                        const maxAttack = Array.isArray(baseAttack) ? baseAttack[1] : baseAttack;
+                        const enhanceBonus = enhanceLevel * 2; // 강화당 +2 공격력
+                        return `${weapon.name}${enhanceLevel > 0 ? ` (+${enhanceLevel}강)` : ''}\n공격력: ${minAttack + enhanceBonus}-${maxAttack + enhanceBonus}`;
+                    })() : '미착용', inline: true },
+                    { name: '🛡️ 갑옷', value: getEquippedItem(user, 'armor') ? (() => {
+                        const armor = getEquippedItem(user, 'armor');
+                        const enhanceLevel = armor.enhanceLevel || 0;
+                        const baseDefense = armor.stats?.defense || [0, 0];
+                        const minDefense = Array.isArray(baseDefense) ? baseDefense[0] : baseDefense;
+                        const maxDefense = Array.isArray(baseDefense) ? baseDefense[1] : baseDefense;
+                        const enhanceBonus = enhanceLevel * 2; // 강화당 +2 방어력
+                        return `${armor.name}${enhanceLevel > 0 ? ` (+${enhanceLevel}강)` : ''}\n방어력: ${minDefense + enhanceBonus}-${maxDefense + enhanceBonus}`;
+                    })() : '미착용', inline: true },
                     { name: '⛑️ 헬멧', value: getEquippedItem(user, 'helmet') ? `${getEquippedItem(user, 'helmet').name}${(getEquippedItem(user, 'helmet').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'helmet').enhanceLevel}강)` : ''}` : '미착용', inline: true },
                     { name: '🧤 장갑', value: getEquippedItem(user, 'gloves') ? `${getEquippedItem(user, 'gloves').name}${(getEquippedItem(user, 'gloves').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'gloves').enhanceLevel}강)` : ''}` : '미착용', inline: true },
                     { name: '👢 부츠', value: getEquippedItem(user, 'boots') ? `${getEquippedItem(user, 'boots').name}${(getEquippedItem(user, 'boots').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'boots').enhanceLevel}강)` : ''}` : '미착용', inline: true },
@@ -10839,8 +13074,8 @@ client.on('interactionCreate', async (interaction) => {
                         .setLabel('🔙 해당 카테고리로 돌아가기')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId('inventory')
-                        .setLabel('🏠 인벤토리 메인으로 돌아가기')
+                        .setCustomId('equipment')
+                        .setLabel('⚔️ 장비 관리로 돌아가기')
                         .setStyle(ButtonStyle.Primary)
                 );
 
@@ -11705,7 +13940,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'stock_portfolio') {
-            const portfolio = getPlayerPortfolio(interaction.user.id);
+            const portfolio = await getPlayerPortfolio(interaction.user.id);
             
             let portfolioText = `💰 **현금**: ${portfolio.cash.toLocaleString()}<:currency_emoji:1377404064316522778>\n\n`;
             let totalValue = portfolio.cash;
@@ -11734,7 +13969,19 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             portfolioText += `\n💎 **총 자산**: ${totalValue.toLocaleString()}<:currency_emoji:1377404064316522778>`;
-            portfolioText += `\n📊 **수익률**: ${((totalValue - 10000) / 10000 * 100).toFixed(1)}%`;
+            
+            // 실제 투자 원금 계산 (주식 구매에 사용한 금액)
+            let totalInvested = 0;
+            if (portfolio.stocks.size > 0) {
+                for (const [companyId, holding] of portfolio.stocks) {
+                    totalInvested += holding.avgPrice * holding.shares;
+                }
+                const profitLoss = totalValue - portfolio.cash - totalInvested;
+                const profitRate = totalInvested > 0 ? (profitLoss / totalInvested * 100) : 0;
+                portfolioText += `\n📊 **수익률**: ${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(1)}%`;
+            } else {
+                portfolioText += `\n📊 **수익률**: 0.0%`;
+            }
 
             const portfolioEmbed = new EmbedBuilder()
                 .setColor('#9b59b6')
@@ -11860,7 +14107,7 @@ client.on('interactionCreate', async (interaction) => {
                         { name: '📊 시장 현황', value: `${trendIcon} ${trendText} (${marketTrend > 0 ? '+' : ''}${marketTrend.toFixed(1)}%)\n📊 변동성: ${STOCK_MARKET.market_state.volatility}%\n🕐 다음 업데이트: 5분마다`, inline: true },
                         { name: '🏆 상위 기업', value: topCompanyInfo || '데이터 없음', inline: true }
                     )
-                    .setFooter({ text: '실시간으로 업데이트되는 전문 차트입니다! Powered by QuickChart' });
+                    .setFooter({ text: '실시간으로 업데이트되는 전문 차트입니다!' });
                 
                 const chartButtons = new ActionRowBuilder()
                     .addComponents(
@@ -11997,11 +14244,11 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 allCompanies.push(...STOCK_MARKET.chains);
                 
-                const top5Companies = allCompanies
+                const top10Companies = allCompanies
                     .sort((a, b) => b.price - a.price)
-                    .slice(0, 5);
+                    .slice(0, 10);
                 
-                const companyOptions = top5Companies.map((company, index) => {
+                const companyOptions = top10Companies.map((company, index) => {
                     const chartHistory = STOCK_MARKET.chart_history;
                     let changeText = '';
                     
@@ -12029,6 +14276,10 @@ client.on('interactionCreate', async (interaction) => {
                 const backButton = new ActionRowBuilder()
                     .addComponents(
                         new ButtonBuilder()
+                            .setCustomId('all_companies_chart')
+                            .setLabel('📊 전체 기업 차트')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
                             .setCustomId('stock_chart')
                             .setLabel('🔙 전체 차트')
                             .setStyle(ButtonStyle.Primary)
@@ -12039,7 +14290,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('📈 기업별 개별 차트')
                     .setDescription('아래 메뉴에서 기업을 선택하면 해당 기업의 상세 차트를 확인할 수 있습니다.')
                     .addFields(
-                        { name: '🏆 상위 기업 목록', value: top5Companies.map((c, i) => `${i+1}. **${c.name}** - ${c.price.toLocaleString()}G`).join('\n'), inline: false }
+                        { name: '🏆 상위 기업 목록', value: top10Companies.map((c, i) => `${i+1}. **${c.name}** - ${c.price.toLocaleString()}G`).join('\n'), inline: false }
                     );
                 
                 await interaction.editReply({
@@ -12134,7 +14385,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (interaction.customId === 'stock_main') {
             // 주식 메인 화면으로 돌아가기 - /주식 명령어와 동일한 내용
-            const portfolio = getPlayerPortfolio(interaction.user.id);
+            const portfolio = await getPlayerPortfolio(interaction.user.id);
             
             const allCompanies = [];
             
@@ -12205,7 +14456,7 @@ client.on('interactionCreate', async (interaction) => {
                     text: '실시간 주가는 NPC 감정, 플레이어 행동, 시간대별 이벤트에 영향을 받습니다!' 
                 });
             
-            const stockButtons = new ActionRowBuilder()
+            const stockButtons1 = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
                         .setCustomId('stock_regions')
@@ -12220,14 +14471,26 @@ client.on('interactionCreate', async (interaction) => {
                         .setLabel('💼 내 포트폴리오')
                         .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
-                        .setCustomId('stock_news')
-                        .setLabel('📰 시장 뉴스')
+                        .setCustomId('stock_chart')
+                        .setLabel('📈 차트')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+                
+            const stockButtons2 = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('recover_my_stocks')
+                        .setLabel('🔧 내 주식 복구')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('stock_help')
+                        .setLabel('❓ 도움말')
                         .setStyle(ButtonStyle.Secondary)
                 );
             
             await interaction.update({
                 embeds: [stockEmbed],
-                components: [stockButtons]
+                components: [stockButtons1, stockButtons2]
             });
         }
         
@@ -12758,6 +15021,36 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
+        // 회원가입 버튼 처리
+        else if (interaction.customId === 'register') {
+            const modal = new ModalBuilder()
+                .setCustomId('registerModal')
+                .setTitle('🎮 김헌터 회원가입');
+            
+            const nicknameInput = new TextInputBuilder()
+                .setCustomId('nickname')
+                .setLabel('닉네임을 입력하세요')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('2-10자 사이의 닉네임')
+                .setMinLength(2)
+                .setMaxLength(10)
+                .setRequired(true);
+            
+            const emailInput = new TextInputBuilder()
+                .setCustomId('email')
+                .setLabel('이메일을 입력하세요')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('example@email.com')
+                .setRequired(true);
+            
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(nicknameInput),
+                new ActionRowBuilder().addComponents(emailInput)
+            );
+            
+            await interaction.showModal(modal);
+        }
+        
         else if (interaction.customId === 'game_page_1') {
             // game_page_1과 back_to_game_menu 동일한 기능으로 처리
             // 시간대별 이미지 및 인사말 설정
@@ -12907,6 +15200,587 @@ client.on('interactionCreate', async (interaction) => {
                 files: [attachment] 
             });
         }
+        
+        // 🏺 유물탐사 버튼 핸들러들
+        else if (interaction.customId === 'artifact_direct_explore') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            await showDirectExplorationMenu(interaction, user);
+        }
+        
+        else if (interaction.customId === 'artifact_companies') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 탐사회사 투자 메뉴 (주식 시스템과 연동)
+            const companies = STOCK_MARKET.exploration_companies;
+            
+            let companyList = '';
+            companies.forEach(company => {
+                const changeIcon = company.change > 0 ? '📈' : company.change < 0 ? '📉' : '➡️';
+                const changeColor = company.change > 0 ? '+' : '';
+                companyList += `📊 **${company.name}**\n`;
+                companyList += `   주가: ${company.price.toLocaleString()}G ${changeIcon} ${changeColor}${company.change.toFixed(1)}%\n`;
+                companyList += `   거래량: ${company.volume.toLocaleString()}\n\n`;
+            });
+            
+            const embed = new EmbedBuilder()
+                .setColor('#f39c12')
+                .setTitle('🏢 유물탐사회사 투자')
+                .setDescription('탐사회사에 투자하여 수익을 얻으세요!\n탐사 성공/실패에 따라 주가가 변동됩니다.')
+                .addFields(
+                    { name: '📈 유물탐사회사 주식', value: companyList, inline: false },
+                    { name: '💡 투자 팁', value: '• 탐사 성공 시 주가 상승\n• 레어 유물 발견 시 대폭 상승\n• 실패 시 주가 하락', inline: false }
+                );
+
+            const stockButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('stock_main')
+                        .setLabel('📊 주식 거래소')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_main_menu')
+                        .setLabel('🔙 유물탐사 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            await interaction.update({
+                embeds: [embed],
+                components: [stockButton]
+            });
+        }
+        
+        else if (interaction.customId === 'artifact_inventory') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const artifacts = user.artifacts || [];
+            
+            if (artifacts.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setColor('#95a5a6')
+                    .setTitle('🎒 유물 보관함')
+                    .setDescription('보관 중인 유물이 없습니다.\n\n직접 탐사를 통해 유물을 발견해보세요!')
+                    .addFields(
+                        { name: '💡 유물 획득 방법', value: '⛏️ 직접 탐사를 통한 발견\n🏢 탐사회사 투자 수익', inline: false }
+                    );
+
+                const backButton = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('artifact_main_menu')
+                            .setLabel('🔙 유물탐사 메뉴')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                await interaction.update({
+                    embeds: [embed],
+                    components: [backButton]
+                });
+                return;
+            }
+            
+            // 유물을 등급별로 정렬
+            const sortedArtifacts = artifacts.sort((a, b) => {
+                const rarityOrder = { 'legendary': 4, 'epic': 3, 'rare': 2, 'common': 1 };
+                return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0);
+            });
+            
+            // 페이지네이션 (한 페이지에 5개)
+            const itemsPerPage = 5;
+            const totalPages = Math.ceil(sortedArtifacts.length / itemsPerPage);
+            const currentPage = 0;
+            
+            const startIndex = currentPage * itemsPerPage;
+            const pageArtifacts = sortedArtifacts.slice(startIndex, startIndex + itemsPerPage);
+            
+            let artifactList = '';
+            pageArtifacts.forEach((artifact, index) => {
+                const date = new Date(artifact.foundDate).toLocaleDateString('ko-KR');
+                const currentValue = calculateArtifactValue(artifact);
+                const originalValue = artifact.value;
+                const changePercent = ((currentValue - originalValue) / originalValue * 100).toFixed(1);
+                const changeIcon = currentValue > originalValue ? '📈' : currentValue < originalValue ? '📉' : '➡️';
+                
+                artifactList += `${artifact.emoji} **${artifact.name}** (${getRarityText(artifact.rarity)})\n`;
+                artifactList += `   💰 시장가: ${currentValue.toLocaleString()}G ${changeIcon} ${changePercent > 0 ? '+' : ''}${changePercent}%\n`;
+                artifactList += `   📊 기준가: ${originalValue.toLocaleString()}G\n`;
+                artifactList += `   📅 발견일: ${date}`;
+                if (artifact.company) artifactList += ` | 🏢 ${artifact.company}`;
+                artifactList += '\n\n';
+            });
+            
+            // 통계 계산 (현재 시장 가치 기준)
+            const totalValue = artifacts.reduce((sum, artifact) => sum + calculateArtifactValue(artifact), 0);
+            const originalTotalValue = artifacts.reduce((sum, artifact) => sum + artifact.value, 0);
+            const totalChangePercent = ((totalValue - originalTotalValue) / originalTotalValue * 100).toFixed(1);
+            const rarityCount = {
+                common: artifacts.filter(a => a.rarity === 'common').length,
+                rare: artifacts.filter(a => a.rarity === 'rare').length,
+                epic: artifacts.filter(a => a.rarity === 'epic').length,
+                legendary: artifacts.filter(a => a.rarity === 'legendary').length
+            };
+            
+            const totalChangeIcon = totalValue > originalTotalValue ? '📈' : totalValue < originalTotalValue ? '📉' : '➡️';
+            
+            const embed = new EmbedBuilder()
+                .setColor('#e67e22')
+                .setTitle('🎒 유물 보관함')
+                .setDescription(`**${user.nickname}**님의 유물 컬렉션\n\n💰 **총 시장가치**: ${totalValue.toLocaleString()}G ${totalChangeIcon} ${totalChangePercent > 0 ? '+' : ''}${totalChangePercent}%`)
+                .addFields(
+                    { name: '📊 보관 현황', value: `총 ${artifacts.length}개 | 📊 기준가치: ${originalTotalValue.toLocaleString()}G`, inline: false },
+                    { name: '🏆 등급별 보유량', value: `💛 전설: ${rarityCount.legendary}개\n💜 에픽: ${rarityCount.epic}개\n💙 희귀: ${rarityCount.rare}개\n🤍 일반: ${rarityCount.common}개`, inline: true },
+                    { name: `📜 유물 목록 (${currentPage + 1}/${totalPages})`, value: artifactList, inline: false }
+                );
+
+            const navButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('artifact_inv_prev')
+                        .setLabel('◀ 이전')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage === 0),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_inv_next')
+                        .setLabel('다음 ▶')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage >= totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_market_chart')
+                        .setLabel('📈 시장 차트')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_shop')
+                        .setLabel('🏪 상점에서 판매')
+                        .setStyle(ButtonStyle.Success)
+                );
+                
+            const menuButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('artifact_main_menu')
+                        .setLabel('🔙 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+            await interaction.update({
+                embeds: [embed],
+                components: [navButtons, menuButtons]
+            });
+        }
+        
+        else if (interaction.customId === 'artifact_shop') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const artifacts = user.artifacts || [];
+            
+            if (artifacts.length === 0) {
+                await interaction.update({
+                    content: '판매할 유물이 없습니다! 먼저 탐사를 통해 유물을 발견해보세요.',
+                    embeds: [],
+                    components: []
+                });
+                return;
+            }
+            
+            // 판매 가능한 유물 목록
+            let sellList = '';
+            artifacts.forEach((artifact, index) => {
+                sellList += `${index + 1}. ${artifact.emoji} **${artifact.name}** (${getRarityText(artifact.rarity)})\n`;
+                sellList += `   💰 판매가: ${artifact.value.toLocaleString()}G\n\n`;
+            });
+            
+            const embed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🏪 유물 상점')
+                .setDescription(`**${user.nickname}**님의 유물을 판매하세요!`)
+                .addFields(
+                    { name: '💰 판매 가능 유물', value: sellList || '판매할 유물이 없습니다.', inline: false },
+                    { name: '💡 판매 안내', value: '• 유물 판매는 즉시 골드로 전환됩니다\n• 희귀할수록 높은 가격에 판매됩니다\n• 판매된 유물은 복구할 수 없습니다', inline: false }
+                );
+
+            // 유물이 있으면 선택 메뉴 생성
+            if (artifacts.length > 0) {
+                const selectOptions = artifacts.slice(0, 25).map((artifact, index) => ({
+                    label: `${artifact.name} (${artifact.value.toLocaleString()}G)`,
+                    description: `${getRarityText(artifact.rarity)} - ${artifact.description.substring(0, 50)}`,
+                    value: `sell_artifact_${index}`,
+                    emoji: artifact.emoji
+                }));
+
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('sell_artifact_select')
+                    .setPlaceholder('판매할 유물을 선택하세요')
+                    .addOptions(selectOptions);
+
+                const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+                
+                const backButton = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('artifact_inventory')
+                            .setLabel('🎒 보관함')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('artifact_main_menu')
+                            .setLabel('🔙 메뉴')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                await interaction.update({
+                    embeds: [embed],
+                    components: [selectRow, backButton]
+                });
+            }
+        }
+        
+        else if (interaction.customId === 'artifact_main_menu') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            await showArtifactExplorationMenu(interaction, user);
+        }
+        
+        else if (interaction.customId === 'artifact_rankings') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            try {
+                // 각 랭킹별 데이터 가져오기
+                const [explorationRanking, valueRanking, rareRanking] = await Promise.all([
+                    User.find({ registered: true, 'explorationStats.totalExplorations': { $gt: 0 } })
+                        .sort({ 'explorationStats.totalExplorations': -1 }).limit(5),
+                    User.find({ registered: true, 'explorationStats.totalEarned': { $gt: 0 } })
+                        .sort({ 'explorationStats.totalEarned': -1 }).limit(5),
+                    User.find({ registered: true, 'explorationStats.rareFinds': { $gt: 0 } })
+                        .sort({ 'explorationStats.rareFinds': -1 }).limit(5)
+                ]);
+                
+                // 탐사 횟수 랭킹
+                let explorationText = '';
+                explorationRanking.forEach((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+                    const successRate = user.explorationStats.totalExplorations > 0 ? 
+                        ((user.explorationStats.successfulFinds / user.explorationStats.totalExplorations) * 100).toFixed(1) : 0;
+                    explorationText += `${medal} **${user.nickname}** - ${user.explorationStats.totalExplorations}회 (성공률: ${successRate}%)\n`;
+                });
+                
+                // 수익 랭킹
+                let valueText = '';
+                valueRanking.forEach((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+                    const profit = user.explorationStats.totalEarned - user.explorationStats.totalInvested;
+                    valueText += `${medal} **${user.nickname}** - ${user.explorationStats.totalEarned.toLocaleString()}G (순익: ${profit >= 0 ? '+' : ''}${profit.toLocaleString()}G)\n`;
+                });
+                
+                // 레어 발견 랭킹
+                let rareText = '';
+                rareRanking.forEach((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+                    rareText += `${medal} **${user.nickname}** - ${user.explorationStats.rareFinds}개\n`;
+                });
+                
+                const rankingEmbed = new EmbedBuilder()
+                    .setColor('#f39c12')
+                    .setTitle('🏆 유물탐사가 명예의 전당')
+                    .setDescription('최고의 탐사가들을 확인해보세요!')
+                    .addFields(
+                        { name: '⛏️ 탐사 횟수 TOP 5', value: explorationText || '아직 탐사 기록이 없습니다.', inline: false },
+                        { name: '💰 수익 TOP 5', value: valueText || '아직 수익 기록이 없습니다.', inline: false },
+                        { name: '💎 레어 발견 TOP 5', value: rareText || '아직 레어 발견 기록이 없습니다.', inline: false }
+                    )
+                    .setFooter({ text: '🏺 다음 전설의 탐사가는 당신일지도?' });
+                
+                const backButton = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('artifact_main_menu')
+                            .setLabel('🔙 유물탐사 메뉴')
+                            .setStyle(ButtonStyle.Primary)
+                    );
+                
+                await interaction.update({ embeds: [rankingEmbed], components: [backButton] });
+            } catch (error) {
+                console.error('유물탐사 랭킹 조회 오류:', error);
+                await interaction.followUp({ content: '랭킹을 불러오는 중 오류가 발생했습니다.', flags: 64 });
+            }
+        }
+        
+        else if (interaction.customId === 'artifact_guide') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const embed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle('📖 유물탐사 완전 가이드')
+                .setDescription('유물탐사의 모든 것을 알려드립니다!')
+                .addFields(
+                    { 
+                        name: '⛏️ 직접 탐사', 
+                        value: '• 탐사회사를 선택하여 직접 투자\n• 투자 금액이 클수록 성공률과 보상 증가\n• 성공 시 유물 획득, 실패 시 골드 손실', 
+                        inline: false 
+                    },
+                    { 
+                        name: '🏢 탐사회사 투자', 
+                        value: '• 탐사회사 주식에 투자하여 수익 창출\n• 탐사 성공/실패에 따라 주가 변동\n• 레어 유물 발견 시 주가 대폭 상승', 
+                        inline: false 
+                    },
+                    { 
+                        name: '💎 유물 등급', 
+                        value: '🤍 **일반** (70%) - 기본 유물\n💙 **희귀** (20%) - 중급 가치\n💜 **에픽** (8%) - 고급 가치\n💛 **전설** (2%) - 최고 가치', 
+                        inline: false 
+                    },
+                    { 
+                        name: '🗺️ 탐사 지역', 
+                        value: '🏜️ **사막** - 안정적, 낮은 위험\n🌊 **심해** - 고위험 고수익\n⛰️ **설산** - 균형잡힌 수익\n🌴 **정글** - 높은 성공률\n🚀 **우주** - 최고 난이도, 최고 보상', 
+                        inline: false 
+                    },
+                    { 
+                        name: '💡 성공 팁', 
+                        value: '• 시작은 정글이나 사막 탐사로!\n• 투자 금액을 점진적으로 늘려가세요\n• 탐사회사 주식도 함께 투자하세요\n• 유물은 적절한 타이밍에 판매하세요', 
+                        inline: false 
+                    }
+                );
+
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('artifact_main_menu')
+                        .setLabel('🔙 유물탐사 메뉴')
+                        .setStyle(ButtonStyle.Primary)
+                );
+
+            await interaction.update({
+                embeds: [embed],
+                components: [backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'artifact_market_chart') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            
+            try {
+                // 유물 시장 차트 생성
+                const marketChartUrl = await generateArtifactChart('market');
+                const individualChartUrl = await generateArtifactChart('individual');
+                
+                if (!marketChartUrl) {
+                    await interaction.editReply({
+                        content: '❌ 유물 시장 데이터가 부족합니다. 잠시 후 다시 시도해주세요.',
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                }
+                
+                // 현재 시장 상황 분석
+                const artifactMarket = STOCK_MARKET.artifact_market;
+                const multipliers = Object.values(artifactMarket.value_multipliers);
+                const averageMultiplier = multipliers.reduce((sum, m) => sum + m, 0) / multipliers.length;
+                const marketTrend = averageMultiplier > 1.0 ? '상승' : averageMultiplier < 1.0 ? '하락' : '보합';
+                const trendIcon = averageMultiplier > 1.0 ? '📈' : averageMultiplier < 1.0 ? '📉' : '➡️';
+                
+                // 상위 변동 유물들
+                const topGainers = Object.entries(artifactMarket.value_multipliers)
+                    .filter(([name, multiplier]) => multiplier > 1.0)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 3);
+                
+                const topLosers = Object.entries(artifactMarket.value_multipliers)
+                    .filter(([name, multiplier]) => multiplier < 1.0)
+                    .sort(([,a], [,b]) => a - b)
+                    .slice(0, 3);
+                
+                let marketAnalysis = `${trendIcon} **시장 동향**: ${marketTrend} (평균 ${(averageMultiplier * 100).toFixed(1)}%)\n\n`;
+                
+                if (topGainers.length > 0) {
+                    marketAnalysis += `📈 **상승 유물**:\n`;
+                    topGainers.forEach(([name, multiplier]) => {
+                        marketAnalysis += `• ${name}: +${((multiplier - 1) * 100).toFixed(1)}%\n`;
+                    });
+                    marketAnalysis += '\n';
+                }
+                
+                if (topLosers.length > 0) {
+                    marketAnalysis += `📉 **하락 유물**:\n`;
+                    topLosers.forEach(([name, multiplier]) => {
+                        marketAnalysis += `• ${name}: ${((multiplier - 1) * 100).toFixed(1)}%\n`;
+                    });
+                }
+                
+                // 활성 이벤트 표시
+                let activeEvents = '';
+                if (artifactMarket.active_events.length > 0) {
+                    activeEvents = '\n🎉 **활성 이벤트**:\n';
+                    artifactMarket.active_events.forEach(event => {
+                        const remainingTime = Math.max(0, event.start_time + event.duration - Date.now());
+                        const hours = Math.floor(remainingTime / (60 * 60 * 1000));
+                        const minutes = Math.floor((remainingTime % (60 * 60 * 1000)) / (60 * 1000));
+                        activeEvents += `• ${event.name} (${hours}시간 ${minutes}분 남음)\n`;
+                    });
+                }
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#f39c12')
+                    .setTitle('📈 유물 시장 차트')
+                    .setDescription('실시간 유물 시장 동향을 확인하세요!')
+                    .setImage(marketChartUrl)
+                    .addFields(
+                        { name: '📊 시장 분석', value: marketAnalysis + activeEvents, inline: false }
+                    )
+                    .setFooter({ text: `마지막 업데이트: ${new Date().toLocaleTimeString('ko-KR')} | 5분마다 자동 업데이트` });
+
+                const chartButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('artifact_chart_individual')
+                            .setLabel('💎 개별 유물 차트')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(!individualChartUrl),
+                        new ButtonBuilder()
+                            .setCustomId('artifact_inventory')
+                            .setLabel('🎒 보관함')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('artifact_main_menu')
+                            .setLabel('🔙 메뉴')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                await interaction.editReply({
+                    embeds: [embed],
+                    components: [chartButtons]
+                });
+                
+            } catch (error) {
+                console.error('유물 시장 차트 오류:', error);
+                await interaction.editReply({
+                    content: '❌ 차트 생성 중 오류가 발생했습니다.',
+                    embeds: [],
+                    components: []
+                });
+            }
+        }
+        
+        else if (interaction.customId === 'artifact_chart_individual') {
+            await interaction.deferUpdate();
+            
+            try {
+                const individualChartUrl = await generateArtifactChart('individual');
+                
+                if (!individualChartUrl) {
+                    await interaction.editReply({
+                        content: '❌ 개별 유물 차트 데이터가 부족합니다.',
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                }
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#9b59b6')
+                    .setTitle('💎 주요 유물 가치 변동 차트')
+                    .setDescription('상위 유물들의 개별 가치 변동을 확인하세요!')
+                    .setImage(individualChartUrl)
+                    .setFooter({ text: `마지막 업데이트: ${new Date().toLocaleTimeString('ko-KR')} | 실시간 업데이트` });
+
+                const backButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('artifact_market_chart')
+                            .setLabel('📈 시장 지수 차트')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('artifact_inventory')
+                            .setLabel('🎒 보관함')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('artifact_main_menu')
+                            .setLabel('🔙 메뉴')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                await interaction.editReply({
+                    embeds: [embed],
+                    components: [backButtons]
+                });
+                
+            } catch (error) {
+                console.error('개별 유물 차트 오류:', error);
+                await interaction.editReply({
+                    content: '❌ 개별 차트 생성 중 오류가 발생했습니다.',
+                    embeds: [],
+                    components: []
+                });
+            }
+        }
+        
+        // 탐사회사별 직접 탐사 버튼들
+        else if (interaction.customId.startsWith('explore_')) {
+            const companyId = interaction.customId.replace('explore_', '');
+            const company = ARTIFACT_SYSTEM.companies[companyId];
+            
+            if (!company) {
+                await interaction.followUp({ content: '❌ 존재하지 않는 탐사회사입니다!', flags: 64 });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 투자 금액 입력 모달 표시
+            const investModal = new ModalBuilder()
+                .setCustomId(`invest_modal_${companyId}`)
+                .setTitle(`${company.emoji} ${company.name} 탐사 투자`);
+            
+            const costs = ARTIFACT_SYSTEM.explorationCosts[company.specialty];
+            const investInput = new TextInputBuilder()
+                .setCustomId('investment_amount')
+                .setLabel('투자 금액')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder(`${costs.min.toLocaleString()} ~ ${costs.max.toLocaleString()}G`)
+                .setRequired(true)
+                .setMaxLength(10);
+            
+            const firstActionRow = new ActionRowBuilder().addComponents(investInput);
+            investModal.addComponents(firstActionRow);
+            
+            await interaction.showModal(investModal);
+        }
+        
     } catch (error) {
         console.error('인터렉션 처리 오류:', error);
     }
@@ -12915,6 +15789,8 @@ client.on('interactionCreate', async (interaction) => {
 // Modal 제출 처리
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isModalSubmit()) return;
+    
+    console.log('🔵 모달 제출됨:', interaction.customId);
     
     if (interaction.customId === 'registerModal') {
         const nickname = interaction.fields.getTextInputValue('nickname');
@@ -12978,16 +15854,21 @@ client.on('interactionCreate', async (interaction) => {
     
     // 주식 매수 모달 처리
     else if (interaction.customId.startsWith('buy_modal_')) {
+        console.log('🟢 매수 모달 처리 시작:', interaction.customId);
         const companyId = interaction.customId.replace('buy_modal_', '');
         const sharesText = interaction.fields.getTextInputValue('shares');
         const shares = parseInt(sharesText);
         
+        console.log(`🟢 매수 정보: 기업=${companyId}, 수량=${shares}`);
+        
         if (isNaN(shares) || shares <= 0) {
+            console.log('❌ 잘못된 수량:', sharesText);
             await interaction.reply({ content: '올바른 수량을 입력해주세요!', flags: 64 });
             return;
         }
         
-        const result = buyStock(interaction.user.id, companyId, shares);
+        console.log('🟢 buyStock 함수 호출 중...');
+        const result = await buyStock(interaction.user.id, companyId, shares);
         
         if (result.success) {
             // 주식 거래 기록
@@ -13007,16 +15888,21 @@ client.on('interactionCreate', async (interaction) => {
     
     // 주식 매도 모달 처리  
     else if (interaction.customId.startsWith('sell_modal_')) {
+        console.log('🔴 매도 모달 처리 시작:', interaction.customId);
         const companyId = interaction.customId.replace('sell_modal_', '');
         const sharesText = interaction.fields.getTextInputValue('shares');
         const shares = parseInt(sharesText);
         
+        console.log(`🔴 매도 정보: 기업=${companyId}, 수량=${shares}`);
+        
         if (isNaN(shares) || shares <= 0) {
+            console.log('❌ 잘못된 수량:', sharesText);
             await interaction.reply({ content: '올바른 수량을 입력해주세요!', flags: 64 });
             return;
         }
         
-        const result = sellStock(interaction.user.id, companyId, shares);
+        console.log('🔴 sellStock 함수 호출 중...');
+        const result = await sellStock(interaction.user.id, companyId, shares);
         
         if (result.success) {
             // 주식 거래 기록
@@ -13131,6 +16017,38 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: '잭팟 베팅 처리 중 오류가 발생했습니다!', flags: 64 });
         }
     }
+    
+    // 유물탐사 투자 모달 처리
+    else if (interaction.customId.startsWith('invest_modal_')) {
+        const companyId = interaction.customId.replace('invest_modal_', '');
+        const investmentText = interaction.fields.getTextInputValue('investment_amount');
+        const investmentAmount = parseInt(investmentText.replace(/[^\d]/g, ''));
+        
+        if (isNaN(investmentAmount) || investmentAmount <= 0) {
+            await interaction.reply({ content: '올바른 투자 금액을 입력해주세요!', flags: 64 });
+            return;
+        }
+        
+        const company = ARTIFACT_SYSTEM.companies[companyId];
+        if (!company) {
+            await interaction.reply({ content: '존재하지 않는 탐사회사입니다!', flags: 64 });
+            return;
+        }
+        
+        const costs = ARTIFACT_SYSTEM.explorationCosts[company.specialty];
+        if (investmentAmount < costs.min || investmentAmount > costs.max) {
+            await interaction.reply({ 
+                content: `투자 금액은 ${costs.min.toLocaleString()}G ~ ${costs.max.toLocaleString()}G 사이여야 합니다!`, 
+                flags: 64 
+            });
+            return;
+        }
+        
+        // 탐사 실행
+        await interaction.deferReply({ flags: 64 });
+        const user = await getUser(interaction.user.id);
+        await executeExploration(interaction, user, companyId, investmentAmount);
+    }
 });
 
 // 이모지 반응 추가 이벤트
@@ -13218,7 +16136,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
     
     // 첫 번째 handler에서 처리하는 버튼들은 건너뛰기
-    if (interaction.isButton() && ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'bet_', 'oddeven_', 'monster_', 'start_game', 'clear_bets', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_'].some(id => interaction.customId.includes(id))) {
+    if (interaction.isButton() && ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'explore_'].some(id => interaction.customId.includes(id))) {
         console.log(`🟡 두 번째 핸들러에서 제외됨: ${interaction.customId}`);
         return;
     }
@@ -13234,8 +16152,66 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // 유물 판매 선택
+        if (interaction.customId === 'sell_artifact_select') {
+            const selectionValue = interaction.values[0];
+            const artifactIndex = parseInt(selectionValue.replace('sell_artifact_', ''));
+            
+            const artifacts = user.artifacts || [];
+            const selectedArtifact = artifacts[artifactIndex];
+            
+            if (!selectedArtifact) {
+                await interaction.reply({ content: '선택한 유물을 찾을 수 없습니다!', flags: 64 });
+                return;
+            }
+            
+            // 골드 추가 및 유물 제거
+            await User.updateOne(
+                { discordId: interaction.user.id },
+                { 
+                    $inc: { 
+                        gold: selectedArtifact.value,
+                        'explorationStats.totalEarned': selectedArtifact.value 
+                    },
+                    $pull: { artifacts: { _id: selectedArtifact._id } }
+                }
+            );
+            
+            const embed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🏪 유물 판매 완료!')
+                .setDescription(`**${selectedArtifact.name}**을(를) 성공적으로 판매했습니다!`)
+                .addFields(
+                    { name: '💎 판매 유물', value: `${selectedArtifact.emoji} **${selectedArtifact.name}**\n${getRarityText(selectedArtifact.rarity)}`, inline: true },
+                    { name: '💰 판매 가격', value: `${selectedArtifact.value.toLocaleString()}G`, inline: true },
+                    { name: '💳 현재 골드', value: `${(user.gold + selectedArtifact.value).toLocaleString()}G`, inline: true }
+                )
+                .setFooter({ text: '판매된 유물은 복구할 수 없습니다!' });
+
+            const continueButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('artifact_shop')
+                        .setLabel('🔄 계속 판매')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_inventory')
+                        .setLabel('🎒 보관함')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_main_menu')
+                        .setLabel('🏠 메뉴')
+                        .setStyle(ButtonStyle.Primary)
+                );
+
+            await interaction.update({
+                embeds: [embed],
+                components: [continueButtons]
+            });
+        }
+
         // 주식 지역 선택
-        if (interaction.customId === 'select_region') {
+        else if (interaction.customId === 'select_region') {
             const regionKey = interaction.values[0];
             const region = STOCK_MARKET.regions[regionKey];
             
@@ -13485,7 +16461,7 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
-            const portfolio = getPlayerPortfolio(interaction.user.id);
+            const portfolio = await getPlayerPortfolio(interaction.user.id);
             const holding = portfolio.stocks.get(companyId);
             
             let tradeText = `**${company.name}**\n`;
@@ -13551,7 +16527,7 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
-            const portfolio = getPlayerPortfolio(interaction.user.id);
+            const portfolio = await getPlayerPortfolio(interaction.user.id);
             const maxShares = Math.floor(portfolio.cash / company.price);
             
             if (maxShares === 0) {
@@ -13588,7 +16564,7 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
-            const portfolio = getPlayerPortfolio(interaction.user.id);
+            const portfolio = await getPlayerPortfolio(interaction.user.id);
             const holding = portfolio.stocks.get(companyId);
             
             if (!holding || holding.shares === 0) {
@@ -13690,7 +16666,14 @@ client.on('interactionCreate', async (interaction) => {
 
         // 몬스터 배틀 참가 버튼
         else if (interaction.customId === 'monster_battle') {
-            await oddEvenGame.showBettingMenu(interaction);
+            try {
+                await oddEvenGame.showBettingMenu(interaction);
+            } catch (error) {
+                console.error('몬스터 배틀 메뉴 표시 오류:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: '몬스터 배틀 메뉴를 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
+                }
+            }
         }
         
         // 홀짝 게임 베팅 메뉴
@@ -13785,32 +16768,67 @@ client.on('interactionCreate', async (interaction) => {
 
         // 홀짝 게임 뒤로가기
         else if (interaction.customId === 'oddeven_back') {
-            await oddEvenGame.showMonsterBattleMenu(interaction);
+            try {
+                await oddEvenGame.showMonsterBattleMenu(interaction);
+            } catch (error) {
+                console.error('홀짝 게임 뒤로가기 오류:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: '오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
+                }
+            }
         }
 
         // 홀짝 게임 다시하기
         else if (interaction.customId === 'oddeven_play_again') {
-            await oddEvenGame.showBettingMenu(interaction);
+            try {
+                await oddEvenGame.showBettingMenu(interaction);
+            } catch (error) {
+                console.error('홀짝 게임 다시하기 오류:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: '오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
+                }
+            }
         }
 
         // 홀짝 게임 메인으로
         else if (interaction.customId === 'oddeven_main') {
-            await oddEvenGame.showMonsterBattleMenu(interaction);
+            try {
+                await oddEvenGame.showMonsterBattleMenu(interaction);
+            } catch (error) {
+                console.error('홀짝 게임 메인 오류:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: '오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
+                }
+            }
         }
 
         // 홀짝 게임 시작
         else if (interaction.customId === 'start_game') {
-            await oddEvenGame.playMultipleBets(interaction);
+            try {
+                await oddEvenGame.playMultipleBets(interaction);
+            } catch (error) {
+                console.error('홀짝 게임 시작 오류:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: '게임 시작 중 오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
+                }
+            }
         }
 
         // 홀짝 게임 베팅 초기화
         else if (interaction.customId === 'clear_bets') {
-            const user = await User.findOne({ discordId: interaction.user.id });
-            if (user.oddEvenStats?.currentBets) {
-                user.oddEvenStats.currentBets = [];
-                await user.save();
+            try {
+                const user = await User.findOne({ discordId: interaction.user.id });
+                if (user.oddEvenStats?.currentBets) {
+                    user.oddEvenStats.currentBets = [];
+                    await user.save();
+                }
+                await oddEvenGame.showBettingMenu(interaction);
+            } catch (error) {
+                console.error('베팅 초기화 오류:', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: '베팅 초기화 중 오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
+                }
             }
-            await oddEvenGame.showBettingMenu(interaction);
         }
         
         // 🍄 독버섯 게임 버튼 핸들러
@@ -13874,6 +16892,153 @@ client.on('interactionCreate', async (interaction) => {
                     components: []
                 });
             }
+        }
+        
+        // 전체 기업 차트 버튼 처리
+        else if (interaction.customId === 'all_companies_chart') {
+            await interaction.deferUpdate();
+            
+            try {
+                // 모든 기업 수집
+                const allCompanies = [];
+                for (const regionKey of Object.keys(STOCK_MARKET.regions)) {
+                    const region = STOCK_MARKET.regions[regionKey];
+                    region.companies.forEach(company => {
+                        allCompanies.push({
+                            ...company,
+                            region: region.name
+                        });
+                    });
+                }
+                
+                STOCK_MARKET.chains.forEach(company => {
+                    allCompanies.push({
+                        ...company,
+                        region: '🌐 전지역'
+                    });
+                });
+                
+                // 25개씩 페이지 나누기
+                const itemsPerPage = 25;
+                const totalPages = Math.ceil(allCompanies.length / itemsPerPage);
+                const currentPage = 0;
+                const startIndex = currentPage * itemsPerPage;
+                const currentCompanies = allCompanies.slice(startIndex, startIndex + itemsPerPage);
+                
+                // 전체 기업 선택 메뉴 생성 (Discord의 25개 제한)
+                const companyOptions = currentCompanies.map((company, index) => {
+                    const chartHistory = STOCK_MARKET.chart_history;
+                    let changeText = '';
+                    
+                    if (chartHistory.top_companies[company.id] && chartHistory.top_companies[company.id].length > 1) {
+                        const prices = chartHistory.top_companies[company.id];
+                        const change = ((prices[prices.length - 1] - prices[0]) / prices[0] * 100).toFixed(1);
+                        changeText = ` (${change > 0 ? '+' : ''}${change}%)`;
+                    }
+                    
+                    return {
+                        label: company.name + changeText,
+                        description: `${company.region} | ${company.price.toLocaleString()}G`,
+                        value: `company_chart_${company.id}`
+                    };
+                });
+                
+                const allCompanySelect = new StringSelectMenuBuilder()
+                    .setCustomId('select_company_chart')
+                    .setPlaceholder('전체 기업 목록에서 선택하세요')
+                    .addOptions(companyOptions);
+                
+                const selectRow = new ActionRowBuilder().addComponents(allCompanySelect);
+                
+                const navigationButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('company_charts')
+                            .setLabel('🔙 상위 기업만')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('stock_chart')
+                            .setLabel('📊 전체 차트')
+                            .setStyle(ButtonStyle.Primary)
+                    );
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#9b59b6')
+                    .setTitle('📊 전체 기업 차트 선택')
+                    .setDescription(`모든 기업의 개별 차트를 확인할 수 있습니다.\n\n**총 ${allCompanies.length}개 기업** (페이지 ${currentPage + 1}/${totalPages})`)
+                    .addFields(
+                        { 
+                            name: '📋 기업 목록', 
+                            value: currentCompanies.map((c, i) => `${startIndex + i + 1}. **${c.name}** (${c.region})`).join('\n'), 
+                            inline: false 
+                        }
+                    );
+                
+                await interaction.editReply({
+                    embeds: [embed],
+                    components: [selectRow, navigationButtons],
+                    files: []
+                });
+                
+            } catch (error) {
+                console.error('전체 기업 차트 오류:', error);
+                await interaction.editReply({
+                    content: '❌ 전체 기업 차트 생성 중 오류가 발생했습니다.',
+                    embeds: [],
+                    components: []
+                });
+            }
+        }
+        
+        // 내 주식 복구 버튼
+        else if (interaction.customId === 'recover_my_stocks') {
+            await interaction.deferReply({ flags: 64 });
+            
+            try {
+                const user = await User.findOne({ discordId: interaction.user.id });
+                if (!user) {
+                    await interaction.editReply({ content: '❌ 유저 데이터를 찾을 수 없습니다!' });
+                    return;
+                }
+                
+                // 예시 복구 (실제 상황에 맞게 수정 필요)
+                if (!user.stockPortfolio) {
+                    user.stockPortfolio = { stocks: new Map(), totalInvested: 0, lastUpdate: new Date() };
+                }
+                
+                // 임시 복구 - 여행자 여관 1주
+                user.stockPortfolio.stocks.set('traveler_inn', {
+                    shares: 1,
+                    avgPrice: 1379
+                });
+                
+                await user.save();
+                
+                await interaction.editReply({ 
+                    content: '✅ 주식 데이터가 복구되었습니다!\n🏨 여행자 여관: 1주 (평균가: 1,379골드)\n\n**실제 보유하신 주식이 다르다면 관리자에게 문의해주세요.**' 
+                });
+                
+            } catch (error) {
+                console.error('주식 복구 오류:', error);
+                await interaction.editReply({ content: '❌ 주식 복구 중 오류가 발생했습니다!' });
+            }
+        }
+        
+        // 주식 도움말 버튼
+        else if (interaction.customId === 'stock_help') {
+            const helpEmbed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle('📈 주식 시스템 도움말')
+                .setDescription('김헌터 주식 시스템 사용법을 안내해드립니다!')
+                .addFields(
+                    { name: '📊 기본 사용법', value: '• 지역별/체인 기업에서 주식 매수/매도\n• 포트폴리오에서 보유 현황 확인\n• 차트에서 주가 동향 분석', inline: false },
+                    { name: '💰 매수/매도', value: '• 기업 선택 → 매수/매도 버튼 클릭\n• 팝업창에서 수량 입력\n• 실시간 주가로 거래 체결', inline: false },
+                    { name: '🔧 데이터 복구', value: '• 봇 재시작으로 주식이 사라진 경우\n• "내 주식 복구" 버튼 클릭\n• 관리자에게 정확한 복구 요청', inline: false },
+                    { name: '📈 차트 기능', value: '• 실시간 시장 차트\n• 개별 기업 차트\n• 전체 기업 목록 조회', inline: false }
+                )
+                .setFooter({ text: '주식 투자는 신중하게! 가격 변동에 유의하세요.' });
+            
+            await interaction.reply({ embeds: [helpEmbed], flags: 64 });
         }
 
     } catch (error) {
