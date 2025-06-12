@@ -7,48 +7,48 @@ const MUSHROOM_GAME = {
             emoji: '🔵',
             safeDesc: '투명하고 깨끗한 젤리 버섯이 통통 튀어요!',
             poisonDesc: '검은 기포가 보글보글 끓는 위험한 버섯!',
-            safeGif: 'mushroom_safe_slime.gif',
-            poisonGif: 'mushroom_poison_slime.gif'
+            safeGif: 'kim_hunting3.gif',
+            poisonGif: 'kim_hunting4.gif'
         },
         cotton: {
             name: '토실토실 솜버섯',
             emoji: '🤍',
             safeDesc: '포근한 양처럼 폭신폭신한 하얀 버섯!',
             poisonDesc: '회색빛 독가스가 스멀스멀 나오는 버섯!',
-            safeGif: 'mushroom_safe_cotton.gif',
-            poisonGif: 'mushroom_poison_cotton.gif'
+            safeGif: 'kim_hunting3.gif',
+            poisonGif: 'kim_hunting4.gif'
         },
         crystal: {
             name: '반짝반짝 크리스탈버섯',
             emoji: '💎',
             safeDesc: '무지개빛으로 반짝이는 투명한 버섯!',
             poisonDesc: '보라색으로 음산하게 빛나는 버섯!',
-            safeGif: 'mushroom_safe_crystal.gif',
-            poisonGif: 'mushroom_poison_crystal.gif'
+            safeGif: 'kim_hunting3.gif',
+            poisonGif: 'kim_hunting4.gif'
         },
         flower: {
             name: '춤추는 꽃버섯',
             emoji: '🌸',
             safeDesc: '꽃잎이 흔들흔들 춤추는 예쁜 버섯!',
             poisonDesc: '시든 꽃잎이 떨어지는 어두운 버섯!',
-            safeGif: 'mushroom_safe_flower.gif',
-            poisonGif: 'mushroom_poison_flower.gif'
+            safeGif: 'kim_hunting3.gif',
+            poisonGif: 'kim_hunting4.gif'
         },
         cloud: {
             name: '통통통 구름버섯',
             emoji: '☁️',
             safeDesc: '솜사탕처럼 둥실둥실 떠다니는 버섯!',
             poisonDesc: '먹구름처럼 검은 연기가 나오는 버섯!',
-            safeGif: 'mushroom_safe_cloud.gif',
-            poisonGif: 'mushroom_poison_cloud.gif'
+            safeGif: 'kim_hunting3.gif',
+            poisonGif: 'kim_hunting4.gif'
         },
         unicorn: {
             name: '별빛별빛 유니콘버섯',
             emoji: '⭐',
             safeDesc: '유니콘 뿔처럼 나선형이고 별빛이 반짝!',
             poisonDesc: '뿔이 부러지고 별빛이 꺼져가는 버섯!',
-            safeGif: 'mushroom_safe_unicorn.gif',
-            poisonGif: 'mushroom_poison_unicorn.gif'
+            safeGif: 'kim_hunting3.gif',
+            poisonGif: 'kim_hunting4.gif'
         }
     },
 
@@ -94,19 +94,19 @@ const MUSHROOM_GAME = {
 
     // 배경 GIF
     backgrounds: {
-        gameStart: 'bg_forest_day.gif',
-        mushroomSelect: 'bg_whispering_forest.gif',
-        victory: 'bg_crystal_cave.gif',
-        defeat: 'bg_rainbow_field.gif'
+        gameStart: 'kim_hunting_main.png',
+        mushroomSelect: 'kim_hunting_main.png',
+        victory: 'kim_hunting_win.gif',
+        defeat: 'kim_hunting_lose.gif'
     },
 
     // 효과 GIF
     effects: {
-        gameStart: 'effect_game_start.gif',
-        poisonDeath: 'effect_poison_death.gif',
-        safeSparkle: 'effect_safe_sparkle.gif',
-        victory: 'effect_victory.gif',
-        thinking: 'effect_thinking.gif'
+        gameStart: 'kim_hunting.gif',
+        poisonDeath: 'kim_hunting_lose.gif',
+        safeSparkle: 'kim_hunting_win.gif',
+        victory: 'kim_hunting_win.gif',
+        thinking: 'kim_hunting2.gif'
     },
 
     // 게임 메시지

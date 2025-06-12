@@ -264,6 +264,61 @@ const userSchema = new mongoose.Schema({
             targetNumber: Number, // 잭팟용
             timestamp: { type: Date, default: Date.now }
         }]
+    },
+    // 주식 포트폴리오 시스템
+    stockPortfolio: {
+        stocks: {
+            type: Map,
+            of: {
+                shares: { type: Number, default: 0 }, // 보유 주식 수
+                avgPrice: { type: Number, default: 0 } // 평균 매수가
+            },
+            default: new Map()
+        },
+        totalInvested: { type: Number, default: 0 }, // 총 투자금액
+        lastUpdate: { type: Date, default: Date.now } // 마지막 업데이트
+    },
+    // 유물 인벤토리 시스템
+    artifacts: [{
+        name: { type: String, required: true }, // 유물 이름
+        emoji: { type: String, required: true }, // 이모지
+        rarity: { type: String, required: true }, // 등급
+        value: { type: Number, required: true }, // 판매가치
+        description: { type: String, required: true }, // 설명
+        foundDate: { type: Date, default: Date.now }, // 발견일
+        company: { type: String, required: false }, // 발견한 회사
+        region: { type: String, required: false } // 발견 지역
+    }],
+    // 유물탐사 통계
+    explorationStats: {
+        totalExplorations: { type: Number, default: 0 }, // 총 탐사 횟수
+        totalInvested: { type: Number, default: 0 }, // 총 투자 금액
+        totalEarned: { type: Number, default: 0 }, // 총 수익
+        successfulFinds: { type: Number, default: 0 }, // 성공한 발견
+        rareFinds: { type: Number, default: 0 }, // 레어 이상 발견
+        lastExploration: { type: Date, default: null }, // 마지막 탐사일
+        favoriteCompany: { type: String, default: null }, // 선호 회사
+        biggestFind: { type: Number, default: 0 } // 최고가 발견품
+    },
+    // 메뉴 커스터마이징 설정
+    menuSettings: {
+        menuOrder: {
+            type: [String],
+            default: ['hunting', 'equipment', 'shop', 'stocks', 'artifacts', 'daily', 'profile']
+        },
+        favoriteMenus: {
+            type: [String], 
+            default: []
+        },
+        hiddenMenus: {
+            type: [String],
+            default: []
+        },
+        menuStyle: {
+            type: String,
+            enum: ['grid', 'list', 'compact'],
+            default: 'list'
+        }
     }
 }, {
     timestamps: true
