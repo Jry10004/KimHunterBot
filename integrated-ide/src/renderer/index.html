@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KimHunter IDE</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 인증 모달 -->
+        <div id="auth-modal" class="modal">
+            <div class="modal-content">
+                <h2>🔐 Claude Authentication Code 인증</h2>
+                <p>Claude에서 Authentication Code를 가져와 입력해주세요:</p>
+                <div class="auth-form">
+                    <textarea id="auth-code" placeholder="Authentication Code를 여기에 붙여넣기..." rows="4"></textarea>
+                    <div class="auth-info">
+                        <small>💡 Claude.ai → 설정 → Authentication → Copy Code</small>
+                        <br>
+                        <small>🔗 <a href="#" id="open-claude">Claude.ai 열기</a></small>
+                    </div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="auth-btn" class="btn primary">인증</button>
+                    <button id="cancel-auth" class="btn secondary">취소</button>
+                </div>
+                <div id="auth-status"></div>
+            </div>
+        </div>
+
+        <!-- 메인 헤더 -->
+        <header class="header">
+            <div class="header-left">
+                <h1>🎮 KimHunter IDE</h1>
+                <span class="subtitle">Claude Code & Bot 통합 환경</span>
+            </div>
+            <div class="header-right">
+                <button id="start-bot-btn" class="btn success">🚀 봇 시작</button>
+                <button id="stop-bot-btn" class="btn danger">⏹️ 봇 중지</button>
+                <button id="start-claude-btn" class="btn primary">🤖 Claude Code</button>
+                <span id="status-indicator" class="status offline">⚫ 오프라인</span>
+            </div>
+        </header>
+
+        <!-- 메인 컨테이너 -->
+        <div class="main-container">
+            <!-- 좌측 패널: Claude Code 터미널 -->
+            <div class="left-panel">
+                <div class="panel-header">
+                    <h3>🤖 Claude Code 터미널</h3>
+                    <div class="panel-controls">
+                        <button id="clear-claude" class="btn small">지우기</button>
+                        <button id="claude-help" class="btn small">도움말</button>
+                    </div>
+                </div>
+                <div class="terminal-container">
+                    <div id="claude-terminal" class="terminal"></div>
+                    <div class="terminal-input">
+                        <input type="text" id="claude-input" placeholder="Claude Code 명령어를 입력하세요..." />
+                        <button id="send-claude" class="btn primary">전송</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 우측 패널: 봇 콘솔 -->
+            <div class="right-panel">
+                <div class="panel-header">
+                    <h3>🎮 봇 콘솔</h3>
+                    <div class="panel-controls">
+                        <button id="clear-bot" class="btn small">지우기</button>
+                        <button id="bot-config" class="btn small">설정</button>
+                    </div>
+                </div>
+                <div class="console-container">
+                    <div id="bot-console" class="console"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 하단: 채팅 인터페이스 -->
+        <div class="bottom-panel">
+            <div class="chat-header">
+                <h3>💬 Claude와 대화하기</h3>
+                <div class="chat-controls">
+                    <button id="clear-chat" class="btn small">대화 지우기</button>
+                    <button id="save-chat" class="btn small">대화 저장</button>
+                </div>
+            </div>
+            <div class="chat-container">
+                <div id="chat-messages" class="chat-messages"></div>
+                <div class="chat-input">
+                    <textarea id="user-input" placeholder="Claude에게 질문하거나 요청사항을 입력하세요..." rows="3"></textarea>
+                    <button id="send-message" class="btn primary">📤 전송</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

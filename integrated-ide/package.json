@@ -1,0 +1,44 @@
+{
+  "name": "kimhunter-ide",
+  "version": "1.0.0",
+  "description": "김헌터 봇 통합 개발 환경",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "electron": "node run.js",
+    "dev": "node server.js",
+    "build": "electron-builder",
+    "pack": "electron-builder --dir"
+  },
+  "keywords": [
+    "electron",
+    "claude-code",
+    "bot",
+    "ide"
+  ],
+  "author": "김헌터",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.18.0",
+    "node-pty": "^1.0.0",
+    "ws": "^8.14.0"
+  },
+  "build": {
+    "appId": "com.kimhunter.ide",
+    "productName": "KimHunter IDE",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "node_modules/**/*"
+    ]
+  }
+}
