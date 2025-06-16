@@ -13709,7 +13709,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (interaction.customId === 'exercise_select') {
             // 운동 선택 메뉴
-            // Modal을 사용하므로 defer하지 않음
+            await interaction.deferUpdate();
             
             const availableExercises = [];
             
@@ -19892,8 +19892,10 @@ client.on('messageReactionRemove', async (reaction, user) => {
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
     
-    // 첫 번째 handler에서 처리하는 버튼들은 건너뛰기
-    if (interaction.isButton() && ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'explore_', 'daily'].some(id => interaction.customId.includes(id))) {
+    // 첫 번째 handler에서 처리하는 상호작용들은 건너뛰기
+    const excludedIds = ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'explore_', 'daily', 'work', 'exercise_select', 'select_exercise_type', 'main_menu'];
+    
+    if (excludedIds.some(id => interaction.customId.includes(id))) {
         console.log(`🟡 두 번째 핸들러에서 제외됨: ${interaction.customId}`);
         return;
     }
