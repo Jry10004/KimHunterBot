@@ -32,70 +32,29 @@ let lastMarketUpdate = 0;
 let dailyFortune = null;
 let currentWeather = null;
 let activeMissions = new Map();
+let lastWeatherUpdate = 0;
+let lastFortuneUpdate = 0;
 
 // 독버섯 게임 세션 관리
 const mushroomGameSessions = new Map();
 const mushroomMatchmakingQueue = new Map(); // userId -> {timestamp, difficulty}
 
+// 등급별 이모지 반환 함수
+function getRarityEmoji(rarity) {
+    const rarityEmojis = {
+        '일반': '⚪',
+        '고급': '🟢',
+        '레어': '🔵',
+        '에픽': '🟣',
+        '레전드리': '🟡',
+        '유니크': '🔴'
+    };
+    return rarityEmojis[rarity] || '⚪';
+}
+
 // 메뉴 시스템 정의
 const MENU_DEFINITIONS = {
-    // 일일 활동
-    daily: {
-        label: '🎁 일일보상',
-        description: '매일 받을 수 있는 보상',
-        emoji: '🎁',
-        category: 'daily'
-    },
-    work: {
-        label: '🏃 운동하기',
-        description: '운동으로 스탯과 골드 획득',
-        emoji: '🏃',
-        category: 'daily'
-    },
-    quest: {
-        label: '📜 의뢰',
-        description: '다양한 퀘스트 수행',
-        emoji: '📜',
-        category: 'daily'
-    },
-    ranking: {
-        label: '🏆 랭킹',
-        description: '전체 게임 랭킹 확인',
-        emoji: '🏆',
-        category: 'daily'
-    },
-    // 게임 콘텐츠
-    hunting: {
-        label: '🎯 사냥하기',
-        description: '몬스터를 사냥하여 경험치와 골드 획득',
-        emoji: '🎯',
-        category: 'game'
-    },
-    racing: {
-        label: '🏁 레이싱',
-        description: '경마 베팅 게임',
-        emoji: '🏁',
-        category: 'game'
-    },
-    pvp: {
-        label: '⚔️ PVP',
-        description: '다른 플레이어와 결투',
-        emoji: '⚔️',
-        category: 'game'
-    },
-    mushroom: {
-        label: '🍄 독버섯게임',
-        description: '독버섯을 피하는 게임',
-        emoji: '🍄',
-        category: 'game'
-    },
-    oddeven: {
-        label: '🎲 홀짝게임',
-        description: '몬스터와 홀짝 대결',
-        emoji: '🎲',
-        category: 'game'
-    },
-    // 캐릭터 관리
+    // 캐릭터 관리 (Character Management)
     stats: {
         label: '💪 능력치',
         description: '능력치 확인 및 분배',
@@ -114,23 +73,86 @@ const MENU_DEFINITIONS = {
         emoji: '⚔️',
         category: 'character'
     },
-    enhancement: {
-        label: '💎 장비강화',
-        description: '에너지 조각으로 장비 강화',
-        emoji: '💎',
-        category: 'character'
-    },
-    // 경제 시스템
-    shop: {
-        label: '🛒 상점',
-        description: '아이템 구매 및 판매',
-        emoji: '🛒',
-        category: 'economy'
-    },
     inventory: {
         label: '🎒 인벤토리',
         description: '보유 아이템 확인',
         emoji: '🎒',
+        category: 'character'
+    },
+    profile: {
+        label: '👤 프로필',
+        description: '내 정보 및 통계 확인',
+        emoji: '👤',
+        category: 'character'
+    },
+    emblem: {
+        label: '🏆 엠블럼',
+        description: '특별한 칭호 획득 (레벨 20 이상)',
+        emoji: '🏆',
+        category: 'character'
+    },
+    // 일일 활동 (Daily Activities)
+    daily: {
+        label: '🎁 일일보상',
+        description: '매일 받을 수 있는 보상',
+        emoji: '🎁',
+        category: 'daily'
+    },
+    work: {
+        label: '🏃 운동하기',
+        description: '운동으로 스탯과 골드 획득',
+        emoji: '🏃',
+        category: 'daily'
+    },
+    quest: {
+        label: '📜 의뢰',
+        description: '다양한 퀘스트 수행',
+        emoji: '📜',
+        category: 'daily'
+    },
+    // 전투 콘텐츠 (Battle Content)
+    hunting: {
+        label: '🎯 사냥하기',
+        description: '몬스터를 사냥하여 경험치와 골드 획득',
+        emoji: '🎯',
+        category: 'battle'
+    },
+    pvp: {
+        label: '⚔️ PVP',
+        description: '다른 플레이어와 결투',
+        emoji: '⚔️',
+        category: 'battle'
+    },
+    ranking: {
+        label: '🏆 랭킹',
+        description: '각종 순위 확인',
+        emoji: '🏆',
+        category: 'battle'
+    },
+    // 미니게임 (Mini Games)
+    racing: {
+        label: '🏁 레이싱',
+        description: '경마 베팅 게임',
+        emoji: '🏁',
+        category: 'minigame'
+    },
+    mushroom: {
+        label: '🍄 독버섯게임',
+        description: '독버섯을 피하는 게임',
+        emoji: '🍄',
+        category: 'minigame'
+    },
+    oddeven: {
+        label: '🎲 홀짝게임',
+        description: '몬스터와 홀짝 대결',
+        emoji: '🎲',
+        category: 'minigame'
+    },
+    // 경제 (Economy)
+    shop: {
+        label: '🛒 상점',
+        description: '아이템 구매 및 판매',
+        emoji: '🛒',
         category: 'economy'
     },
     stocks: {
@@ -152,16 +174,10 @@ const MENU_DEFINITIONS = {
         category: 'economy'
     },
     // 기타
-    ranking: {
-        label: '🏆 랭킹',
-        description: '각종 순위 확인',
-        emoji: '🏆',
-        category: 'utility'
-    },
-    profile: {
-        label: '👤 프로필',
-        description: '내 정보 및 통계 확인',
-        emoji: '👤',
+    enhancement: {
+        label: '💎 장비강화',
+        description: '에너지 조각으로 장비 강화',
+        emoji: '💎',
         category: 'utility'
     },
     settings: {
@@ -169,6 +185,40 @@ const MENU_DEFINITIONS = {
         description: '메뉴 커스터마이징 및 설정',
         emoji: '⚙️',
         category: 'utility'
+    }
+};
+
+// RPG 스타일 카테고리 정의
+const MENU_CATEGORIES = {
+    character: {
+        name: '캐릭터',
+        description: '캐릭터 정보 및 관리',
+        emoji: '👤',
+        color: '#ff6b6b'
+    },
+    daily: {
+        name: '일일 활동',
+        description: '매일 할 수 있는 활동들',
+        emoji: '🌅',
+        color: '#ffeb3b'
+    },
+    battle: {
+        name: '전투 콘텐츠',
+        description: '전투 및 경쟁 콘텐츠',
+        emoji: '⚔️',
+        color: '#e74c3c'
+    },
+    minigame: {
+        name: '미니게임',
+        description: '다양한 미니게임을 즐겨보세요',
+        emoji: '🎮',
+        color: '#3498db'
+    },
+    economy: {
+        name: '경제',
+        description: '골드 관련 거래 시스템',
+        emoji: '💰',
+        color: '#f39c12'
     }
 };
 
@@ -289,6 +339,60 @@ function isAdmin(userId) {
 }
 
 // 사용자별 커스터마이징된 메뉴 생성
+// RPG 스타일 카테고리 선택 메뉴 생성
+function createCategoryMenu() {
+    const categoryOptions = Object.entries(MENU_CATEGORIES).map(([key, category]) => ({
+        label: `${category.emoji} ${category.name}`,
+        description: category.description,
+        value: `category_${key}`,
+        emoji: category.emoji
+    }));
+    
+    // 전체 메뉴 보기 옵션 추가
+    categoryOptions.push({
+        label: '📋 전체 메뉴',
+        description: '모든 메뉴를 한번에 보기',
+        value: 'all_menus',
+        emoji: '📋'
+    });
+    
+    return new StringSelectMenuBuilder()
+        .setCustomId('category_menu')
+        .setPlaceholder('🎮 원하는 카테고리를 선택하세요!')
+        .addOptions(categoryOptions);
+}
+
+// 카테고리별 메뉴 생성
+function createCategorySpecificMenu(category) {
+    const menuOptions = [];
+    
+    // 해당 카테고리의 메뉴들만 필터링
+    for (const [menuId, menuDef] of Object.entries(MENU_DEFINITIONS)) {
+        if (menuDef.category === category) {
+            menuOptions.push({
+                label: `${menuDef.emoji} ${menuDef.label}`,
+                description: menuDef.description,
+                value: menuId,
+                emoji: menuDef.emoji
+            });
+        }
+    }
+    
+    // 카테고리 메뉴로 돌아가기 옵션
+    menuOptions.push({
+        label: '🔙 카테고리 선택으로',
+        description: '카테고리 선택 화면으로 돌아가기',
+        value: 'back_to_categories',
+        emoji: '🔙'
+    });
+    
+    const categoryInfo = MENU_CATEGORIES[category];
+    return new StringSelectMenuBuilder()
+        .setCustomId('main_menu')
+        .setPlaceholder(`${categoryInfo.emoji} ${categoryInfo.name} 메뉴`)
+        .addOptions(menuOptions);
+}
+
 async function createCustomizedMenu(userId) {
     try {
         const user = await User.findOne({ discordId: userId });
@@ -296,11 +400,18 @@ async function createCustomizedMenu(userId) {
         
         // 기본 메뉴 순서 또는 사용자 설정
         let menuOrder = user?.menuSettings?.menuOrder || [
+            // 캐릭터 관리
+            'stats', 'skills', 'equipment', 'inventory', 'profile', 'emblem',
+            // 일일 활동
             'daily', 'work', 'quest', 
-            'hunting', 'racing', 'pvp', 'mushroom', 'oddeven',
-            'stats', 'skills', 'equipment', 'enhancement',
-            'shop', 'inventory', 'stocks', 'artifacts', 'auction',
-            'ranking', 'profile'
+            // 전투 콘텐츠
+            'hunting', 'pvp', 'ranking',
+            // 미니게임
+            'racing', 'mushroom', 'oddeven',
+            // 경제
+            'shop', 'stocks', 'artifacts', 'auction',
+            // 기타
+            'enhancement'
         ];
         const hiddenMenus = user?.menuSettings?.hiddenMenus || [];
         const favoriteMenus = user?.menuSettings?.favoriteMenus || [];
@@ -640,6 +751,7 @@ const SHOP_CATEGORIES = {
         items: [
             // 🌸 일반 등급 - 꽃잎 세트
             { 
+                id: 'petal_sword',
                 name: '꽃잎 칼', 
                 rarity: '일반', 
                 price: 500, 
@@ -655,6 +767,7 @@ const SHOP_CATEGORIES = {
                 }
             },
             { 
+                id: 'bouquet_axe',
                 name: '꽃다발 도끼', 
                 rarity: '일반', 
                 price: 600, 
@@ -670,6 +783,7 @@ const SHOP_CATEGORIES = {
                 }
             },
             { 
+                id: 'fragrance_bow',
                 name: '꽃향기 활', 
                 rarity: '일반', 
                 price: 550, 
@@ -2176,6 +2290,10 @@ async function executeExploration(interaction, user, companyId, investmentAmount
             const artifact = result.artifact;
             
             // 유물을 인벤토리에 추가
+            const artifactValue = Array.isArray(artifact.value) 
+                ? Math.floor(Math.random() * (artifact.value[1] - artifact.value[0] + 1)) + artifact.value[0]
+                : artifact.value;
+                
             await User.updateOne(
                 { discordId: interaction.user.id },
                 { 
@@ -2184,7 +2302,9 @@ async function executeExploration(interaction, user, companyId, investmentAmount
                             name: artifact.name,
                             emoji: artifact.emoji,
                             rarity: result.rarity,
-                            value: artifact.value,
+                            value: artifactValue,
+                            baseValue: artifactValue, // 기본 가치 추가
+                            currentPrice: artifactValue, // 현재 시세 추가
                             description: artifact.description,
                             foundDate: new Date(),
                             company: company.name,
@@ -2193,7 +2313,8 @@ async function executeExploration(interaction, user, companyId, investmentAmount
                     },
                     $inc: { 
                         'explorationStats.successfulFinds': 1,
-                        'explorationStats.biggestFind': artifact.value > (user.explorationStats?.biggestFind || 0) ? artifact.value - (user.explorationStats?.biggestFind || 0) : 0
+                        'explorationStats.totalEarned': artifactValue,
+                        'explorationStats.biggestFind': artifactValue > (user.explorationStats?.biggestFind || 0) ? artifactValue - (user.explorationStats?.biggestFind || 0) : 0
                     }
                 }
             );
@@ -7605,6 +7726,32 @@ function calculateMonsterPower(monster, level) {
     return Math.floor(monster.stats.atk + monster.stats.def + (level * 3));
 }
 
+// 피로도 업데이트 함수
+function updateFatigue(user) {
+    if (!user.fitness) return;
+    
+    const now = Date.now();
+    const lastExercise = user.fitness.lastExercise || now;
+    const timeDiff = now - lastExercise;
+    const hoursRested = timeDiff / (1000 * 60 * 60);
+    
+    // 시간당 피로도 회복
+    const recovery = Math.floor(hoursRested * EXERCISE_SYSTEM.fatigue.recoveryRate);
+    user.fitness.fatigue = Math.max(0, user.fitness.fatigue - recovery);
+}
+
+// 오늘 운동 시간 계산 함수
+function getTodayExerciseTime(user) {
+    if (!user.fitness || !user.fitness.exerciseHistory) return 0;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    return user.fitness.exerciseHistory
+        .filter(record => new Date(record.date) >= today)
+        .reduce((total, record) => total + record.duration, 0);
+}
+
 // 유저 초기화/조회 함수
 async function getUser(discordId) {
     try {
@@ -7645,6 +7792,38 @@ async function cleanupEquipmentData() {
         console.log(`✅ ${result.modifiedCount}명의 유저 장비 데이터가 초기화되었습니다.`);
     } catch (error) {
         console.error('장비 데이터 정리 실패:', error);
+    }
+}
+
+// 유물 데이터 수정 함수
+async function fixArtifactData() {
+    try {
+        // baseValue와 currentPrice가 없는 유물을 가진 유저 찾기
+        const users = await User.find({ 'artifacts.0': { $exists: true } });
+        let fixedCount = 0;
+        
+        for (const user of users) {
+            let needUpdate = false;
+            
+            for (const artifact of user.artifacts) {
+                if (!artifact.baseValue || !artifact.currentPrice) {
+                    // value가 있으면 그 값을 사용, 없으면 1000 기본값
+                    const baseValue = artifact.value || 1000;
+                    artifact.baseValue = baseValue;
+                    artifact.currentPrice = baseValue;
+                    needUpdate = true;
+                }
+            }
+            
+            if (needUpdate) {
+                await user.save();
+                fixedCount++;
+            }
+        }
+        
+        console.log(`✅ ${fixedCount}명의 유저 유물 데이터가 수정되었습니다.`);
+    } catch (error) {
+        console.error('유물 데이터 수정 실패:', error);
     }
 }
 
@@ -8042,6 +8221,9 @@ client.once('ready', async () => {
         // 기존 ObjectId 데이터 일괄 정리
         await cleanupEquipmentData();
         
+        // 유물 데이터 수정
+        await fixArtifactData();
+        
         // 게임 데이터 로드
         loadGameData();
         
@@ -8153,9 +8335,117 @@ client.on('interactionCreate', async (interaction) => {
     console.log(`🟣 드롭다운 선택됨: ${customId}, 값: ${values[0]}`);
     
     try {
+        // 카테고리 메뉴 처리
+        if (customId === 'category_menu') {
+            const selectedValue = values[0];
+            
+            if (selectedValue.startsWith('category_')) {
+                // 특정 카테고리 선택
+                const category = selectedValue.replace('category_', '');
+                const categoryInfo = MENU_CATEGORIES[category];
+                
+                if (!categoryInfo) {
+                    return await interaction.reply({ 
+                        content: '❌ 잘못된 카테고리입니다!', 
+                        ephemeral: true 
+                    });
+                }
+                
+                // 카테고리별 메뉴 표시
+                const categoryMenu = createCategorySpecificMenu(category);
+                const menuRow = new ActionRowBuilder().addComponents(categoryMenu);
+                
+                // 카테고리 정보 임베드
+                const categoryEmbed = new EmbedBuilder()
+                    .setColor(categoryInfo.color)
+                    .setTitle(`${categoryInfo.emoji} ${categoryInfo.name}`)
+                    .setDescription(categoryInfo.description)
+                    .setFooter({ text: '원하는 메뉴를 선택하세요!' });
+                
+                await interaction.update({
+                    embeds: [categoryEmbed],
+                    components: [menuRow]
+                });
+                
+            } else if (selectedValue === 'all_menus') {
+                // 전체 메뉴 보기
+                const allMenus = await createCustomizedMenu(interaction.user.id);
+                const menuRow = new ActionRowBuilder().addComponents(allMenus);
+                
+                const allMenuEmbed = new EmbedBuilder()
+                    .setColor('#3498db')
+                    .setTitle('📋 전체 메뉴')
+                    .setDescription('모든 메뉴를 한번에 보고 있습니다.')
+                    .setFooter({ text: '원하는 메뉴를 선택하세요!' });
+                
+                await interaction.update({
+                    embeds: [allMenuEmbed],
+                    components: [menuRow]
+                });
+            }
+            
+            return;
+        }
+        
         // 메인 메뉴 처리
         if (customId === 'main_menu') {
             const selectedValue = values[0];
+            
+            // 카테고리로 돌아가기
+            if (selectedValue === 'back_to_categories') {
+                const categoryMenu = createCategoryMenu();
+                const menuRow = new ActionRowBuilder().addComponents(categoryMenu);
+                
+                const user = await getUser(interaction.user.id);
+                
+                // 경험치 계산
+                const maxExp = user.level * 100;
+                
+                // 출석 현황 계산
+                const today = new Date().toDateString();
+                const attendanceStatus = user.lastDaily === today ? '출석' : '결석';
+                
+                const statusEmbed = new EmbedBuilder()
+                    .setColor('#3498db')
+                    .setTitle(`${getUserTitle(user)} ${user.nickname}님의 상태`)
+                    .addFields(
+                        { name: '⭐ 레벨', value: `\`\`\`Lv.${user.level}\`\`\``, inline: true },
+                        { name: '✨ 경험치', value: `\`\`\`${user.exp}/${maxExp}\`\`\``, inline: true },
+                        { name: '<:currency_emoji:1377404064316522778> 골드', value: `\`\`\`${user.gold.toLocaleString()}\`\`\``, inline: true },
+                        { name: '📅 출석현황', value: `\`\`\`${attendanceStatus}\`\`\``, inline: true },
+                        { name: '🏆 종합순위', value: `\`\`\`준비중\`\`\``, inline: true },
+                        { name: '💖 인기도', value: `\`\`\`${user.popularity}\`\`\``, inline: true }
+                    )
+                    .setFooter({ text: '카테고리를 선택하세요!' });
+                
+                // 빠른 접근 버튼들
+                const quickButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('daily')
+                            .setLabel('🎁 일일보상')
+                            .setStyle(ButtonStyle.Success),
+                        new ButtonBuilder()
+                            .setCustomId('hunting')
+                            .setLabel('🎯 사냥하기')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('equipment')
+                            .setLabel('⚔️ 장비관리')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('shop')
+                            .setLabel('🛒 상점')
+                            .setStyle(ButtonStyle.Primary)
+                    );
+                
+                await interaction.update({
+                    embeds: [statusEmbed],
+                    components: [menuRow, quickButtons]
+                });
+                
+                return;
+            }
             
             // 관리자 패널 접근 권한 확인
             if (selectedValue === 'admin_panel' && !isAdmin(user.id)) {
@@ -8169,7 +8459,7 @@ client.on('interactionCreate', async (interaction) => {
             switch (selectedValue) {
                 case 'hunting':
                     // 기존 사냥 로직 호출
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const user = await getUser(interaction.user.id);
                     if (!user || !user.registered) {
@@ -8233,8 +8523,8 @@ client.on('interactionCreate', async (interaction) => {
                     });
                     
                 case 'equipment':
-                    // 기존 장비 로직 호출
-                    await interaction.deferReply();
+                    // 장비 관리를 드롭다운으로 변경
+                    await interaction.deferReply({ flags: 64 });
                     
                     const equipUser = await getUser(interaction.user.id);
                     if (!equipUser || !equipUser.registered) {
@@ -8245,9 +8535,17 @@ client.on('interactionCreate', async (interaction) => {
                     const equipmentEmbed = new EmbedBuilder()
                         .setColor('#ffaa00')
                         .setTitle('⚔️ 장비 관리')
-                        .setDescription('장착 중인 장비를 확인하고 관리하세요');
+                        .setDescription('장착 중인 장비를 확인하고 관리하세요\n\n💼 현재 전투력: ' + calculateCombatPower(equipUser).toLocaleString());
                     
                     const slots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+                    const slotNames = {
+                        weapon: '⚔️ 무기',
+                        armor: '🛡️ 갑옷',
+                        helmet: '⛑️ 헬멧',
+                        gloves: '🧬 장갑',
+                        boots: '👢 부츠',
+                        accessory: '💎 액세서리'
+                    };
                     
                     for (const slot of slots) {
                         const slotIndex = equipUser.equipment[slot];
@@ -8262,90 +8560,153 @@ client.on('interactionCreate', async (interaction) => {
                         }
                         
                         equipmentEmbed.addFields({
-                            name: getSlotDisplayName(slot),
+                            name: slotNames[slot],
                             value: slotInfo,
                             inline: true
                         });
                     }
                     
+                    // 장비 변경 드롭다운
+                    const equipOptions = [
+                        {
+                            label: '⚔️ 무기 변경',
+                            description: '무기를 장착하거나 변경합니다',
+                            value: 'equip_weapon',
+                            emoji: '⚔️'
+                        },
+                        {
+                            label: '🛡️ 갑옷 변경',
+                            description: '갑옷을 장착하거나 변경합니다',
+                            value: 'equip_armor',
+                            emoji: '🛡️'
+                        },
+                        {
+                            label: '⛑️ 헬멧 변경',
+                            description: '헬멧을 장착하거나 변경합니다',
+                            value: 'equip_helmet',
+                            emoji: '⛑️'
+                        },
+                        {
+                            label: '🧬 장갑 변경',
+                            description: '장갑을 장착하거나 변경합니다',
+                            value: 'equip_gloves',
+                            emoji: '🧬'
+                        },
+                        {
+                            label: '👢 부츠 변경',
+                            description: '부츠를 장착하거나 변경합니다',
+                            value: 'equip_boots',
+                            emoji: '👢'
+                        },
+                        {
+                            label: '💎 액세서리 변경',
+                            description: '액세서리를 장착하거나 변경합니다',
+                            value: 'equip_accessory',
+                            emoji: '💎'
+                        }
+                    ];
+                    
+                    const equipSelectMenu = new StringSelectMenuBuilder()
+                        .setCustomId('equipment_select')
+                        .setPlaceholder('🎮 변경할 장비 슬롯을 선택하세요')
+                        .addOptions(equipOptions);
+                    
+                    const selectRow = new ActionRowBuilder().addComponents(equipSelectMenu);
+                    
                     const equipButtons = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
-                                .setCustomId('equip_category_weapons')
-                                .setLabel('⚔️ 무기 장착')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('equip_category_armor')
-                                .setLabel('🛡️ 방어구')
-                                .setStyle(ButtonStyle.Primary),
+                                .setCustomId('unequip_all')
+                                .setLabel('🚫 모든 장비 해제')
+                                .setStyle(ButtonStyle.Danger),
                             new ButtonBuilder()
                                 .setCustomId('inventory')
                                 .setLabel('🎒 인벤토리')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
                                 .setStyle(ButtonStyle.Secondary)
                         );
                     
                     return await interaction.editReply({ 
                         embeds: [equipmentEmbed], 
-                        components: [equipButtons] 
+                        components: [selectRow, equipButtons] 
                     });
                     
                 case 'shop':
-                    // 기존 상점 로직 호출
-                    await interaction.deferReply();
+                    // 상점을 드롭다운 메뉴로 변경
+                    await interaction.deferReply({ flags: 64 });
                     
+                    const shopUser = await getUser(interaction.user.id);
                     const shopEmbed = new EmbedBuilder()
                         .setColor('#00ff7f')
                         .setTitle('🛒 김헌터 상점')
-                        .setDescription('원하는 카테고리를 선택하세요');
+                        .setDescription('원하는 카테고리를 선택하세요\n\n💰 보유 골드: ' + shopUser.gold.toLocaleString() + 'G');
                     
-                    const categoryButtons1 = new ActionRowBuilder()
+                    // 카테고리 드롭다운 메뉴
+                    const categoryOptions = [
+                        {
+                            label: '⚔️ 무기',
+                            description: '다양한 무기를 구매할 수 있습니다',
+                            value: 'shop_category_weapon',
+                            emoji: '⚔️'
+                        },
+                        {
+                            label: '🛡️ 갑옷',
+                            description: '튼튼한 갑옷을 구매할 수 있습니다',
+                            value: 'shop_category_armor',
+                            emoji: '🛡️'
+                        },
+                        {
+                            label: '⛑️ 헬멧',
+                            description: '머리를 보호하는 헬멧을 구매할 수 있습니다',
+                            value: 'shop_category_helmet',
+                            emoji: '⛑️'
+                        },
+                        {
+                            label: '🧤 장갑',
+                            description: '손을 보호하는 장갑을 구매할 수 있습니다',
+                            value: 'shop_category_gloves',
+                            emoji: '🧤'
+                        },
+                        {
+                            label: '👢 부츠',
+                            description: '발을 보호하는 부츠를 구매할 수 있습니다',
+                            value: 'shop_category_boots',
+                            emoji: '👢'
+                        },
+                        {
+                            label: '💎 액세서리',
+                            description: '특별한 효과를 가진 액세서리를 구매할 수 있습니다',
+                            value: 'shop_category_accessory',
+                            emoji: '💎'
+                        }
+                    ];
+                    
+                    const categorySelectMenu = new StringSelectMenuBuilder()
+                        .setCustomId('shop_category_select')
+                        .setPlaceholder('🛍️ 구매할 카테고리를 선택하세요')
+                        .addOptions(categoryOptions);
+                    
+                    const shopSelectRow = new ActionRowBuilder().addComponents(categorySelectMenu);
+                    
+                    const backButton = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
-                                .setCustomId('shop_weapon')
-                                .setLabel('⚔️ 무기')
-                                .setStyle(ButtonStyle.Danger),
-                            new ButtonBuilder()
-                                .setCustomId('shop_armor')
-                                .setLabel('🛡️ 갑옷')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('shop_helmet')
-                                .setLabel('⛑️ 헬멧')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('shop_gloves')
-                                .setLabel('🧤 장갑')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('shop_boots')
-                                .setLabel('👢 부츠')
-                                .setStyle(ButtonStyle.Primary)
-                        );
-                    
-                    const categoryButtons2 = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('shop_accessory')
-                                .setLabel('💎 액세서리')
-                                .setStyle(ButtonStyle.Success),
-                            new ButtonBuilder()
-                                .setCustomId('shop_scroll')
-                                .setLabel('📜 주문서')
-                                .setStyle(ButtonStyle.Secondary),
-                            new ButtonBuilder()
-                                .setCustomId('shop_consumables')
-                                .setLabel('🧪 소비')
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임메뉴로 돌아가기')
                                 .setStyle(ButtonStyle.Secondary)
                         );
                     
                     return await interaction.editReply({ 
                         embeds: [shopEmbed], 
-                        components: [categoryButtons1, categoryButtons2] 
+                        components: [shopSelectRow, backButton] 
                     });
                     
                 case 'stocks':
                     // 기존 주식 로직 호출
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const stockEmbed = new EmbedBuilder()
                         .setColor('#4169e1')
@@ -8392,7 +8753,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'artifacts':
                     // 기존 유물탐사 로직 호출
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const artifactEmbed = new EmbedBuilder()
                         .setColor('#daa520')
@@ -8442,47 +8803,15 @@ client.on('interactionCreate', async (interaction) => {
                     });
                     
                 case 'daily':
-                    // 기존 일일보상 로직 호출
-                    await interaction.deferReply();
-                    
-                    const dailyUser = await getUser(interaction.user.id);
-                    if (!dailyUser || !dailyUser.registered) {
-                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
-                    }
-                    
-                    const today = new Date().toDateString();
-                    if (dailyUser.lastDaily === today) {
-                        return await interaction.editReply({ content: '오늘은 이미 출석체크를 하셨습니다!' });
-                    }
-                    
-                    // 출석체크 실행
-                    const baseReward = 100;
-                    const streakBonus = dailyUser.attendanceStreak * 10;
-                    const totalReward = baseReward + streakBonus;
-                    
-                    await User.findOneAndUpdate(
-                        { discordId: interaction.user.id },
-                        { 
-                            $inc: { gold: totalReward, attendanceStreak: 1 },
-                            $set: { lastDaily: today }
-                        }
-                    );
-                    
-                    const dailyEmbed = new EmbedBuilder()
-                        .setColor('#00ff00')
-                        .setTitle('🎁 출석체크 완료!')
-                        .setDescription(`**${totalReward}<:currency_emoji:1377404064316522778>** 골드를 획득했습니다!`)
-                        .addFields(
-                            { name: '기본 보상', value: `${baseReward}<:currency_emoji:1377404064316522778>`, inline: true },
-                            { name: '연속 출석 보너스', value: `${streakBonus}<:currency_emoji:1377404064316522778>`, inline: true },
-                            { name: '연속 출석일', value: `${dailyUser.attendanceStreak + 1}일`, inline: true }
-                        );
-                    
-                    return await interaction.editReply({ embeds: [dailyEmbed] });
+                    // 일일보상 버튼 핸들러로 이동 (룰렛 시스템)
+                    // 버튼 클릭을 시뮬레이션하여 동일한 핸들러 호출
+                    interaction.customId = 'daily';
+                    // 두 번째 핸들러에서 처리되도록 함
+                    return;
                     
                 case 'profile':
                     // 기존 프로필 로직 호출
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const profileUser = await getUser(interaction.user.id);
                     if (!profileUser || !profileUser.registered) {
@@ -8506,40 +8835,131 @@ client.on('interactionCreate', async (interaction) => {
                     return await interaction.editReply({ embeds: [profileEmbed] });
                     
                 case 'work':
-                    // 일하기 기능
-                    await interaction.deferReply();
+                    // 운동하기 시스템
+                    await interaction.deferReply({ flags: 64 });
                     
-                    const workUser = await getUser(interaction.user.id);
-                    if (!workUser || !workUser.registered) {
+                    const exerciseUser = await getUser(interaction.user.id);
+                    if (!exerciseUser || !exerciseUser.registered) {
                         return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
                     
-                    const now = Date.now();
-                    const cooldownTime = 60 * 60 * 1000; // 1시간
-                    if (workUser.lastWork && now - workUser.lastWork < cooldownTime) {
-                        const remainingTime = Math.ceil((cooldownTime - (now - workUser.lastWork)) / 60000);
-                        return await interaction.editReply({ content: `⏰ 아직 쉬는 시간입니다! ${remainingTime}분 후에 다시 일할 수 있어요.` });
+                    // 피트니스 초기화
+                    if (!exerciseUser.fitness) {
+                        exerciseUser.fitness = {
+                            level: 1,
+                            exp: 0,
+                            totalExerciseTime: 0,
+                            lastExercise: null,
+                            streak: 0,
+                            fatigue: 0,
+                            stats: {
+                                strength: 1,
+                                stamina: 1,
+                                flexibility: 1,
+                                agility: 1,
+                                mental: 1
+                            },
+                            equipment: {
+                                clothes: 'basic',
+                                shoes: 'basic'
+                            },
+                            activeSupplements: [],
+                            exerciseHistory: []
+                        };
+                        await exerciseUser.save();
                     }
                     
-                    const workReward = Math.floor(Math.random() * 100) + 50;
-                    await User.findOneAndUpdate(
-                        { discordId: interaction.user.id },
-                        { 
-                            $inc: { gold: workReward },
-                            $set: { lastWork: now }
+                    // 피로도 업데이트
+                    updateFatigue(exerciseUser);
+                    
+                    // 오늘 운동 시간 확인
+                    const todayExerciseTime = getTodayExerciseTime(exerciseUser);
+                    const todayMinutes = Math.floor(todayExerciseTime / 60000);
+                    
+                    // 현재 레벨 티어 확인
+                    let currentTier = null;
+                    for (const [level, tier] of Object.entries(EXERCISE_SYSTEM.levelTiers)) {
+                        if (exerciseUser.fitness.level >= parseInt(level)) {
+                            currentTier = tier;
                         }
-                    );
+                    }
                     
-                    const workEmbed = new EmbedBuilder()
-                        .setColor('#00bfff')
-                        .setTitle('⚒️ 일하기 완료!')
-                        .setDescription(`열심히 일해서 **${workReward}<:currency_emoji:1377404064316522778>** 골드를 벌었습니다!`);
+                    const exerciseEmbed = new EmbedBuilder()
+                        .setColor('#00ff7f')
+                        .setTitle('🏃 운동하기')
+                        .setDescription(`**${currentTier.emoji} ${currentTier.name}** Lv.${exerciseUser.fitness.level}\n\n오늘 운동 시간: ${todayMinutes}분`)
+                        .addFields(
+                            { name: '💪 근력', value: `${exerciseUser.fitness.stats.strength}`, inline: true },
+                            { name: '🏃 체력', value: `${exerciseUser.fitness.stats.stamina}`, inline: true },
+                            { name: '🧘 유연성', value: `${exerciseUser.fitness.stats.flexibility}`, inline: true },
+                            { name: '⚡ 민첩', value: `${exerciseUser.fitness.stats.agility}`, inline: true },
+                            { name: '🧠 정신력', value: `${exerciseUser.fitness.stats.mental}`, inline: true },
+                            { name: '😫 피로도', value: `${exerciseUser.fitness.fatigue}/${EXERCISE_SYSTEM.fatigue.maxFatigue}`, inline: true }
+                        );
                     
-                    return await interaction.editReply({ embeds: [workEmbed] });
+                    // 운동 종류 드롭다운
+                    const exerciseOptions = [];
+                    
+                    // 기본 운동
+                    Object.values(EXERCISE_SYSTEM.exercises)
+                        .filter(ex => ex.category === 'basic')
+                        .forEach(ex => {
+                            exerciseOptions.push({
+                                label: `${ex.emoji} ${ex.name}`,
+                                description: ex.description,
+                                value: ex.id,
+                                emoji: ex.emoji
+                            });
+                        });
+                    
+                    // 헬스장 운동 (일일 이용권 확인)
+                    const hasGymPass = exerciseUser.inventory?.some(item => item.name === '헬스장 일일 이용권') || false;
+                    Object.values(EXERCISE_SYSTEM.exercises)
+                        .filter(ex => ex.category === 'gym')
+                        .forEach(ex => {
+                            exerciseOptions.push({
+                                label: `${ex.emoji} ${ex.name} ${!hasGymPass ? '(이용권 필요)' : ''}`,
+                                description: ex.description,
+                                value: ex.id,
+                                emoji: ex.emoji
+                            });
+                        });
+                    
+                    const exerciseSelectMenu = new StringSelectMenuBuilder()
+                        .setCustomId('exercise_select')
+                        .setPlaceholder('🏃 운동을 선택하세요')
+                        .addOptions(exerciseOptions);
+                    
+                    const exerciseSelectRow = new ActionRowBuilder().addComponents(exerciseSelectMenu);
+                    
+                    const buttonRow = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('exercise_status')
+                                .setLabel('📊 운동 현황')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('exercise_shop')
+                                .setLabel('🛒 운동 용품점')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('exercise_ranking')
+                                .setLabel('🏆 피트니스 랭킹')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Success)
+                        );
+                    
+                    return await interaction.editReply({ 
+                        embeds: [exerciseEmbed], 
+                        components: [exerciseSelectRow, buttonRow] 
+                    });
                     
                 case 'quest':
                     // 의뢰 기능
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const questUser = await getUser(interaction.user.id);
                     if (!questUser || !questUser.registered) {
@@ -8555,7 +8975,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'pvp':
                     // PVP 메뉴
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const pvpUser = await getUser(interaction.user.id);
                     if (!pvpUser || !pvpUser.registered) {
@@ -8625,7 +9045,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'oddeven':
                     // 홀짝 게임
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const oddevenUser = await getUser(interaction.user.id);
                     if (!oddevenUser || !oddevenUser.registered) {
@@ -8658,7 +9078,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'stats':
                     // 능력치
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const statsUser = await getUser(interaction.user.id);
                     if (!statsUser || !statsUser.registered) {
@@ -8712,7 +9132,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'skills':
                     // 스킬
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const skillsUser = await getUser(interaction.user.id);
                     if (!skillsUser || !skillsUser.registered) {
@@ -8727,8 +9147,8 @@ client.on('interactionCreate', async (interaction) => {
                     return await interaction.editReply({ embeds: [skillsEmbed] });
                     
                 case 'inventory':
-                    // 인벤토리
-                    await interaction.deferReply();
+                    // 인벤토리를 드롭다운으로 변경
+                    await interaction.deferReply({ flags: 64 });
                     
                     const invUser = await getUser(interaction.user.id);
                     if (!invUser || !invUser.registered) {
@@ -8738,61 +9158,117 @@ client.on('interactionCreate', async (interaction) => {
                     const inventoryEmbed = new EmbedBuilder()
                         .setColor('#8a2be2')
                         .setTitle('🎒 인벤토리')
-                        .setDescription('보유중인 아이템을 확인하세요')
-                        .setFooter({ text: `슬롯: ${invUser.inventory.length}/${invUser.maxInventorySlots}` });
+                        .setDescription(`보유중인 아이템을 확인하세요\n\n🔄 슬롯: ${invUser.inventory.length}/${invUser.maxInventorySlots}`)
+                        .setFooter({ text: '카테고리를 선택하여 아이템을 확인하세요' });
                     
-                    const invCategoryButtons1 = new ActionRowBuilder()
+                    // 인벤토리 카테고리 별 아이템 수 계산
+                    const categoryCounts = {
+                        weapon: 0,
+                        armor: 0,
+                        helmet: 0,
+                        gloves: 0,
+                        boots: 0,
+                        accessory: 0,
+                        consumable: 0,
+                        coin: 0,
+                        scroll: 0
+                    };
+                    
+                    invUser.inventory.forEach(item => {
+                        if (categoryCounts[item.type] !== undefined) {
+                            categoryCounts[item.type]++;
+                        }
+                    });
+                    
+                    // 인벤토리 카테고리 드롭다운
+                    const invOptions = [
+                        {
+                            label: `⚔️ 무기 (${categoryCounts.weapon}개)`,
+                            description: '보유한 무기를 확인합니다',
+                            value: 'inv_weapon',
+                            emoji: '⚔️'
+                        },
+                        {
+                            label: `🛡️ 갑옷 (${categoryCounts.armor}개)`,
+                            description: '보유한 갑옷을 확인합니다',
+                            value: 'inv_armor',
+                            emoji: '🛡️'
+                        },
+                        {
+                            label: `⛑️ 헬멧 (${categoryCounts.helmet}개)`,
+                            description: '보유한 헬멇을 확인합니다',
+                            value: 'inv_helmet',
+                            emoji: '⛑️'
+                        },
+                        {
+                            label: `🧬 장갑 (${categoryCounts.gloves}개)`,
+                            description: '보유한 장갑을 확인합니다',
+                            value: 'inv_gloves',
+                            emoji: '🧬'
+                        },
+                        {
+                            label: `👢 부츠 (${categoryCounts.boots}개)`,
+                            description: '보유한 부츠를 확인합니다',
+                            value: 'inv_boots',
+                            emoji: '👢'
+                        },
+                        {
+                            label: `💎 액세서리 (${categoryCounts.accessory}개)`,
+                            description: '보유한 액세서리를 확인합니다',
+                            value: 'inv_accessory',
+                            emoji: '💎'
+                        },
+                        {
+                            label: `📜 주문서 (${categoryCounts.scroll}개)`,
+                            description: '보유한 주문서를 확인합니다',
+                            value: 'inv_scroll',
+                            emoji: '📜'
+                        },
+                        {
+                            label: `🧪 소비 (${categoryCounts.consumable}개)`,
+                            description: '보유한 소비 아이템을 확인합니다',
+                            value: 'inv_consumable',
+                            emoji: '🧪'
+                        },
+                        {
+                            label: `🪙 코인 (${categoryCounts.coin}개)`,
+                            description: '보유한 코인을 확인합니다',
+                            value: 'inv_coin',
+                            emoji: '🪙'
+                        }
+                    ];
+                    
+                    const invSelectMenu = new StringSelectMenuBuilder()
+                        .setCustomId('inventory_category_select')
+                        .setPlaceholder('📦 확인할 아이템 카테고리를 선택하세요')
+                        .addOptions(invOptions);
+                    
+                    const invSelectRow = new ActionRowBuilder().addComponents(invSelectMenu);
+                    
+                    const invButtons = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
-                                .setCustomId('inv_category_weapons')
-                                .setLabel('⚔️ 무기')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('inv_category_armor')
-                                .setLabel('🛡️ 갑옷')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('inv_category_helmet_gloves')
-                                .setLabel('⛑️ 헬멧/장갑')
-                                .setStyle(ButtonStyle.Primary)
-                        );
-                    
-                    const invCategoryButtons2 = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('inv_category_boots')
-                                .setLabel('👢 부츠')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('inv_category_accessory')
-                                .setLabel('💎 액세서리')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('inv_category_scrolls')
-                                .setLabel('📜 주문서')
-                                .setStyle(ButtonStyle.Secondary)
-                        );
-                    
-                    const invCategoryButtons3 = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('inv_category_consumables')
-                                .setLabel('🧪 소비')
+                                .setCustomId('inventory_sort')
+                                .setLabel('🔄 정렬')
                                 .setStyle(ButtonStyle.Secondary),
                             new ButtonBuilder()
-                                .setCustomId('inv_category_coins')
-                                .setLabel('🪙 코인')
+                                .setCustomId('inventory_sell')
+                                .setLabel('💰 판매')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
                                 .setStyle(ButtonStyle.Secondary)
                         );
                     
                     return await interaction.editReply({ 
                         embeds: [inventoryEmbed], 
-                        components: [invCategoryButtons1, invCategoryButtons2, invCategoryButtons3] 
+                        components: [invSelectRow, invButtons] 
                     });
                     
                 case 'enhancement':
                     // 장비 강화
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const enhanceUser = await getUser(interaction.user.id);
                     if (!enhanceUser || !enhanceUser.registered) {
@@ -8825,6 +9301,62 @@ client.on('interactionCreate', async (interaction) => {
                         );
                     
                     return await interaction.editReply({ embeds: [enhanceEmbed], components: [enhanceButtons] });
+                    
+                case 'racing':
+                    // 레이싱 게임
+                    await interaction.deferReply({ flags: 64 });
+                    
+                    const racingUser = await getUser(interaction.user.id);
+                    if (!racingUser || !racingUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    const raceStatus = raceSystem.getRaceStatus();
+                    
+                    let statusText = `**🏁 완전 운빨 레이싱! 🎲**\n\n`;
+                    statusText += `💰 **현재 상금풀**: ${raceStatus.totalPot.toLocaleString()}<:currency_emoji:1377404064316522778>\n`;
+                    statusText += `👥 **참가자**: ${raceStatus.playerCount}/${raceSystem.maxPlayers}명\n\n`;
+                    
+                    if (raceStatus.isRacing) {
+                        statusText += `🏃‍♂️ **레이스 진행 중입니다!**\n잠시 후 다시 시도해주세요.`;
+                    } else if (raceStatus.playerCount === 0) {
+                        statusText += `🎯 **대기 중인 참가자가 없습니다.**\n첫 번째 참가자가 되어보세요!`;
+                    } else {
+                        statusText += `⏰ **${raceStatus.playerCount >= raceSystem.minPlayers ? '곳 시작됩니다!' : `최소 ${raceSystem.minPlayers}명 필요`}**\n`;
+                    }
+                    
+                    const racingEmbed = new EmbedBuilder()
+                        .setColor('#00ff00')
+                        .setTitle('🏁 경마 레이싱')
+                        .setDescription(statusText)
+                        .addFields(
+                            { name: '🎲 게임 방식', value: '온전히 운에 달린 경마 게임', inline: true },
+                            { name: '💰 최소 베팅', value: '100 골드', inline: true },
+                            { name: '🏆 우승 상금', value: '전체 상금풀의 80%', inline: true }
+                        );
+                    
+                    const racingButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('join_race')
+                                .setLabel('🏁 레이스 참가')
+                                .setStyle(ButtonStyle.Success)
+                                .setDisabled(raceStatus.isRacing),
+                            new ButtonBuilder()
+                                .setCustomId('race_status')
+                                .setLabel('📊 현황 보기')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('racing_ranking')
+                                .setLabel('🏆 레이싱 랭킹')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [racingEmbed], components: [racingButtons] });
                     
                 case 'auction':
                     // 경매장
@@ -8876,7 +9408,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'ranking':
                     // 랭킹
-                    await interaction.deferReply();
+                    await interaction.deferReply({ flags: 64 });
                     
                     const rankingEmbed = new EmbedBuilder()
                         .setColor('#ff4500')
@@ -8917,6 +9449,77 @@ client.on('interactionCreate', async (interaction) => {
                     
                     return await interaction.editReply({ embeds: [rankingEmbed], components: [rankingButtons1, rankingButtons2] });
                     
+                case 'emblem':
+                    // 엠블럼 시스템
+                    await interaction.deferReply({ flags: 64 });
+                    
+                    const emblemUser = await getUser(interaction.user.id);
+                    if (!emblemUser || !emblemUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    if (emblemUser.level < 20) {
+                        return await interaction.editReply({ content: '⚠️ 엠블럼은 레벨 20부터 사용 가능합니다!' });
+                    }
+                    
+                    if (emblemUser.emblem) {
+                        const emblemEmbed = new EmbedBuilder()
+                            .setColor('#ff6b6b')
+                            .setTitle('🏆 내 엠블럼')
+                            .setDescription(`현재 엠블럼: **${emblemUser.emblem}**\n\n⚠️ 엠블럼은 한 번 선택하면 변경할 수 없습니다!`)
+                            .setFooter({ text: '엠블럼은 당신의 정체성을 나타냅니다!' });
+                        
+                        return await interaction.editReply({ embeds: [emblemEmbed] });
+                    }
+                    
+                    // 엠블럼 상점 표시
+                    const emblemEmbed = new EmbedBuilder()
+                        .setColor('#ff6b6b')
+                        .setTitle('🏆 엠블럼 상점')
+                        .setDescription('**레벨 20 이상**부터 엠블럼을 구매할 수 있습니다!\n\n엠블럼을 구매하면 특별한 칭호 역할을 받게 됩니다.\n**⚠️ 엠블럼은 한 번 구매하면 변경할 수 없습니다!**')
+                        .addFields(
+                            { name: '⚔️ 전사 계열', value: '초보전사 → 튼튼한 기사 → 용맹한 검사 → 맹령한 전사 → 전설의 기사', inline: false },
+                            { name: '🏹 궁수 계열', value: '마을사냥꾼 → 숲의 궁수 → 바람 사수 → 정확한 사격수 → 전설의 명궁', inline: false },
+                            { name: '🔮 마검사 계열', value: '마법 학도 → 마법 검사 → 현명한 기사 → 마도 검사 → 전설의 마검사', inline: false },
+                            { name: '🗡️ 도적 계열', value: '떠돌이 도적 → 운 좋은 도둑 → 행운의 닌자 → 복 많은 도적 → 전설의 행운아', inline: false }
+                        )
+                        .setFooter({ text: '원하는 계열을 선택하여 엠블럼을 구매하세요!' });
+                    
+                    const emblemSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new StringSelectMenuBuilder()
+                                .setCustomId('emblem_category')
+                                .setPlaceholder('엠블럼 계열을 선택하세요')
+                                .addOptions([
+                                    {
+                                        label: '전사 계열',
+                                        description: '초보전사부터 전설의 기사까지',
+                                        value: 'warrior',
+                                        emoji: '⚔️'
+                                    },
+                                    {
+                                        label: '궁수 계열',
+                                        description: '마을사냥꾼부터 전설의 명궁까지',
+                                        value: 'archer',
+                                        emoji: '🏹'
+                                    },
+                                    {
+                                        label: '마검사 계열',
+                                        description: '마법 학도부터 전설의 마검사까지',
+                                        value: 'mageknight',
+                                        emoji: '🔮'
+                                    },
+                                    {
+                                        label: '도적 계열',
+                                        description: '떠돌이 도적부터 전설의 행운아까지',
+                                        value: 'thief',
+                                        emoji: '🗡️'
+                                    }
+                                ])
+                        );
+                    
+                    return await interaction.editReply({ embeds: [emblemEmbed], components: [emblemSelect] });
+                    
                 case 'settings':
                     await interaction.reply({
                         content: '⚙️ 메뉴 설정',
@@ -8939,6 +9542,209 @@ client.on('interactionCreate', async (interaction) => {
                         ephemeral: true 
                     });
             }
+        }
+        
+        // 장비 선택 드롭다운 처리
+        else if (customId === 'equipment_select') {
+            const slotType = values[0].replace('equip_', '');
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            const itemsPerPage = 5;
+            
+            // 해당 타입의 아이템만 필터링
+            const availableItems = user.inventory.filter(item => 
+                item.type === slotType && !item.equipped
+            );
+            
+            if (availableItems.length === 0) {
+                return await interaction.editReply({ 
+                    content: `❌ 장착 가능한 ${slotType} 아이템이 없습니다!` 
+                });
+            }
+            
+            // 현재 장착된 아이템 추가
+            const currentSlotIndex = user.equipment[slotType];
+            if (currentSlotIndex !== -1) {
+                const currentEquipped = user.inventory.find(item => 
+                    item.inventorySlot === currentSlotIndex
+                );
+                if (currentEquipped) {
+                    availableItems.unshift({
+                        ...currentEquipped,
+                        name: `[장착중] ${currentEquipped.name}`
+                    });
+                }
+            }
+            
+            // 아이템 옵션 생성 (최대 25개까지만)
+            const itemOptions = availableItems.slice(0, 25).map((item, index) => {
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel})` : '';
+                const statsText = `공격: ${item.stats.attack[0]}-${item.stats.attack[1]}, 방어: ${item.stats.defense[0]}-${item.stats.defense[1]}`;
+                
+                return {
+                    label: `${item.name}${enhanceText}`,
+                    description: statsText.substring(0, 50),
+                    value: `equip_item_${slotType}_${item.inventorySlot}`,
+                    emoji: getRarityEmoji(item.rarity)
+                };
+            });
+            
+            // 장착 해제 옵션 추가
+            if (currentSlotIndex !== -1) {
+                itemOptions.push({
+                    label: '🚫 장착 해제',
+                    description: '현재 장착된 아이템을 해제합니다',
+                    value: `unequip_${slotType}`,
+                    emoji: '🚫'
+                });
+            }
+            
+            const equipItemMenu = new StringSelectMenuBuilder()
+                .setCustomId('equip_item_select')
+                .setPlaceholder('🎮 장착할 아이템을 선택하세요')
+                .addOptions(itemOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(equipItemMenu);
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('equipment')
+                        .setLabel('🔙 장비 관리')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            const itemListEmbed = new EmbedBuilder()
+                .setColor('#ffaa00')
+                .setTitle(`${getRarityEmoji(slotType)} ${slotType} 장착`)
+                .setDescription(`장착할 아이템을 선택하세요\n\n📦 사용 가능한 아이템: ${availableItems.length}개`);
+            
+            await interaction.editReply({
+                embeds: [itemListEmbed],
+                components: [selectRow, backButton]
+            });
+        }
+        
+        // 아이템 장착 처리
+        else if (customId === 'equip_item_select') {
+            const value = values[0];
+            const user = await getUser(interaction.user.id);
+            
+            if (value.startsWith('unequip_')) {
+                // 장비 해제
+                const slotType = value.replace('unequip_', '');
+                const currentSlotIndex = user.equipment[slotType];
+                
+                if (currentSlotIndex !== -1) {
+                    const item = user.inventory.find(i => i.inventorySlot === currentSlotIndex);
+                    if (item) {
+                        item.equipped = false;
+                        user.equipment[slotType] = -1;
+                        await user.save();
+                        
+                        await interaction.reply({
+                            content: `✅ **${item.name}**을(를) 해제했습니다!`,
+                            ephemeral: true
+                        });
+                    }
+                }
+            } else {
+                // 아이템 장착
+                const parts = value.split('_');
+                const slotType = parts[2];
+                const inventorySlot = parseInt(parts[3]);
+                
+                // 기존 장착 아이템 해제
+                const currentSlotIndex = user.equipment[slotType];
+                if (currentSlotIndex !== -1) {
+                    const currentItem = user.inventory.find(i => i.inventorySlot === currentSlotIndex);
+                    if (currentItem) {
+                        currentItem.equipped = false;
+                    }
+                }
+                
+                // 새 아이템 장착
+                const newItem = user.inventory.find(i => i.inventorySlot === inventorySlot);
+                if (newItem) {
+                    newItem.equipped = true;
+                    user.equipment[slotType] = inventorySlot;
+                    await user.save();
+                    
+                    await interaction.reply({
+                        content: `✅ **${newItem.name}**을(를) 장착했습니다!`,
+                        ephemeral: true
+                    });
+                }
+            }
+        }
+        
+        // 인벤토리 카테고리 선택 처리
+        else if (customId === 'inventory_category_select') {
+            const categoryType = values[0].replace('inv_', '');
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            const itemsPerPage = 10;
+            const currentPage = 0;
+            
+            // 해당 카테고리의 아이템만 필터링
+            const categoryItems = user.inventory.filter(item => item.type === categoryType);
+            
+            if (categoryItems.length === 0) {
+                return await interaction.editReply({ 
+                    content: `❌ 해당 카테고리에 아이템이 없습니다!` 
+                });
+            }
+            
+            const totalPages = Math.ceil(categoryItems.length / itemsPerPage);
+            const startIndex = currentPage * itemsPerPage;
+            const currentItems = categoryItems.slice(startIndex, startIndex + itemsPerPage);
+            
+            const categoryEmbed = new EmbedBuilder()
+                .setColor('#8a2be2')
+                .setTitle(`📦 ${categoryType} 아이템 목록`)
+                .setDescription(`페이지 ${currentPage + 1}/${totalPages}`);
+            
+            currentItems.forEach((item, index) => {
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel})` : '';
+                const equippedText = item.equipped ? ' [장착중]' : '';
+                const statsText = `공격: ${item.stats.attack[0]}-${item.stats.attack[1]}, 방어: ${item.stats.defense[0]}-${item.stats.defense[1]}`;
+                
+                categoryEmbed.addFields({
+                    name: `${startIndex + index + 1}. ${item.name}${enhanceText}${equippedText}`,
+                    value: `${getRarityEmoji(item.rarity)} ${item.rarity} | ${statsText}\n${item.description}`,
+                    inline: false
+                });
+            });
+            
+            const navButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`inv_page_${categoryType}_prev`)
+                        .setLabel('◀ 이전')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage === 0),
+                    new ButtonBuilder()
+                        .setCustomId(`inv_page_${categoryType}_${currentPage}`)
+                        .setLabel(`${currentPage + 1}/${totalPages}`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
+                    new ButtonBuilder()
+                        .setCustomId(`inv_page_${categoryType}_next`)
+                        .setLabel('다음 ▶')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage >= totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('inventory')
+                        .setLabel('🔙 인벤토리')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            await interaction.editReply({
+                embeds: [categoryEmbed],
+                components: [navButtons]
+            });
         }
         
         // 메뉴 커스터마이징 처리
@@ -9211,6 +10017,599 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
+        // 상점 카테고리 선택 처리
+        else if (customId === 'shop_category_select') {
+            const selectedCategory = values[0].replace('shop_category_', '');
+            const categoryData = SHOP_CATEGORIES[selectedCategory];
+            
+            if (!categoryData) {
+                await interaction.reply({ content: '❌ 해당 카테고리를 찾을 수 없습니다!', ephemeral: true });
+                return;
+            }
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            
+            // 카테고리별 아이템 목록 생성 (페이지 1)
+            const itemsPerPage = 5;
+            const currentPage = 0;
+            const startIndex = currentPage * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, categoryData.items.length);
+            const currentItems = categoryData.items.slice(startIndex, endIndex);
+            const totalPages = Math.ceil(categoryData.items.length / itemsPerPage);
+            
+            // 아이템 목록을 위한 드롭다운 옵션 생성
+            const itemOptions = currentItems.map((item, index) => ({
+                label: `${item.name} - ${item.price.toLocaleString()}G`,
+                description: `${item.rarity} | ${item.description.substring(0, 50)}...`,
+                value: `buy_${selectedCategory}_${startIndex + index}`,
+                emoji: getRarityEmoji(item.rarity)
+            }));
+            
+            const itemSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('shop_item_select')
+                .setPlaceholder('🛍️ 구매할 아이템을 선택하세요')
+                .addOptions(itemOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(itemSelectMenu);
+            
+            // 페이지네이션 버튼
+            const navButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`shop_page_${selectedCategory}_prev`)
+                        .setLabel('◀ 이전')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage === 0),
+                    new ButtonBuilder()
+                        .setCustomId(`shop_page_${selectedCategory}_info`)
+                        .setLabel(`${currentPage + 1}/${totalPages}`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
+                    new ButtonBuilder()
+                        .setCustomId(`shop_page_${selectedCategory}_next`)
+                        .setLabel('다음 ▶')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage >= totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('shop')
+                        .setLabel('🔙 카테고리 선택')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            const categoryEmbed = new EmbedBuilder()
+                .setColor('#00ff7f')
+                .setTitle(`${categoryData.emoji} ${categoryData.name} 상점`)
+                .setDescription(`💰 보유 골드: ${user.gold.toLocaleString()}G\n\n구매할 아이템을 선택하세요!`)
+                .setThumbnail(`attachment://${categoryData.gif}`)
+                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages}` });
+            
+            const categoryAttachment = new AttachmentBuilder(
+                path.join(__dirname, 'resource', categoryData.gif), 
+                { name: categoryData.gif }
+            );
+            
+            await interaction.editReply({
+                embeds: [categoryEmbed],
+                components: [selectRow, navButtons],
+                files: [categoryAttachment]
+            });
+        }
+        
+        // 상점 아이템 구매 처리
+        else if (customId === 'shop_item_select') {
+            const [action, category, itemIndex] = values[0].split('_');
+            const categoryData = SHOP_CATEGORIES[category];
+            const item = categoryData.items[parseInt(itemIndex)];
+            
+            if (!item) {
+                await interaction.reply({ content: '❌ 아이템을 찾을 수 없습니다!', ephemeral: true });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            
+            if (user.gold < item.price) {
+                await interaction.reply({ content: '❌ 골드가 부족합니다!', ephemeral: true });
+                return;
+            }
+            
+            // 구매 확인 임베드
+            const confirmEmbed = new EmbedBuilder()
+                .setColor('#00ff7f')
+                .setTitle('🛒 구매 확인')
+                .setDescription(`**${item.name}**을(를) 구매하시겠습니까?`)
+                .addFields(
+                    { name: '가격', value: `${item.price.toLocaleString()}G`, inline: true },
+                    { name: '보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                    { name: '구매 후 잔액', value: `${(user.gold - item.price).toLocaleString()}G`, inline: true }
+                );
+            
+            const confirmButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`confirm_buy_${category}_${itemIndex}`)
+                        .setLabel('✅ 구매하기')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('cancel_buy')
+                        .setLabel('❌ 취소')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            
+            await interaction.reply({
+                embeds: [confirmEmbed],
+                components: [confirmButtons],
+                ephemeral: true
+            });
+        }
+        
+        // 장비 선택 드롭다운 처리
+        else if (customId === 'equipment_select') {
+            const selectedSlot = values[0].replace('equip_', '');
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            // 해당 슬롯에 장착 가능한 아이템 찾기
+            const equipableItems = user.inventory.filter(item => item.type === selectedSlot);
+            
+            if (equipableItems.length === 0) {
+                return await interaction.editReply({ content: `❌ 장착 가능한 ${getSlotDisplayName(selectedSlot)}이(가) 없습니다!` });
+            }
+            
+            // 현재 장착 중인 아이템
+            const currentEquipIndex = user.equipment[selectedSlot];
+            
+            // 장착 가능한 아이템 목록 생성
+            const itemOptions = equipableItems.map((item, index) => {
+                const isEquipped = item.inventorySlot === currentEquipIndex;
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+                const statsText = `공격력: ${item.stats.attack[0]}-${item.stats.attack[1]}, 방어력: ${item.stats.defense[0]}-${item.stats.defense[1]}`;
+                
+                return {
+                    label: `${item.name}${enhanceText} ${isEquipped ? '(장착중)' : ''}`,
+                    description: statsText.substring(0, 100),
+                    value: `equip_item_${selectedSlot}_${item.inventorySlot}`,
+                    emoji: getRarityEmoji(item.rarity)
+                };
+            });
+            
+            // 장착 해제 옵션 추가
+            if (currentEquipIndex !== -1) {
+                itemOptions.unshift({
+                    label: '🚫 장착 해제',
+                    description: '현재 장착된 아이템을 해제합니다',
+                    value: `unequip_${selectedSlot}`,
+                    emoji: '🚫'
+                });
+            }
+            
+            const itemSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('equipment_item_select')
+                .setPlaceholder(`🎮 장착할 ${getSlotDisplayName(selectedSlot)}을(를) 선택하세요`)
+                .addOptions(itemOptions.slice(0, 25)); // Discord 제한
+            
+            const selectRow = new ActionRowBuilder().addComponents(itemSelectMenu);
+            
+            const equipEmbed = new EmbedBuilder()
+                .setColor('#ffaa00')
+                .setTitle(`${getSlotDisplayName(selectedSlot)} 장착`)
+                .setDescription('장착할 아이템을 선택하세요');
+            
+            await interaction.editReply({ 
+                embeds: [equipEmbed], 
+                components: [selectRow] 
+            });
+        }
+        
+        // 장비 아이템 선택 처리
+        else if (customId === 'equipment_item_select') {
+            const value = values[0];
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            if (value.startsWith('unequip_')) {
+                // 장착 해제
+                const slot = value.replace('unequip_', '');
+                user.equipment[slot] = -1;
+                await user.save();
+                
+                return await interaction.editReply({ 
+                    content: `✅ ${getSlotDisplayName(slot)} 장착을 해제했습니다!`,
+                    components: [] 
+                });
+            } else if (value.startsWith('equip_item_')) {
+                // 아이템 장착
+                const [, , slot, inventorySlot] = value.split('_');
+                const itemIndex = parseInt(inventorySlot);
+                
+                // 아이템 확인
+                const item = user.inventory.find(i => i.inventorySlot === itemIndex);
+                if (!item || item.type !== slot) {
+                    return await interaction.editReply({ content: '❌ 잘못된 아이템입니다!' });
+                }
+                
+                // 장착
+                user.equipment[slot] = itemIndex;
+                await user.save();
+                
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+                return await interaction.editReply({ 
+                    content: `✅ ${item.name}${enhanceText}을(를) 장착했습니다!`,
+                    components: [] 
+                });
+            }
+        }
+        
+        // 운동 선택 드롭다운 처리
+        else if (customId === 'exercise_select') {
+            const exerciseId = values[0];
+            const exercise = EXERCISE_SYSTEM.exercises[exerciseId];
+            
+            if (!exercise) {
+                return await interaction.reply({ content: '❌ 잘못된 운동입니다!', ephemeral: true });
+            }
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            // 피로도 확인
+            const currentFatigue = user.fitness?.fatigue || 0;
+            if (currentFatigue >= EXERCISE_SYSTEM.fatigue.exerciseLimit) {
+                return await interaction.editReply({ 
+                    content: `❌ 피로도가 너무 높습니다! (${currentFatigue}/${EXERCISE_SYSTEM.fatigue.maxFatigue})\n잠시 휴식을 취하세요.` 
+                });
+            }
+            
+            // 운동 시간 선택 모달 생성
+            const exerciseModal = new ModalBuilder()
+                .setCustomId(`exercise_modal_${exerciseId}`)
+                .setTitle(`${exercise.emoji} ${exercise.name} 시작`);
+            
+            const durationInput = new TextInputBuilder()
+                .setCustomId('duration')
+                .setLabel('운동 시간 (분)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('1 ~ ' + Math.floor(exercise.maxDuration / 60000))
+                .setRequired(true)
+                .setMaxLength(3);
+            
+            const actionRow = new ActionRowBuilder().addComponents(durationInput);
+            exerciseModal.addComponents(actionRow);
+            
+            await interaction.showModal(exerciseModal);
+        }
+        
+        // 인벤토리 드롭다운 처리
+        else if (customId === 'inventory_select') {
+            const action = values[0];
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            if (action === 'sell_items') {
+                // 판매할 아이템 선택
+                const sellableItems = user.inventory.filter(item => {
+                    // 장착 중이지 않은 아이템만
+                    const isEquipped = Object.values(user.equipment).includes(item.inventorySlot);
+                    return !isEquipped;
+                });
+                
+                if (sellableItems.length === 0) {
+                    return await interaction.editReply({ content: '❌ 판매 가능한 아이템이 없습니다!' });
+                }
+                
+                const itemOptions = sellableItems.slice(0, 25).map(item => {
+                    const sellPrice = Math.floor(item.price * 0.5);
+                    const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+                    
+                    return {
+                        label: `${item.name}${enhanceText}`,
+                        description: `판매가: ${sellPrice.toLocaleString()}G`,
+                        value: `sell_${item.inventorySlot}`,
+                        emoji: getRarityEmoji(item.rarity)
+                    };
+                });
+                
+                const sellSelectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('inventory_sell_select')
+                    .setPlaceholder('🛍️ 판매할 아이템을 선택하세요')
+                    .addOptions(itemOptions);
+                
+                const selectRow = new ActionRowBuilder().addComponents(sellSelectMenu);
+                
+                const sellEmbed = new EmbedBuilder()
+                    .setColor('#ff6b6b')
+                    .setTitle('🛍️ 아이템 판매')
+                    .setDescription('판매할 아이템을 선택하세요 (판매가는 구매가의 50%)');
+                
+                await interaction.editReply({ 
+                    embeds: [sellEmbed], 
+                    components: [selectRow] 
+                });
+            } else if (action === 'filter_items') {
+                // 필터 옵션 표시
+                const filterOptions = [
+                    { label: '⚔️ 무기만 보기', value: 'filter_weapon', emoji: '⚔️' },
+                    { label: '🛡️ 갑옷만 보기', value: 'filter_armor', emoji: '🛡️' },
+                    { label: '⛑️ 헬멧만 보기', value: 'filter_helmet', emoji: '⛑️' },
+                    { label: '🧤 장갑만 보기', value: 'filter_gloves', emoji: '🧤' },
+                    { label: '👢 부츠만 보기', value: 'filter_boots', emoji: '👢' },
+                    { label: '💎 액세서리만 보기', value: 'filter_accessory', emoji: '💎' },
+                    { label: '📋 전체 보기', value: 'filter_all', emoji: '📋' }
+                ];
+                
+                const filterSelectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('inventory_filter_select')
+                    .setPlaceholder('🔍 필터를 선택하세요')
+                    .addOptions(filterOptions);
+                
+                const selectRow = new ActionRowBuilder().addComponents(filterSelectMenu);
+                
+                await interaction.editReply({ 
+                    content: '원하는 필터를 선택하세요', 
+                    components: [selectRow] 
+                });
+            }
+        }
+        
+        // 인벤토리 판매 선택 처리
+        else if (customId === 'inventory_sell_select') {
+            const selectedSlot = parseInt(values[0].replace('sell_', ''));
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            const item = user.inventory.find(i => i.inventorySlot === selectedSlot);
+            if (!item) {
+                return await interaction.editReply({ content: '❌ 아이템을 찾을 수 없습니다!' });
+            }
+            
+            // 장착 중인지 다시 확인
+            const isEquipped = Object.values(user.equipment).includes(selectedSlot);
+            if (isEquipped) {
+                return await interaction.editReply({ content: '❌ 장착 중인 아이템은 판매할 수 없습니다!' });
+            }
+            
+            const sellPrice = Math.floor(item.price * 0.5);
+            const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+            
+            // 판매 확인 임베드
+            const confirmEmbed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle('🛍️ 판매 확인')
+                .setDescription(`**${item.name}${enhanceText}**을(를) 판매하시겠습니까?`)
+                .addFields(
+                    { name: '판매가', value: `${sellPrice.toLocaleString()}G`, inline: true },
+                    { name: '현재 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                    { name: '판매 후 골드', value: `${(user.gold + sellPrice).toLocaleString()}G`, inline: true }
+                );
+            
+            const confirmButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`confirm_sell_${selectedSlot}`)
+                        .setLabel('✅ 판매하기')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('cancel_sell')
+                        .setLabel('❌ 취소')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            
+            await interaction.editReply({
+                embeds: [confirmEmbed],
+                components: [confirmButtons]
+            });
+        }
+        
+        // 인벤토리 필터 선택 처리
+        else if (customId === 'inventory_filter_select') {
+            const filterType = values[0].replace('filter_', '');
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            let filteredItems = [];
+            let filterName = '';
+            
+            if (filterType === 'all') {
+                filteredItems = user.inventory;
+                filterName = '전체 아이템';
+            } else {
+                filteredItems = user.inventory.filter(item => item.type === filterType);
+                const typeNames = {
+                    weapon: '무기',
+                    armor: '갑옷',
+                    helmet: '헬멧',
+                    gloves: '장갑',
+                    boots: '부츠',
+                    accessory: '액세서리'
+                };
+                filterName = typeNames[filterType] || filterType;
+            }
+            
+            if (filteredItems.length === 0) {
+                return await interaction.editReply({ content: `❌ ${filterName} 아이템이 없습니다!` });
+            }
+            
+            // 페이지네이션 설정
+            const itemsPerPage = 5;
+            const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+            const currentPage = 0;
+            const startIndex = currentPage * itemsPerPage;
+            const currentItems = filteredItems.slice(startIndex, startIndex + itemsPerPage);
+            
+            const filterEmbed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle(`🔍 ${filterName} 목록`)
+                .setDescription(`총 ${filteredItems.length}개의 ${filterName}`)
+                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages}` });
+            
+            // 아이템 목록 표시
+            currentItems.forEach((item, index) => {
+                const globalIndex = startIndex + index;
+                const isEquipped = Object.values(user.equipment).includes(item.inventorySlot);
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+                const equippedText = isEquipped ? ' [장착중]' : '';
+                
+                filterEmbed.addFields({
+                    name: `${globalIndex + 1}. ${item.name}${enhanceText}${equippedText}`,
+                    value: `${getRarityEmoji(item.rarity)} ${item.rarity} | 판매가: ${Math.floor(item.price * 0.5).toLocaleString()}G`,
+                    inline: false
+                });
+            });
+            
+            // 뒤로가기 버튼
+            const backButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('inventory')
+                        .setLabel('🔙 인벤토리 메인')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({
+                embeds: [filterEmbed],
+                components: [backButtons]
+            });
+        }
+        
+        // 인벤토리 카테고리 선택 처리
+        else if (customId === 'inventory_category_select') {
+            const category = values[0].replace('inv_', '');
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            // 해당 카테고리의 아이템 필터링
+            const categoryItems = user.inventory.filter(item => item.type === category);
+            
+            if (categoryItems.length === 0) {
+                return await interaction.editReply({ content: `❌ ${getSlotDisplayName(category)} 아이템이 없습니다!` });
+            }
+            
+            // 페이지네이션 설정
+            const itemsPerPage = 5;
+            const totalPages = Math.ceil(categoryItems.length / itemsPerPage);
+            const currentPage = 0;
+            const startIndex = currentPage * itemsPerPage;
+            const currentItems = categoryItems.slice(startIndex, startIndex + itemsPerPage);
+            
+            const categoryEmbed = new EmbedBuilder()
+                .setColor('#8a2be2')
+                .setTitle(`${getRarityEmoji(category)} ${getSlotDisplayName(category)} 인벤토리`)
+                .setDescription(`보유 중인 ${getSlotDisplayName(category)} 목록`)
+                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages}` });
+            
+            // 아이템 목록 표시
+            currentItems.forEach((item, index) => {
+                const globalIndex = startIndex + index;
+                const isEquipped = Object.values(user.equipment).includes(item.inventorySlot);
+                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+                const equippedText = isEquipped ? ' **[장착중]**' : '';
+                
+                let statsText = '';
+                if (item.stats) {
+                    const statParts = [];
+                    if (item.stats.attack && item.stats.attack[0] > 0) statParts.push(`공격력: ${item.stats.attack[0]}-${item.stats.attack[1]}`);
+                    if (item.stats.defense && item.stats.defense[0] > 0) statParts.push(`방어력: ${item.stats.defense[0]}-${item.stats.defense[1]}`);
+                    if (item.stats.dodge && item.stats.dodge[0] > 0) statParts.push(`회피력: ${item.stats.dodge[0]}-${item.stats.dodge[1]}`);
+                    if (item.stats.luck && item.stats.luck[0] > 0) statParts.push(`행운: ${item.stats.luck[0]}-${item.stats.luck[1]}`);
+                    statsText = statParts.join(', ');
+                }
+                
+                categoryEmbed.addFields({
+                    name: `${globalIndex + 1}. ${item.name}${enhanceText}${equippedText}`,
+                    value: `${getRarityEmoji(item.rarity)} ${item.rarity}${statsText ? `\n${statsText}` : ''}\n판매가: ${Math.floor(item.price * 0.5).toLocaleString()}G`,
+                    inline: false
+                });
+            });
+            
+            // 아이템 관리 드롭다운
+            const itemActions = [
+                {
+                    label: '🛍️ 아이템 판매',
+                    description: '선택한 아이템을 판매합니다',
+                    value: 'sell_items',
+                    emoji: '🛍️'
+                },
+                {
+                    label: '🔍 필터 보기',
+                    description: '특정 타입의 아이템만 보기',
+                    value: 'filter_items',
+                    emoji: '🔍'
+                }
+            ];
+            
+            const actionSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('inventory_select')
+                .setPlaceholder('🎮 작업을 선택하세요')
+                .addOptions(itemActions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(actionSelectMenu);
+            
+            // 페이지네이션 및 뒤로가기 버튼
+            const navButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`inv_cat_${category}_prev_${currentPage}`)
+                        .setLabel('◀ 이전')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage === 0),
+                    new ButtonBuilder()
+                        .setCustomId(`inv_cat_${category}_page_${currentPage}`)
+                        .setLabel(`${currentPage + 1}/${totalPages}`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
+                    new ButtonBuilder()
+                        .setCustomId(`inv_cat_${category}_next_${currentPage}`)
+                        .setLabel('다음 ▶')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage >= totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('back_to_inventory_menu')
+                        .setLabel('🔙 인벤토리 메인')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            await interaction.editReply({
+                embeds: [categoryEmbed],
+                components: [selectRow, navButtons]
+            });
+        }
+        
     } catch (error) {
         console.error('메뉴 시스템 오류:', error);
         if (!interaction.replied && !interaction.deferred) {
@@ -9332,16 +10731,37 @@ client.on('interactionCreate', async (interaction) => {
                 .setImage(`attachment://${timeImage}`)
                 .setFooter({ text: '게임 메뉴에 오신 것을 환영합니다!' });
 
-            // 커스터마이징된 드롭다운 메뉴 생성
-            const mainMenu = await createCustomizedMenu(interaction.user.id);
-            const menuRow = new ActionRowBuilder().addComponents(mainMenu);
+            // RPG 스타일 카테고리 메뉴 생성
+            const categoryMenu = createCategoryMenu();
+            const menuRow = new ActionRowBuilder().addComponents(categoryMenu);
+            
+            // 빠른 접근 버튼들
+            const quickButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('daily')
+                        .setLabel('🎁 일일보상')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('hunting')
+                        .setLabel('🎯 사냥하기')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('equipment')
+                        .setLabel('⚔️ 장비관리')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('shop')
+                        .setLabel('🛒 상점')
+                        .setStyle(ButtonStyle.Primary)
+                );
 
             // 시간대별 이미지 첨부파일
             const timeAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', timeImage), { name: timeImage });
             
             await interaction.editReply({ 
                 embeds: [statusEmbed], 
-                components: [menuRow], 
+                components: [menuRow, quickButtons], 
                 files: [timeAttachment]
             });
         }
@@ -11344,11 +12764,11 @@ client.on('interactionCreate', async (interaction) => {
             const today = new Date().toDateString();
             const yesterday = new Date(Date.now() - 86400000).toDateString();
             
-            // 테스트용: 쿨타임 제거
-            // if (user.lastDaily === today) {
-            //     await interaction.reply({ content: '오늘은 이미 출석체크를 했습니다!', flags: 64 });
-            //     return;
-            // }
+            // 출석체크 여부 확인
+            if (user.lastDaily === today) {
+                await interaction.reply({ content: '오늘은 이미 출석체크를 했습니다!', flags: 64 });
+                return;
+            }
 
             // 연속 출석 체크
             if (user.lastDaily === yesterday) {
@@ -13031,8 +14451,8 @@ client.on('interactionCreate', async (interaction) => {
             
             // 카테고리 이미지 첨부파일 생성
             const categoryAttachment = new AttachmentBuilder(
-                path.join(__dirname, 'resource', categoryData.image), 
-                { name: categoryData.image }
+                path.join(__dirname, 'resource', categoryData.gif), 
+                { name: categoryData.gif }
             );
             
             // 첫 번째 페이지 데이터
@@ -13050,7 +14470,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setColor('#ff6b6b')
                 .setTitle(`🛒 ${categoryData.name}`)
                 .setDescription(description)
-                .setImage(`attachment://${categoryData.image}`)
+                .setImage(`attachment://${categoryData.gif}`)
                 .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages}` });
             
             // 아이템 버튼들 생성 (최대 2행)
@@ -13966,6 +15386,45 @@ client.on('interactionCreate', async (interaction) => {
                     flags: 64 
                 });
             }
+        }
+        
+        // 모든 장비 해제 처리
+        else if (interaction.customId === 'unequip_all') {
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            // 현재 장착된 장비 확인
+            let unequippedCount = 0;
+            const slots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+            
+            for (const slot of slots) {
+                if (user.equipment[slot] !== -1) {
+                    // 장착된 아이템의 equipped 상태 해제
+                    const equippedItem = user.inventory.find(item => item.inventorySlot === user.equipment[slot]);
+                    if (equippedItem) {
+                        equippedItem.equipped = false;
+                    }
+                    user.equipment[slot] = -1;
+                    unequippedCount++;
+                }
+            }
+            
+            if (unequippedCount === 0) {
+                return await interaction.editReply({ content: '❌ 장착된 장비가 없습니다!' });
+            }
+            
+            await user.save();
+            
+            const unequipAllEmbed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle('🔓 모든 장비 해제 완료!')
+                .setDescription(`총 ${unequippedCount}개의 장비를 해제했습니다.`);
+            
+            return await interaction.editReply({ embeds: [unequipAllEmbed] });
         }
         
         // 장비 해제 처리
@@ -15343,6 +16802,140 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
+        else if (interaction.customId === 'game_menu_page2') {
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                return;
+            }
+            
+            const page2Embed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle('🎮 추가 게임 콘텐츠')
+                .setDescription('더 많은 게임을 즐겨보세요!')
+                .setFooter({ text: '버튼을 클릭하여 게임을 시작하세요!' });
+            
+            const gameRow1 = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('energy_mine')
+                        .setLabel('⚡ 에너지 채굴')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('fusion_menu')
+                        .setLabel('🔮 조각 융합')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('oddeven_play')
+                        .setLabel('🎲 홀짝 게임')
+                        .setStyle(ButtonStyle.Success)
+                );
+            
+            const gameRow2 = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('mushroom_solo')
+                        .setLabel('🍄 독버섯 게임')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('pvp_matchmaking')
+                        .setLabel('⚔️ PVP 대전')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('racing_join')
+                        .setLabel('🏁 레이싱')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('back_to_main_from_page2')
+                        .setLabel('🔙 메인 메뉴로')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({
+                embeds: [page2Embed],
+                components: [gameRow1, gameRow2, backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'back_to_main_from_page2') {
+            await interaction.deferUpdate();
+            
+            // 메인 메뉴 재생성
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+                return;
+            }
+            
+            const now = new Date();
+            const hour = now.getHours();
+            
+            let timeImage = '';
+            let timeColor = '';
+            
+            if (hour >= 6 && hour < 12) {
+                timeImage = 'kim_main_morning.png';
+                timeColor = '#ffeb3b';
+            } else if (hour >= 12 && hour < 18) {
+                timeImage = 'kim_main_lunch.png';
+                timeColor = '#ff9800';
+            } else {
+                timeImage = 'kim_main_night.png';
+                timeColor = '#3f51b5';
+            }
+            
+            const greetings = [
+                '오늘도 힘차게 모험을 떠나볼까요?',
+                '새로운 하루가 시작되었네요!',
+                '모험가님, 준비는 되셨나요?'
+            ];
+            
+            const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+            const maxExp = user.level * 100;
+            const today = new Date().toDateString();
+            const attendanceStatus = user.lastDaily === today ? '출석' : '결석';
+            
+            const statusEmbed = new EmbedBuilder()
+                .setColor(timeColor)
+                .setTitle(`${getUserTitle(user)} ${user.nickname}님, ${randomGreeting}`)
+                .addFields(
+                    { name: '⭐ 레벨', value: `\`\`\`Lv.${user.level}\`\`\``, inline: true },
+                    { name: '✨ 경험치', value: `\`\`\`${user.exp}/${maxExp}\`\`\``, inline: true },
+                    { name: '<:currency_emoji:1377404064316522778> 골드', value: `\`\`\`${user.gold.toLocaleString()}\`\`\``, inline: true },
+                    { name: '📅 출석현황', value: `\`\`\`${attendanceStatus}\`\`\``, inline: true },
+                    { name: '🏆 종합순위', value: `\`\`\`준비중\`\`\``, inline: true },
+                    { name: '💖 인기도', value: `\`\`\`${user.popularity}\`\`\``, inline: true }
+                )
+                .setImage(`attachment://${timeImage}`)
+                .setFooter({ text: '게임 메뉴에 오신 것을 환영합니다!' });
+            
+            const mainMenu = await createCustomizedMenu(interaction.user.id);
+            const menuRow = new ActionRowBuilder().addComponents(mainMenu);
+            
+            const gameButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('game_menu_page2')
+                        .setLabel('🎮 더 많은 게임')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('➡️')
+                );
+            
+            const timeAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', timeImage), { name: timeImage });
+            
+            await interaction.editReply({ 
+                embeds: [statusEmbed], 
+                components: [menuRow, gameButtons], 
+                files: [timeAttachment]
+            });
+        }
+        
         else if (interaction.customId === 'quest') {
             // 쿨타임 체크
             const cooldownMinutes = checkQuestCooldown(interaction.user.id);
@@ -16280,6 +17873,127 @@ client.on('interactionCreate', async (interaction) => {
             await showRankingMenu(interaction, 5);
         }
         
+        else if (interaction.customId === 'back_to_inventory_menu') {
+            // 인벤토리 메인으로 돌아가기
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+            }
+            
+            const inventoryEmbed = new EmbedBuilder()
+                .setColor('#8a2be2')
+                .setTitle('🎒 인벤토리')
+                .setDescription(`보유중인 아이템을 확인하세요\n\n🔄 슬롯: ${user.inventory.length}/${user.maxInventorySlots}`)
+                .setFooter({ text: '카테고리를 선택하여 아이템을 확인하세요' });
+            
+            // 인벤토리 카테고리 별 아이템 수 계산
+            const categoryCounts = {
+                weapon: 0,
+                armor: 0,
+                helmet: 0,
+                gloves: 0,
+                boots: 0,
+                accessory: 0,
+                consumable: 0,
+                coin: 0,
+                scroll: 0
+            };
+            
+            user.inventory.forEach(item => {
+                if (categoryCounts[item.type] !== undefined) {
+                    categoryCounts[item.type]++;
+                }
+            });
+            
+            // 인벤토리 카테고리 드롭다운
+            const invOptions = [
+                {
+                    label: `⚔️ 무기 (${categoryCounts.weapon}개)`,
+                    description: '보유한 무기를 확인합니다',
+                    value: 'inv_weapon',
+                    emoji: '⚔️'
+                },
+                {
+                    label: `🛡️ 갑옷 (${categoryCounts.armor}개)`,
+                    description: '보유한 갑옷을 확인합니다',
+                    value: 'inv_armor',
+                    emoji: '🛡️'
+                },
+                {
+                    label: `⛑️ 헬멧 (${categoryCounts.helmet}개)`,
+                    description: '보유한 헬멇을 확인합니다',
+                    value: 'inv_helmet',
+                    emoji: '⛑️'
+                },
+                {
+                    label: `🧬 장갑 (${categoryCounts.gloves}개)`,
+                    description: '보유한 장갑을 확인합니다',
+                    value: 'inv_gloves',
+                    emoji: '🧬'
+                },
+                {
+                    label: `👢 부츠 (${categoryCounts.boots}개)`,
+                    description: '보유한 부츠를 확인합니다',
+                    value: 'inv_boots',
+                    emoji: '👢'
+                },
+                {
+                    label: `💎 액세서리 (${categoryCounts.accessory}개)`,
+                    description: '보유한 액세서리를 확인합니다',
+                    value: 'inv_accessory',
+                    emoji: '💎'
+                },
+                {
+                    label: `📜 주문서 (${categoryCounts.scroll}개)`,
+                    description: '보유한 주문서를 확인합니다',
+                    value: 'inv_scroll',
+                    emoji: '📜'
+                },
+                {
+                    label: `🧪 소비 (${categoryCounts.consumable}개)`,
+                    description: '보유한 소비 아이템을 확인합니다',
+                    value: 'inv_consumable',
+                    emoji: '🧪'
+                },
+                {
+                    label: `🪙 코인 (${categoryCounts.coin}개)`,
+                    description: '보유한 코인을 확인합니다',
+                    value: 'inv_coin',
+                    emoji: '🪙'
+                }
+            ];
+            
+            const invSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('inventory_category_select')
+                .setPlaceholder('📦 확인할 아이템 카테고리를 선택하세요')
+                .addOptions(invOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(invSelectMenu);
+            
+            const invButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('inventory_sort')
+                        .setLabel('🔄 정렬')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('inventory_sell')
+                        .setLabel('💰 판매')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 게임 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [inventoryEmbed], 
+                components: [selectRow, invButtons] 
+            });
+        }
+        
         else if (interaction.customId === 'back_to_game_menu') {
             // /게임 명령어와 완전히 동일한 메뉴로 돌아가기
             // 시간대별 이미지 및 인사말 설정
@@ -16340,115 +18054,15 @@ client.on('interactionCreate', async (interaction) => {
                 .setImage(`attachment://${timeImage}`)
                 .setFooter({ text: '게임 메뉴에 오신 것을 환영합니다!' });
 
-            // 페이지별 버튼 정의 (/게임과 동일)
-            const pages = [
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('daily')
-                            .setLabel('🎁 출석체크')
-                            .setStyle(ButtonStyle.Success),
-                        new ButtonBuilder()
-                            .setCustomId('work')
-                            .setLabel('⚒️ 일하기')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('quest')
-                            .setLabel('📜 의뢰')
-                            .setStyle(ButtonStyle.Primary)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('hunting')
-                            .setLabel('⚔️ 사냥하기')
-                            .setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder()
-                            .setCustomId('racing')
-                            .setLabel('🏁 레이싱')
-                            .setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder()
-                            .setCustomId('pvp_menu')
-                            .setLabel('⚔️ PvP')
-                            .setStyle(ButtonStyle.Danger)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('stats')
-                            .setLabel('💪 능력치')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('skills')
-                            .setLabel('🔮 스킬')
-                            .setStyle(ButtonStyle.Primary)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('shop')
-                            .setLabel('🛒 상점')
-                            .setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder()
-                            .setCustomId('inventory')
-                            .setLabel('🎒 인벤토리')
-                            .setStyle(ButtonStyle.Secondary)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('equipment')
-                            .setLabel('⚔️ 장비')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('enhancement')
-                            .setLabel('⚡ 강화')
-                            .setStyle(ButtonStyle.Primary)
-                            .setDisabled(user.level < 10),
-                        new ButtonBuilder()
-                            .setCustomId('ranking')
-                            .setLabel('🏆 랭킹')
-                            .setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder()
-                            .setCustomId('info')
-                            .setLabel('👤 내정보')
-                            .setStyle(ButtonStyle.Secondary)
-                    ]
-                }
-            ];
-
-            // 페이지 네비게이션 버튼
-            const navigationRow = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('prev_page')
-                        .setLabel('◀')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(true),
-                    new ButtonBuilder()
-                        .setCustomId('page_info')
-                        .setLabel('1/5')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(true),
-                    new ButtonBuilder()
-                        .setCustomId('next_page')
-                        .setLabel('▶')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            // 첫 페이지 버튼 row
-            const contentRow = new ActionRowBuilder()
-                .addComponents(pages[0].buttons);
+            // 커스터마이징된 드롭다운 메뉴 생성 (/게임과 동일)
+            const mainMenu = await createCustomizedMenu(interaction.user.id);
+            const menuRow = new ActionRowBuilder().addComponents(mainMenu);
                 
             const attachment = new AttachmentBuilder(path.join(__dirname, 'resource', timeImage), { name: timeImage });
 
             await interaction.update({ 
                 embeds: [statusEmbed], 
-                components: [contentRow, navigationRow], 
+                components: [menuRow], 
                 files: [attachment] 
             });
         }
@@ -16484,7 +18098,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'game_page_1') {
-            // game_page_1과 back_to_game_menu 동일한 기능으로 처리
+            // game_page_1도 드롭다운 메뉴 시스템으로 변경
             // 시간대별 이미지 및 인사말 설정
             const now = new Date();
             const hour = now.getHours();
@@ -16515,120 +18129,36 @@ client.on('interactionCreate', async (interaction) => {
             const user = await User.findOne({ discordId: interaction.user.id });
             const combatPower = calculateCombatPower(user);
             
+            // 경험치 계산
+            const maxExp = user.level * 100;
+            
+            // 출석 현황 계산
+            const today = new Date().toDateString();
+            const attendanceStatus = user.lastDaily === today ? '출석' : '결석';
+            
             const statusEmbed = new EmbedBuilder()
                 .setColor(timeColor)
-                .setTitle('🎮 김헌터 게임 메뉴')
-                .setDescription(`${randomGreeting}\n\n**${getUserTitle(user)} ${user.nickname}**님\n레벨: ${user.level} | 🔥 전투력: ${combatPower.toLocaleString()}\n💰 골드: ${user.gold.toLocaleString()}`)
-                .setImage('attachment://' + timeImage)
-                .setFooter({ text: '버튼을 클릭하여 다양한 기능을 이용하세요!' })
-                .setTimestamp();
+                .setTitle(`${getUserTitle(user)} ${user.nickname}님, ${randomGreeting}`)
+                .addFields(
+                    { name: '⭐ 레벨', value: `\`\`\`Lv.${user.level}\`\`\``, inline: true },
+                    { name: '✨ 경험치', value: `\`\`\`${user.exp}/${maxExp}\`\`\``, inline: true },
+                    { name: '<:currency_emoji:1377404064316522778> 골드', value: `\`\`\`${user.gold.toLocaleString()}\`\`\``, inline: true },
+                    { name: '📅 출석현황', value: `\`\`\`${attendanceStatus}\`\`\``, inline: true },
+                    { name: '🏆 종합순위', value: `\`\`\`준비중\`\`\``, inline: true },
+                    { name: '💖 인기도', value: `\`\`\`${user.popularity}\`\`\``, inline: true }
+                )
+                .setImage(`attachment://${timeImage}`)
+                .setFooter({ text: '게임 메뉴에 오신 것을 환영합니다!' });
 
-            const pages = [
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('daily')
-                            .setLabel('📅 출석체크')
-                            .setStyle(ButtonStyle.Success),
-                        new ButtonBuilder()
-                            .setCustomId('work')
-                            .setLabel('💼 일하기')
-                            .setStyle(ButtonStyle.Success),
-                        new ButtonBuilder()
-                            .setCustomId('hunting')
-                            .setLabel('🏹 사냥')
-                            .setStyle(ButtonStyle.Success)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('monster_battle')
-                            .setLabel('🐲 몬스터 배틀')
-                            .setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder()
-                            .setCustomId('racing')
-                            .setLabel('🏁 레이싱')
-                            .setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder()
-                            .setCustomId('pvp_menu')
-                            .setLabel('⚔️ PvP')
-                            .setStyle(ButtonStyle.Danger)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('stats')
-                            .setLabel('💪 능력치')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('skills')
-                            .setLabel('🔮 스킬')
-                            .setStyle(ButtonStyle.Primary)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('shop')
-                            .setLabel('🛒 상점')
-                            .setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder()
-                            .setCustomId('inventory')
-                            .setLabel('🎒 인벤토리')
-                            .setStyle(ButtonStyle.Secondary)
-                    ]
-                },
-                {
-                    buttons: [
-                        new ButtonBuilder()
-                            .setCustomId('equipment')
-                            .setLabel('⚔️ 장비')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('enhancement')
-                            .setLabel('⚡ 강화')
-                            .setStyle(ButtonStyle.Primary)
-                            .setDisabled(user.level < 10),
-                        new ButtonBuilder()
-                            .setCustomId('ranking')
-                            .setLabel('🏆 랭킹')
-                            .setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder()
-                            .setCustomId('info')
-                            .setLabel('👤 내정보')
-                            .setStyle(ButtonStyle.Secondary)
-                    ]
-                }
-            ];
-
-            const navigationRow = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('prev_page')
-                        .setLabel('◀')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(true),
-                    new ButtonBuilder()
-                        .setCustomId('page_info')
-                        .setLabel('1/5')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(true),
-                    new ButtonBuilder()
-                        .setCustomId('next_page')
-                        .setLabel('▶')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            const contentRow = new ActionRowBuilder()
-                .addComponents(pages[0].buttons);
+            // 커스터마이징된 드롭다운 메뉴 생성 (/게임과 동일)
+            const mainMenu = await createCustomizedMenu(interaction.user.id);
+            const menuRow = new ActionRowBuilder().addComponents(mainMenu);
                 
             const attachment = new AttachmentBuilder(path.join(__dirname, 'resource', timeImage), { name: timeImage });
 
             await interaction.update({ 
                 embeds: [statusEmbed], 
-                components: [contentRow, navigationRow], 
+                components: [menuRow], 
                 files: [attachment] 
             });
         }
@@ -16937,7 +18467,8 @@ client.on('interactionCreate', async (interaction) => {
                 const priceData = artifactMarket.priceHistory.get(name);
                 if (priceData) {
                     const currentPrice = priceData.currentPrice;
-                    const basePrice = (artifactData.value[0] + artifactData.value[1]) / 2;
+                    // artifactData.value가 배열이 아닐 수 있으므로 baseValue를 사용
+                    const basePrice = artifactData.baseValue || artifactData.value || priceData.basePrice;
                     const changePercent = ((currentPrice - basePrice) / basePrice * 100).toFixed(1);
                     const trend = currentPrice > basePrice ? '📈' : currentPrice < basePrice ? '📉' : '➡️';
                     
@@ -17738,7 +19269,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
     
     // 첫 번째 handler에서 처리하는 버튼들은 건너뛰기
-    if (interaction.isButton() && ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'explore_'].some(id => interaction.customId.includes(id))) {
+    if (interaction.isButton() && ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'explore_', 'daily'].some(id => interaction.customId.includes(id))) {
         console.log(`🟡 두 번째 핸들러에서 제외됨: ${interaction.customId}`);
         return;
     }
@@ -18687,6 +20218,241 @@ client.on('interactionCreate', async (interaction) => {
                 .setFooter({ text: '주식 투자는 신중하게! 가격 변동에 유의하세요.' });
             
             await interaction.reply({ embeds: [helpEmbed], flags: 64 });
+        }
+        
+        // 상점 구매 확인 버튼
+        else if (interaction.customId.startsWith('confirm_buy_')) {
+            const [_, __, category, itemIndex] = interaction.customId.split('_');
+            const categoryData = SHOP_CATEGORIES[category];
+            const item = categoryData.items[parseInt(itemIndex)];
+            
+            if (!item) {
+                await interaction.reply({ content: '❌ 아이템을 찾을 수 없습니다!', ephemeral: true });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            
+            if (user.gold < item.price) {
+                await interaction.reply({ content: '❌ 골드가 부족합니다!', ephemeral: true });
+                return;
+            }
+            
+            // 인벤토리에 빈 슬롯 찾기
+            let emptySlot = -1;
+            for (let i = 0; i < user.maxInventorySlots; i++) {
+                if (!user.inventory.find(item => item.inventorySlot === i)) {
+                    emptySlot = i;
+                    break;
+                }
+            }
+            
+            if (emptySlot === -1) {
+                await interaction.reply({ content: '❌ 인벤토리가 가득 찼습니다!', ephemeral: true });
+                return;
+            }
+            
+            // 골드 차감 및 아이템 추가
+            user.gold -= item.price;
+            user.inventory.push({
+                id: item.id || `${category}_${itemIndex}_${Date.now()}`, // id가 없으면 임시 생성
+                name: item.name,
+                type: item.type,
+                rarity: item.rarity,
+                setName: item.setName,
+                level: item.level || 1,
+                quantity: 1,
+                enhanceLevel: 0,
+                stats: item.stats,
+                price: item.price,
+                description: item.description,
+                equipped: false,
+                inventorySlot: emptySlot
+            });
+            
+            await user.save();
+            
+            const successEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('✅ 구매 완료!')
+                .setDescription(`**${item.name}**을(를) 구매했습니다!`)
+                .addFields(
+                    { name: '지불한 골드', value: `${item.price.toLocaleString()}G`, inline: true },
+                    { name: '남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                );
+            
+            await interaction.update({ embeds: [successEmbed], components: [] });
+        }
+        
+        // 상점 구매 취소 버튼
+        else if (interaction.customId === 'cancel_buy') {
+            await interaction.update({ content: '❌ 구매를 취소했습니다.', embeds: [], components: [] });
+        }
+        
+        // 상점 카테고리로 돌아가기 (버튼 클릭 시)
+        else if (interaction.customId === 'shop' && interaction.isButton()) {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            const shopEmbed = new EmbedBuilder()
+                .setColor('#00ff7f')
+                .setTitle('🛒 김헌터 상점')
+                .setDescription('원하는 카테고리를 선택하세요\n\n💰 보유 골드: ' + user.gold.toLocaleString() + 'G');
+            
+            // 카테고리 드롭다운 메뉴
+            const categoryOptions = [
+                {
+                    label: '⚔️ 무기',
+                    description: '다양한 무기를 구매할 수 있습니다',
+                    value: 'shop_category_weapon',
+                    emoji: '⚔️'
+                },
+                {
+                    label: '🛡️ 갑옷',
+                    description: '튼튼한 갑옷을 구매할 수 있습니다',
+                    value: 'shop_category_armor',
+                    emoji: '🛡️'
+                },
+                {
+                    label: '⛑️ 헬멧',
+                    description: '머리를 보호하는 헬멧을 구매할 수 있습니다',
+                    value: 'shop_category_helmet',
+                    emoji: '⛑️'
+                },
+                {
+                    label: '🧬 장갑',
+                    description: '손을 보호하는 장갑을 구매할 수 있습니다',
+                    value: 'shop_category_gloves',
+                    emoji: '🧬'
+                },
+                {
+                    label: '👢 부츠',
+                    description: '발을 보호하는 부츠를 구매할 수 있습니다',
+                    value: 'shop_category_boots',
+                    emoji: '👢'
+                },
+                {
+                    label: '💎 액세서리',
+                    description: '특별한 효과를 가진 액세서리를 구매할 수 있습니다',
+                    value: 'shop_category_accessory',
+                    emoji: '💎'
+                }
+            ];
+            
+            const categorySelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('shop_category_select')
+                .setPlaceholder('🛍️ 구매할 카테고리를 선택하세요')
+                .addOptions(categoryOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(categorySelectMenu);
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 게임메뉴로 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [shopEmbed], 
+                components: [selectRow, backButton] 
+            });
+        }
+        
+        // 상점 페이지 네비게이션
+        else if (interaction.customId.startsWith('shop_page_')) {
+            const parts = interaction.customId.split('_');
+            const category = parts[2];
+            const action = parts[3]; // prev 또는 next
+            
+            if (action === 'info') return; // 페이지 정보 버튼은 무시
+            
+            const categoryData = SHOP_CATEGORIES[category];
+            if (!categoryData) {
+                await interaction.reply({ content: '❌ 카테고리를 찾을 수 없습니다!', ephemeral: true });
+                return;
+            }
+            
+            // 현재 페이지 계산
+            const itemsPerPage = 5;
+            const totalPages = Math.ceil(categoryData.items.length / itemsPerPage);
+            
+            // 현재 컴포넌트에서 페이지 정보 추출
+            const currentPageButton = interaction.message.components[1].components.find(c => c.customId.includes('_info'));
+            const pageInfo = currentPageButton.label.split('/');
+            let currentPage = parseInt(pageInfo[0]) - 1;
+            
+            // 페이지 변경
+            if (action === 'prev' && currentPage > 0) {
+                currentPage--;
+            } else if (action === 'next' && currentPage < totalPages - 1) {
+                currentPage++;
+            }
+            
+            // 새로운 페이지의 아이템 목록
+            const startIndex = currentPage * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, categoryData.items.length);
+            const currentItems = categoryData.items.slice(startIndex, endIndex);
+            
+            // 아이템 옵션 생성
+            const itemOptions = currentItems.map((item, index) => ({
+                label: `${item.name} - ${item.price.toLocaleString()}G`,
+                description: `${item.rarity} | ${item.description.substring(0, 50)}...`,
+                value: `buy_${category}_${startIndex + index}`,
+                emoji: getRarityEmoji(item.rarity)
+            }));
+            
+            const itemSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('shop_item_select')
+                .setPlaceholder('🛍️ 구매할 아이템을 선택하세요')
+                .addOptions(itemOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(itemSelectMenu);
+            
+            // 페이지네이션 버튼 업데이트
+            const navButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`shop_page_${category}_prev`)
+                        .setLabel('◀ 이전')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage === 0),
+                    new ButtonBuilder()
+                        .setCustomId(`shop_page_${category}_info`)
+                        .setLabel(`${currentPage + 1}/${totalPages}`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
+                    new ButtonBuilder()
+                        .setCustomId(`shop_page_${category}_next`)
+                        .setLabel('다음 ▶')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage >= totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('shop')
+                        .setLabel('🔙 카테고리 선택')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            const user = await getUser(interaction.user.id);
+            
+            const categoryEmbed = new EmbedBuilder()
+                .setColor('#00ff7f')
+                .setTitle(`${categoryData.emoji} ${categoryData.name} 상점`)
+                .setDescription(`💰 보유 골드: ${user.gold.toLocaleString()}G\n\n구매할 아이템을 선택하세요!`)
+                .setThumbnail(`attachment://${categoryData.gif}`)
+                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages}` });
+            
+            const categoryAttachment = new AttachmentBuilder(
+                path.join(__dirname, 'resource', categoryData.gif), 
+                { name: categoryData.gif }
+            );
+            
+            await interaction.update({
+                embeds: [categoryEmbed],
+                components: [selectRow, navButtons],
+                files: [categoryAttachment]
+            });
         }
 
     } catch (error) {

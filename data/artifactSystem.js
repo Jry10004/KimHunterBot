@@ -195,7 +195,50 @@ const ARTIFACT_SYSTEM = {
             effect: { priceChange: 25, successBonus: 0.2 },
             duration: 24 * 60 * 60 * 1000
         }
-    ]
+    ],
+    
+    // 시장 시스템 (유물 시세 변동)
+    marketSystem: {
+        // 시간대별 보정값
+        timeMultiplier: {
+            morning: 1.1,    // 아침 (6시-12시)
+            afternoon: 1.0,  // 오후 (12시-18시)
+            evening: 1.2,    // 저녁 (18시-24시)
+            night: 0.8       // 새벽 (0시-6시)
+        },
+        
+        // 등급별 변동성
+        volatility: {
+            common: 0.1,     // ±10%
+            rare: 0.15,      // ±15%
+            epic: 0.2,       // ±20%
+            legendary: 0.25  // ±25%
+        },
+        
+        // 시장 이벤트
+        marketFactors: [
+            {
+                name: '고고학 열풍',
+                effect: 1.3,
+                duration: 6 * 60 * 60 * 1000
+            },
+            {
+                name: '유물 가치 하락',
+                effect: 0.7,
+                duration: 4 * 60 * 60 * 1000
+            },
+            {
+                name: '수집가 경매',
+                effect: 1.5,
+                duration: 3 * 60 * 60 * 1000
+            },
+            {
+                name: '시장 침체',
+                effect: 0.8,
+                duration: 5 * 60 * 60 * 1000
+            }
+        ]
+    }
 };
 
 module.exports = ARTIFACT_SYSTEM;

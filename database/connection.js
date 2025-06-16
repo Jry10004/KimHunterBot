@@ -3,8 +3,6 @@ const mongoose = require('mongoose');
 const connectDB = async () => {
     try {
         await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kimhunter', {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
             serverSelectionTimeoutMS: 5000,
             connectTimeoutMS: 5000
         });
