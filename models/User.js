@@ -284,6 +284,12 @@ const userSchema = new mongoose.Schema({
         emoji: { type: String, required: true }, // 이모지
         rarity: { type: String, required: true }, // 등급
         value: { type: Number, required: true }, // 판매가치
+        baseValue: { type: Number, required: true }, // 기본 가치
+        currentPrice: { type: Number, required: true }, // 현재 시세
+        priceHistory: [{ // 가격 변동 기록
+            price: Number,
+            date: { type: Date, default: Date.now }
+        }],
         description: { type: String, required: true }, // 설명
         foundDate: { type: Date, default: Date.now }, // 발견일
         company: { type: String, required: false }, // 발견한 회사
@@ -318,6 +324,94 @@ const userSchema = new mongoose.Schema({
             type: String,
             enum: ['grid', 'list', 'compact'],
             default: 'list'
+        }
+    },
+    // 운동하기 방치형 시스템
+    fitness: {
+        // 피트니스 스탯 (일반 스탯과 별개)
+        stats: {
+            strength: { type: Number, default: 1 },      // 근력
+            stamina: { type: Number, default: 1 },       // 체력
+            flexibility: { type: Number, default: 1 },   // 유연성
+            agility: { type: Number, default: 1 },       // 민첩
+            mental: { type: Number, default: 1 }         // 정신력
+        },
+        level: { type: Number, default: 1 },            // 피트니스 레벨
+        exp: { type: Number, default: 0 },               // 피트니스 경험치
+        
+        // 현재 운동 상태
+        currentExercise: {
+            type: { type: String, default: null },       // 운동 종류
+            startTime: { type: Date, default: null },    // 시작 시간
+            duration: { type: Number, default: 0 },      // 예정 시간 (밀리초)
+            accumulated: { type: Number, default: 0 }    // 누적 시간
+        },
+        
+        // 피로도 시스템
+        fatigue: { type: Number, default: 0 },          // 현재 피로도 (0-100)
+        lastRecovery: { type: Date, default: Date.now }, // 마지막 회복 시간
+        
+        // 연속 운동 기록
+        streak: { type: Number, default: 0 },           // 연속 일수
+        lastExerciseDate: { type: String, default: null }, // 마지막 운동 날짜
+        
+        // 운동 장비
+        equipment: {
+            clothes: { type: String, default: 'basic' }, // basic, brand, pro
+            shoes: { type: String, default: 'basic' },   // basic, running, pro
+            activeBooster: {
+                type: { type: String, default: null },   // protein, bcaa, booster
+                expiresAt: { type: Date, default: null }
+            }
+        },
+        
+        // 운동 통계
+        totalExerciseTime: { type: Number, default: 0 }, // 총 운동 시간
+        exerciseHistory: [{
+            type: String,                                // 운동 종류
+            duration: Number,                            // 운동 시간
+            rewards: {
+                gold: Number,
+                exp: Number,
+                fitnessExp: Number
+            },
+            date: { type: Date, default: Date.now }
+        }],
+        
+        // 운동 잠금 해제
+        unlockedExercises: {
+            type: [String],
+            default: ['pushup', 'jogging', 'stretching'] // 기본 운동
+        },
+        
+        // 헬스장/프리미엄 이용권
+        memberships: {
+            gym: { 
+                active: { type: Boolean, default: false },
+                expiresAt: { type: Date, default: null }
+            },
+            premium: {
+                active: { type: Boolean, default: false },
+                expiresAt: { type: Date, default: null }
+            }
+        },
+        
+        // 일일/주간 목표 진행도
+        goals: {
+            daily: {
+                minutes30: { type: Boolean, default: false },
+                minutes60: { type: Boolean, default: false },
+                minutes180: { type: Boolean, default: false },
+                claimed30: { type: Boolean, default: false },
+                claimed60: { type: Boolean, default: false },
+                claimed180: { type: Boolean, default: false },
+                lastReset: { type: String, default: null }
+            },
+            weekly: {
+                totalMinutes: { type: Number, default: 0 },
+                specificExercises: { type: Map, of: Number, default: new Map() },
+                startDate: { type: String, default: null }
+            }
         }
     }
 }, {
