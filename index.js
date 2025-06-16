@@ -12,6 +12,7 @@ const shopItems = require('./data/shopItems');
 const MONSTER_BATTLE = require('./data/oddEvenGame');
 const MUSHROOM_GAME = require('./data/mushroomGame');
 const ARTIFACT_SYSTEM = require('./data/artifactSystem');
+const EXERCISE_SYSTEM = require('./data/exerciseSystem');
 
 // 아이템 경매장 시스템
 const AUCTION_HOUSE = {
@@ -46,15 +47,21 @@ const MENU_DEFINITIONS = {
         category: 'daily'
     },
     work: {
-        label: '⚒️ 일하기',
-        description: '일해서 골드 획득',
-        emoji: '⚒️',
+        label: '🏃 운동하기',
+        description: '운동으로 스탯과 골드 획득',
+        emoji: '🏃',
         category: 'daily'
     },
     quest: {
         label: '📜 의뢰',
         description: '다양한 퀘스트 수행',
         emoji: '📜',
+        category: 'daily'
+    },
+    ranking: {
+        label: '🏆 랭킹',
+        description: '전체 게임 랭킹 확인',
+        emoji: '🏆',
         category: 'daily'
     },
     // 게임 콘텐츠
@@ -197,8 +204,8 @@ function saveGameData() {
             currentWeather: currentWeather,
             dailyFortune: dailyFortune,
             activeMissions: Object.fromEntries(activeMissions),
-            lastWeatherUpdate: lastMarketUpdate,
-            lastFortuneUpdate: lastMarketUpdate,
+            lastWeatherUpdate: lastWeatherUpdate || 0,
+            lastFortuneUpdate: lastFortuneUpdate || 0,
             lastMarketUpdate: lastMarketUpdate,
             currentMarketEvent: currentMarketEvent
         };
@@ -242,18 +249,23 @@ function loadGameData() {
     }
 }
 
-// 주기적 데이터 저장 (5분마다)
-setInterval(saveGameData, 5 * 60 * 1000);
+// 인터벌 관리를 위한 배열
+const intervals = [];
 
-// 봇 종료 시 데이터 저장
+// 주기적 데이터 저장 (5분마다)
+intervals.push(setInterval(saveGameData, 5 * 60 * 1000));
+
+// 봇 종료 시 데이터 저장 및 리소스 정리
 process.on('SIGINT', () => {
-    console.log('봇 종료 중... 데이터 저장');
+    console.log('봇 종료 중... 데이터 저장 및 리소스 정리');
+    intervals.forEach(interval => clearInterval(interval));
     saveGameData();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    console.log('봇 종료 중... 데이터 저장');
+    console.log('봇 종료 중... 데이터 저장 및 리소스 정리');
+    intervals.forEach(interval => clearInterval(interval));
     saveGameData();
     process.exit(0);
 });
@@ -1668,18 +1680,22 @@ const MARKET_EVENTS = [
 
 // 모든 회사 주식 가격 업데이트 함수
 function updateStockPrices() {
-    // 시간대별 효과 적용
-    const hour = new Date().getHours();
-    applyTimeBasedEffects(hour);
-    
-    // NPC 감정 변화 적용
-    updateNPCEmotions();
-    
-    // 랜덤 이벤트 발생 확인
-    checkRandomEvents();
-    
-    // 기본 시장 변동성 적용
-    applyBaseVolatility();
+    try {
+        // 시간대별 효과 적용
+        const hour = new Date().getHours();
+        applyTimeBasedEffects(hour);
+        
+        // NPC 감정 변화 적용
+        updateNPCEmotions();
+        
+        // 랜덤 이벤트 발생 확인
+        checkRandomEvents();
+        
+        // 기본 시장 변동성 적용
+        applyBaseVolatility();
+    } catch (error) {
+        console.error('주식 가격 업데이트 오류:', error);
+    }
 }
 
 // NPC 감정 변화 함수
@@ -2422,10 +2438,10 @@ function updateChartData() {
 }
 
 // 정기적으로 주식 가격 업데이트 (5분마다)
-setInterval(() => {
+intervals.push(setInterval(() => {
     updateStockPrices();
     updateChartData();
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000));
 
 // 초기 차트 데이터 생성
 updateChartData();
@@ -2447,6 +2463,662 @@ function fillChartDataForDevelopment() {
 setTimeout(() => {
     fillChartDataForDevelopment();
 }, 2000);
+
+// 유물 시세 시스템
+const artifactMarket = {
+    priceHistory: new Map(), // 유물별 가격 기록
+    currentEvent: null,
+    lastUpdate: Date.now()
+};
+
+// 유물 시세 업데이트 함수
+function updateArtifactPrices() {
+    const now = Date.now();
+    const hour = new Date().getHours();
+    
+    // 시간대별 보정값 적용
+    let timeMultiplier = 1.0;
+    if (hour >= 6 && hour < 12) {
+        timeMultiplier = ARTIFACT_SYSTEM.marketSystem.timeMultiplier.morning;
+    } else if (hour >= 12 && hour < 18) {
+        timeMultiplier = ARTIFACT_SYSTEM.marketSystem.timeMultiplier.afternoon;
+    } else if (hour >= 18 && hour < 24) {
+        timeMultiplier = ARTIFACT_SYSTEM.marketSystem.timeMultiplier.evening;
+    } else {
+        timeMultiplier = ARTIFACT_SYSTEM.marketSystem.timeMultiplier.night;
+    }
+    
+    // 시장 이벤트 확인
+    if (!artifactMarket.currentEvent || now - artifactMarket.currentEvent.startTime > artifactMarket.currentEvent.duration) {
+        // 새로운 이벤트 발생 (10% 확률)
+        if (Math.random() < 0.1) {
+            const events = ARTIFACT_SYSTEM.marketSystem.marketFactors;
+            artifactMarket.currentEvent = {
+                ...events[Math.floor(Math.random() * events.length)],
+                startTime: now
+            };
+            console.log(`유물 시장 이벤트 발생: ${artifactMarket.currentEvent.name}`);
+        } else {
+            artifactMarket.currentEvent = null;
+        }
+    }
+    
+    // 모든 유물 종류에 대해 시세 업데이트
+    const allArtifacts = [
+        ...ARTIFACT_SYSTEM.artifacts.common,
+        ...ARTIFACT_SYSTEM.artifacts.rare,
+        ...ARTIFACT_SYSTEM.artifacts.epic,
+        ...ARTIFACT_SYSTEM.artifacts.legendary
+    ];
+    
+    allArtifacts.forEach(artifact => {
+        if (!artifactMarket.priceHistory.has(artifact.name)) {
+            artifactMarket.priceHistory.set(artifact.name, {
+                prices: [],
+                currentPrice: (artifact.value[0] + artifact.value[1]) / 2
+            });
+        }
+        
+        const history = artifactMarket.priceHistory.get(artifact.name);
+        const rarity = getRarityByArtifact(artifact.name);
+        const volatility = ARTIFACT_SYSTEM.marketSystem.volatility[rarity] || 0.15;
+        
+        // 가격 변동 계산
+        let priceChange = (Math.random() - 0.5) * 2 * volatility;
+        priceChange *= timeMultiplier;
+        
+        // 이벤트 적용
+        if (artifactMarket.currentEvent) {
+            priceChange *= artifactMarket.currentEvent.effect;
+        }
+        
+        // 새 가격 계산 (최소/최대값 제한)
+        let newPrice = history.currentPrice * (1 + priceChange);
+        newPrice = Math.max(artifact.value[0] * 0.5, Math.min(artifact.value[1] * 2, newPrice));
+        
+        history.currentPrice = Math.round(newPrice);
+        history.prices.push({
+            price: history.currentPrice,
+            timestamp: now
+        });
+        
+        // 최대 50개 기록 유지
+        if (history.prices.length > 50) {
+            history.prices = history.prices.slice(-50);
+        }
+    });
+    
+    artifactMarket.lastUpdate = now;
+}
+
+// 유물 등급 확인 함수
+function getRarityByArtifact(artifactName) {
+    if (ARTIFACT_SYSTEM.artifacts.common.some(a => a.name === artifactName)) return 'common';
+    if (ARTIFACT_SYSTEM.artifacts.rare.some(a => a.name === artifactName)) return 'rare';
+    if (ARTIFACT_SYSTEM.artifacts.epic.some(a => a.name === artifactName)) return 'epic';
+    if (ARTIFACT_SYSTEM.artifacts.legendary.some(a => a.name === artifactName)) return 'legendary';
+    return 'common';
+}
+
+
+// 유물 시세 정기 업데이트 (10분마다)
+intervals.push(setInterval(() => {
+    updateArtifactPrices();
+}, 10 * 60 * 1000));
+
+// 초기 유물 시세 설정
+updateArtifactPrices();
+
+// 운동하기 시스템 함수들
+async function showExerciseMenu(interaction, user) {
+    // 피로도 회복 계산
+    const now = Date.now();
+    const timeSinceRecovery = now - (user.fitness.lastRecovery || now);
+    const hoursElapsed = timeSinceRecovery / (1000 * 60 * 60);
+    const recoveryAmount = Math.floor(hoursElapsed * EXERCISE_SYSTEM.fatigue.recoveryRate);
+    
+    if (recoveryAmount > 0) {
+        user.fitness.fatigue = Math.max(0, user.fitness.fatigue - recoveryAmount);
+        user.fitness.lastRecovery = now;
+        await user.save();
+    }
+    
+    // 현재 운동 상태 확인
+    let currentExerciseInfo = '';
+    if (user.fitness.currentExercise.type) {
+        const exercise = EXERCISE_SYSTEM.exercises[user.fitness.currentExercise.type];
+        const elapsed = now - user.fitness.currentExercise.startTime;
+        const remaining = user.fitness.currentExercise.duration - elapsed;
+        
+        if (remaining > 0) {
+            const remainingMinutes = Math.ceil(remaining / 60000);
+            currentExerciseInfo = `\n🏃 **진행중**: ${exercise.emoji} ${exercise.name} (${remainingMinutes}분 남음)`;
+        } else {
+            // 운동 완료 처리
+            await completeExercise(user);
+            currentExerciseInfo = '\n✅ 운동이 완료되었습니다! 보상을 확인하세요.';
+        }
+    }
+    
+    // 피트니스 레벨 확인
+    const fitnessLevel = getFitnessLevel(user.fitness.level);
+    
+    const embed = new EmbedBuilder()
+        .setColor('#ff6b6b')
+        .setTitle('🏃 운동하기')
+        .setDescription(`**${user.nickname}**님의 피트니스 센터${currentExerciseInfo}`)
+        .addFields(
+            { 
+                name: '💪 피트니스 레벨', 
+                value: `${fitnessLevel.emoji} ${fitnessLevel.name} Lv.${user.fitness.level}`, 
+                inline: true 
+            },
+            { 
+                name: '💦 피로도', 
+                value: `${user.fitness.fatigue}/100 ${getFatigueBar(user.fitness.fatigue)}`, 
+                inline: true 
+            },
+            { 
+                name: '🔥 연속 운동', 
+                value: `${user.fitness.streak}일`, 
+                inline: true 
+            },
+            {
+                name: '📊 피트니스 스탯',
+                value: `💪 근력: ${user.fitness.stats.strength} | 🏃 체력: ${user.fitness.stats.stamina}\n` +
+                       `🤸 유연성: ${user.fitness.stats.flexibility} | ⚡ 민첩: ${user.fitness.stats.agility}\n` +
+                       `🧠 정신력: ${user.fitness.stats.mental}`,
+                inline: false
+            }
+        );
+    
+    // 운동 선택 버튼들
+    const exerciseButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('exercise_select')
+                .setLabel('🏃 운동 시작')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(user.fitness.fatigue >= EXERCISE_SYSTEM.fatigue.exerciseLimit || user.fitness.currentExercise.type !== null),
+            new ButtonBuilder()
+                .setCustomId('exercise_equipment')
+                .setLabel('🎽 운동 장비')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('exercise_supplements')
+                .setLabel('🥤 보충제')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('exercise_goals')
+                .setLabel('🎯 목표')
+                .setStyle(ButtonStyle.Success)
+        );
+    
+    const extraButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('exercise_stats')
+                .setLabel('📊 통계')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('exercise_ranking')
+                .setLabel('🏆 랭킹')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('exercise_membership')
+                .setLabel('💳 이용권')
+                .setStyle(ButtonStyle.Success)
+        );
+    
+    await interaction.update({
+        embeds: [embed],
+        components: [exerciseButtons, extraButtons]
+    });
+}
+
+// 피트니스 레벨 확인
+function getFitnessLevel(level) {
+    let result = { name: '운동 초보자', emoji: '🌱' };
+    
+    for (const [minLevel, data] of Object.entries(EXERCISE_SYSTEM.levelTiers)) {
+        if (level >= parseInt(minLevel)) {
+            result = data;
+        }
+    }
+    
+    return result;
+}
+
+// 피로도 바 생성
+function getFatigueBar(fatigue) {
+    const barLength = 10;
+    const filledLength = Math.round((fatigue / 100) * barLength);
+    const emptyLength = barLength - filledLength;
+    
+    let bar = '';
+    if (fatigue >= EXERCISE_SYSTEM.fatigue.exerciseLimit) {
+        bar = '🔴'.repeat(filledLength);
+    } else if (fatigue >= EXERCISE_SYSTEM.fatigue.warningLevel) {
+        bar = '🟡'.repeat(filledLength);
+    } else {
+        bar = '🟢'.repeat(filledLength);
+    }
+    bar += '⚪'.repeat(emptyLength);
+    
+    return bar;
+}
+
+// 운동 완료 처리
+async function completeExercise(user) {
+    const exerciseType = user.fitness.currentExercise.type;
+    if (!exerciseType) return;
+    
+    const exercise = EXERCISE_SYSTEM.exercises[exerciseType];
+    const duration = Date.now() - user.fitness.currentExercise.startTime;
+    const minutes = Math.floor(duration / 60000);
+    
+    // 장비 보너스 계산
+    const clothesBonus = EXERCISE_SYSTEM.equipment.clothes[user.fitness.equipment.clothes].efficiency;
+    const shoesBonus = EXERCISE_SYSTEM.equipment.shoes[user.fitness.equipment.shoes].speed;
+    
+    // 보충제 효과 확인
+    let supplementBonus = 1.0;
+    let fatigueReduction = 1.0;
+    const now = Date.now();
+    
+    if (user.fitness.equipment.activeBooster.type && user.fitness.equipment.activeBooster.expiresAt > now) {
+        const supplement = EXERCISE_SYSTEM.supplements[user.fitness.equipment.activeBooster.type];
+        
+        if (supplement.effect.strength && exercise.efficiency.strength > 0) {
+            supplementBonus = supplement.effect.strength;
+        } else if (supplement.effect.fatigueReduction) {
+            fatigueReduction = supplement.effect.fatigueReduction;
+        } else if (supplement.effect.allStats) {
+            supplementBonus = supplement.effect.allStats;
+        }
+    }
+    
+    // 연속 운동 보너스
+    let streakBonus = 1.0;
+    for (const bonus of EXERCISE_SYSTEM.streakBonus) {
+        if (user.fitness.streak >= bonus.days) {
+            streakBonus = 1 + bonus.bonus;
+        }
+    }
+    
+    // 보상 계산 (보충제 보너스 적용)
+    const goldReward = Math.floor(exercise.rewards.goldPerMinute * minutes * clothesBonus * streakBonus * supplementBonus);
+    const expReward = Math.floor(exercise.rewards.expPerMinute * minutes * clothesBonus * streakBonus * supplementBonus);
+    const fitnessExpReward = Math.floor(exercise.rewards.fitnessExpPerMinute * minutes * clothesBonus * shoesBonus * streakBonus * supplementBonus);
+    
+    // 스탯 증가 계산 (보충제 보너스 적용)
+    const statGains = {};
+    for (const [stat, efficiency] of Object.entries(exercise.efficiency)) {
+        statGains[stat] = Math.floor(efficiency * minutes * 0.01 * clothesBonus * streakBonus * supplementBonus);
+    }
+    
+    // 보상 적용
+    user.gold += goldReward;
+    user.exp += expReward;
+    user.fitness.exp += fitnessExpReward;
+    
+    // 스탯 적용
+    for (const [stat, gain] of Object.entries(statGains)) {
+        if (gain > 0) {
+            user.fitness.stats[stat] += gain;
+        }
+    }
+    
+    // 피트니스 레벨업 체크
+    const requiredExp = getFitnessLevelRequirement(user.fitness.level + 1);
+    if (user.fitness.exp >= requiredExp) {
+        user.fitness.level += 1;
+        user.fitness.exp = 0;
+    }
+    
+    // 운동 기록 저장
+    user.fitness.exerciseHistory.push({
+        type: exerciseType,
+        duration: duration,
+        rewards: {
+            gold: goldReward,
+            exp: expReward,
+            fitnessExp: fitnessExpReward
+        },
+        date: new Date()
+    });
+    
+    // 운동 시간 누적
+    user.fitness.totalExerciseTime += duration;
+    
+    // 일일 목표 체크
+    const today = new Date().toDateString();
+    if (user.fitness.goals.daily.lastReset !== today) {
+        user.fitness.goals.daily.minutes30 = false;
+        user.fitness.goals.daily.minutes60 = false;
+        user.fitness.goals.daily.minutes180 = false;
+        user.fitness.goals.daily.lastReset = today;
+    }
+    
+    if (minutes >= 30) user.fitness.goals.daily.minutes30 = true;
+    if (minutes >= 60) user.fitness.goals.daily.minutes60 = true;
+    if (minutes >= 180) user.fitness.goals.daily.minutes180 = true;
+    
+    // 현재 운동 초기화
+    user.fitness.currentExercise = {
+        type: null,
+        startTime: null,
+        duration: 0,
+        accumulated: 0
+    };
+    
+    // 피로도 증가 (운동 완료시 나머지 피로도 적용)
+    const remainingFatigue = Math.floor(exercise.fatigueRate * minutes * 0.5 * fatigueReduction);
+    user.fitness.fatigue = Math.min(100, user.fitness.fatigue + remainingFatigue);
+    
+    await user.save();
+}
+
+// 피트니스 레벨 요구 경험치
+function getFitnessLevelRequirement(level) {
+    return level * level * 50; // 레벨^2 * 50
+}
+
+// 오늘 운동 시간 계산
+function getTodayExerciseTime(user) {
+    const today = new Date().toDateString();
+    const todayStart = new Date(today).getTime();
+    
+    let totalTime = 0;
+    user.fitness.exerciseHistory.forEach(record => {
+        if (new Date(record.date).getTime() >= todayStart) {
+            totalTime += record.duration;
+        }
+    });
+    
+    // 현재 진행 중인 운동도 포함
+    if (user.fitness.currentExercise.type) {
+        const elapsed = Date.now() - user.fitness.currentExercise.startTime;
+        totalTime += Math.min(elapsed, user.fitness.currentExercise.duration);
+    }
+    
+    return totalTime;
+}
+
+// 통합 랭킹 메뉴
+async function showRankingMenu(interaction, page = 0) {
+    const rankingCategories = [
+        {
+            id: 'level',
+            name: '📈 레벨 랭킹',
+            description: '최고 레벨 달성자'
+        },
+        {
+            id: 'gold',
+            name: '💰 부자 랭킹',
+            description: '골드 보유량 TOP'
+        },
+        {
+            id: 'hunting',
+            name: '🎯 사냥 랭킹',
+            description: '사냥 실력자들'
+        },
+        {
+            id: 'enhancement',
+            name: '⚔️ 강화 랭킹',
+            description: '최고 강화 달성자'
+        },
+        {
+            id: 'pvp',
+            name: '🏆 PVP 랭킹',
+            description: '최강의 결투가'
+        },
+        {
+            id: 'racing',
+            name: '🏁 레이싱 랭킹',
+            description: '베팅의 달인'
+        },
+        {
+            id: 'energy',
+            name: '⚡ 에너지 랭킹',
+            description: '에너지 조각 수집가'
+        },
+        {
+            id: 'oddeven',
+            name: '🎲 홀짝 랭킹',
+            description: '홀짝게임 마스터'
+        },
+        {
+            id: 'artifact',
+            name: '🏺 유물 랭킹',
+            description: '유물 탐사 전문가'
+        },
+        {
+            id: 'fitness',
+            name: '💪 운동 랭킹',
+            description: '피트니스 마스터'
+        },
+        {
+            id: 'popularity',
+            name: '❤️ 인기 랭킹',
+            description: '가장 인기있는 유저'
+        },
+        {
+            id: 'attendance',
+            name: '🔥 출석 랭킹',
+            description: '꾸준한 출석왕'
+        }
+    ];
+    
+    const currentCategory = rankingCategories[page];
+    if (!currentCategory) return;
+    
+    let rankingData = [];
+    let fields = [];
+    
+    try {
+        switch (currentCategory.id) {
+            case 'level':
+                rankingData = await User.find({ registered: true })
+                    .sort({ level: -1, exp: -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　Lv.${user.level} (${user.exp.toLocaleString()} EXP)`;
+                });
+                break;
+                
+            case 'gold':
+                rankingData = await User.find({ registered: true })
+                    .sort({ gold: -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`;
+                });
+                break;
+                
+            case 'hunting':
+                // 사냥 횟수 기준 (lastHunt 필드로 추정)
+                rankingData = await User.find({ registered: true, level: { $gt: 1 } })
+                    .sort({ level: -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　Lv.${user.level} 사냥꾼`;
+                });
+                break;
+                
+            case 'enhancement':
+                rankingData = await User.find({ registered: true, 'enhanceStats.maxEnhanceLevel': { $gt: 0 } })
+                    .sort({ 'enhanceStats.maxEnhanceLevel': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　최고 +${user.enhanceStats.maxEnhanceLevel}강`;
+                });
+                break;
+                
+            case 'pvp':
+                rankingData = await User.find({ registered: true })
+                    .sort({ 'pvp.rating': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    const winRate = user.pvp.totalDuels > 0 ? 
+                        ((user.pvp.wins / user.pvp.totalDuels) * 100).toFixed(1) : 0;
+                    return `${medal} **${user.nickname}**\n　　${user.pvp.rating}점 (승률 ${winRate}%)`;
+                });
+                break;
+                
+            case 'racing':
+                rankingData = await User.find({ 'racingStats.wins': { $gt: 0 } })
+                    .sort({ 'racingStats.wins': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　${user.racingStats.wins}회 우승`;
+                });
+                break;
+                
+            case 'energy':
+                rankingData = await User.find({ 'energyFragments.highestLevel': { $gt: 0 } })
+                    .sort({ 'energyFragments.highestLevel': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　최고 Lv.${user.energyFragments.highestLevel} 달성`;
+                });
+                break;
+                
+            case 'oddeven':
+                rankingData = await User.find({ 'oddEvenStats.totalWinnings': { $gt: 0 } })
+                    .sort({ 'oddEvenStats.totalWinnings': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    const winRate = user.oddEvenStats.totalGames > 0 ?
+                        ((user.oddEvenStats.wins / user.oddEvenStats.totalGames) * 100).toFixed(1) : 0;
+                    return `${medal} **${user.nickname}**\n　　총 ${user.oddEvenStats.totalWinnings.toLocaleString()}G 획득 (승률 ${winRate}%)`;
+                });
+                break;
+                
+            case 'artifact':
+                rankingData = await User.find({ registered: true, 'explorationStats.totalEarned': { $gt: 0 } })
+                    .sort({ 'explorationStats.totalEarned': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    const successRate = user.explorationStats.totalExplorations > 0 ? 
+                        ((user.explorationStats.successfulFinds / user.explorationStats.totalExplorations) * 100).toFixed(1) : 0;
+                    return `${medal} **${user.nickname}**\n　　${user.explorationStats.totalEarned.toLocaleString()}G 수익 (성공률 ${successRate}%)`;
+                });
+                break;
+                
+            case 'fitness':
+                rankingData = await User.find({ 'fitness.level': { $gt: 1 } })
+                    .sort({ 'fitness.level': -1, 'fitness.exp': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    const hours = Math.floor(user.fitness.totalExerciseTime / 3600000);
+                    return `${medal} **${user.nickname}**\n　　Lv.${user.fitness.level} (${hours}시간 운동)`;
+                });
+                break;
+                
+            case 'popularity':
+                rankingData = await User.find({ registered: true })
+                    .sort({ popularity: -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　인기도 ${user.popularity} ❤️`;
+                });
+                break;
+                
+            case 'attendance':
+                rankingData = await User.find({ attendanceStreak: { $gt: 0 } })
+                    .sort({ attendanceStreak: -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    return `${medal} **${user.nickname}**\n　　${user.attendanceStreak}일 연속 🔥`;
+                });
+                break;
+        }
+        
+        const embed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle(`🏆 ${currentCategory.name}`)
+            .setDescription(currentCategory.description)
+            .addFields({
+                name: `📊 TOP 10`,
+                value: fields.length > 0 ? fields.join('\n\n') : '아직 랭킹 데이터가 없습니다.',
+                inline: false
+            })
+            .setFooter({ 
+                text: `페이지 ${page + 1}/${rankingCategories.length} • 매 시간 업데이트`,
+                iconURL: interaction.client.user.displayAvatarURL()
+            });
+        
+        const navButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`ranking_prev_${page}`)
+                    .setEmoji('◀️')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page === 0),
+                new ButtonBuilder()
+                    .setCustomId(`ranking_next_${page}`)
+                    .setEmoji('▶️')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page >= rankingCategories.length - 1),
+                new ButtonBuilder()
+                    .setCustomId('ranking_select')
+                    .setLabel('📋 카테고리 선택')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('back_to_game_menu')
+                    .setLabel('🎮 게임 메뉴')
+                    .setStyle(ButtonStyle.Success)
+            );
+        
+        if (interaction.replied || interaction.deferred) {
+            await interaction.editReply({ embeds: [embed], components: [navButtons] });
+        } else {
+            await interaction.update({ embeds: [embed], components: [navButtons] });
+        }
+        
+    } catch (error) {
+        console.error('랭킹 조회 오류:', error);
+        await interaction.reply({ 
+            content: '랭킹을 불러오는 중 오류가 발생했습니다.', 
+            flags: 64 
+        });
+    }
+}
+
+// 메달 이모지 반환
+function getMedalEmoji(index) {
+    switch(index) {
+        case 0: return '🥇';
+        case 1: return '🥈';
+        case 2: return '🥉';
+        default: return `**${index + 1}.**`;
+    }
+}
 
 // QuickChart API를 사용한 실제 차트 생성
 async function generateRealChart(chartData, title, type = 'line') {
@@ -2834,9 +3506,16 @@ function updateArtifactChartData() {
 
 // 유물의 현재 시장 가치 계산
 function calculateArtifactValue(artifact) {
-    const artifactMarket = STOCK_MARKET.artifact_market;
+    // 새로운 시세 시스템 사용
+    const priceData = artifactMarket.priceHistory.get(artifact.name);
+    if (priceData && priceData.currentPrice) {
+        return priceData.currentPrice;
+    }
+    
+    // 기존 시스템 폴백
+    const stockArtifactMarket = STOCK_MARKET.artifact_market;
     const baseValue = artifact.value;
-    const multiplier = artifactMarket.value_multipliers[artifact.name] || 1.0;
+    const multiplier = stockArtifactMarket.value_multipliers[artifact.name] || 1.0;
     
     return Math.round(baseValue * multiplier);
 }
@@ -2949,7 +3628,7 @@ async function generateArtifactChart(type = 'market') {
 }
 
 // 유물 시장 정기 업데이트 시작
-setInterval(updateArtifactMarket, 5 * 60 * 1000); // 5분마다 업데이트
+intervals.push(setInterval(updateArtifactMarket, 5 * 60 * 1000)); // 5분마다 업데이트
 
 // 🏁 아바타 레이싱 시스템
 class BettingRaceSystem {
@@ -6523,6 +7202,21 @@ const DEV_MODE = process.env.DEV_MODE === 'true';
 const DEVELOPER_ID = process.env.DEVELOPER_ID;
 const POPULAR_KING_ROLE_NAME = '👑 인기왕';
 
+// 클로즈베타 설정
+const BETA_MODE = process.env.BETA_MODE === 'true';
+const BETA_CHANNEL_IDS = process.env.BETA_CHANNEL_IDS ? process.env.BETA_CHANNEL_IDS.split(',').map(id => id.trim()) : [];
+const BETA_USER_IDS = process.env.BETA_USER_IDS ? process.env.BETA_USER_IDS.split(',').map(id => id.trim()) : [];
+
+// 베타 테스터 확인 함수
+function isBetaTester(userId) {
+    return BETA_USER_IDS.includes(userId) || isAdmin(userId);
+}
+
+// 베타 채널 확인 함수
+function isBetaChannel(channelId) {
+    return BETA_CHANNEL_IDS.includes(channelId) || DEV_CHANNEL_IDS.includes(channelId);
+}
+
 // 개발자 체크 함수
 function isDeveloper(userId) {
     return DEVELOPER_ID && userId === DEVELOPER_ID;
@@ -7335,42 +8029,46 @@ const commands = [
 
 // 봇이 준비되었을 때
 client.once('ready', async () => {
-    console.log(`${client.user.tag} 봇이 온라인 상태입니다! - 자동 재시작 테스트`);
-    console.log(`개발 모드: ${DEV_MODE ? '활성화' : '비활성화'}`);
-    if (DEV_MODE && DEV_CHANNEL_IDS.length > 0) {
-        console.log(`개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}`);
-    }
-    
-    // MongoDB 연결
-    await connectDB();
-    
-    // 기존 ObjectId 데이터 일괄 정리
-    await cleanupEquipmentData();
-    
-    // 게임 데이터 로드
-    loadGameData();
-    
-    // 슬래시 명령어 등록
     try {
-        const rest = new REST().setToken(TOKEN);
-        console.log('슬래시 명령어 등록 중...');
+        console.log(`${client.user.tag} 봇이 온라인 상태입니다! - 자동 재시작 테스트`);
+        console.log(`개발 모드: ${DEV_MODE ? '활성화' : '비활성화'}`);
+        if (DEV_MODE && DEV_CHANNEL_IDS.length > 0) {
+            console.log(`개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}`);
+        }
         
-        // 개발 모드에서는 길드(서버) 명령어 사용 (즉시 적용)
-        const guildId = DEV_MODE ? '1371885859649097849' : null; // 개발 서버 ID
+        // MongoDB 연결
+        await connectDB();
         
-        const data = await rest.put(
-            guildId ? Routes.applicationGuildCommands(CLIENT_ID, guildId) : Routes.applicationCommands(CLIENT_ID),
-            { body: commands }
-        );
+        // 기존 ObjectId 데이터 일괄 정리
+        await cleanupEquipmentData();
         
-        console.log(`슬래시 명령어 ${data.length}개가 등록되었습니다!`);
-        console.log('등록된 명령어:', data.map(cmd => cmd.name).join(', '));
+        // 게임 데이터 로드
+        loadGameData();
+        
+        // 슬래시 명령어 등록
+        try {
+            const rest = new REST().setToken(TOKEN);
+            console.log('슬래시 명령어 등록 중...');
+            
+            // 개발 모드에서는 길드(서버) 명령어 사용 (즉시 적용)
+            const guildId = DEV_MODE ? '1371885859649097849' : null; // 개발 서버 ID
+            
+            const data = await rest.put(
+                guildId ? Routes.applicationGuildCommands(CLIENT_ID, guildId) : Routes.applicationCommands(CLIENT_ID),
+                { body: commands }
+            );
+            
+            console.log(`슬래시 명령어 ${data.length}개가 등록되었습니다!`);
+            console.log('등록된 명령어:', data.map(cmd => cmd.name).join(', '));
+        } catch (error) {
+            console.error('명령어 등록 실패:', error);
+        }
+        
+        // 엠블럼 시스템 초기화
+        await initializeEmblemSystem();
     } catch (error) {
-        console.error('명령어 등록 실패:', error);
+        console.error('봇 초기화 중 오류 발생:', error);
     }
-    
-    // 엠블럼 시스템 초기화
-    await initializeEmblemSystem();
 });
 
 // 엠블럼 시스템 초기화 함수
@@ -8249,22 +8947,93 @@ client.on('interactionCreate', async (interaction) => {
             
             switch (selectedValue) {
                 case 'reorder_menu':
+                    // 메뉴 순서 변경
+                    const user = await User.findOne({ discordId: interaction.user.id });
+                    const currentOrder = user?.menuSettings?.menuOrder || [
+                        'daily', 'work', 'quest', 
+                        'hunting', 'racing', 'pvp', 'mushroom', 'oddeven',
+                        'stats', 'skills', 'equipment', 'enhancement',
+                        'shop', 'inventory', 'stocks', 'artifacts', 'auction',
+                        'ranking', 'profile'
+                    ];
+                    
+                    // 현재 순서를 보여주는 드롭다운 생성
+                    const reorderMenu = new StringSelectMenuBuilder()
+                        .setCustomId('reorder_select')
+                        .setPlaceholder('🔽 위로 올릴 메뉴를 선택하세요')
+                        .addOptions(
+                            currentOrder.map((menuId, index) => {
+                                const menuDef = MENU_DEFINITIONS[menuId];
+                                return {
+                                    label: `${index + 1}. ${menuDef.label}`,
+                                    description: menuDef.description,
+                                    value: menuId,
+                                    emoji: menuDef.emoji
+                                };
+                            })
+                        );
+                    
                     await interaction.reply({
-                        content: '📋 메뉴 순서 변경 기능은 준비 중입니다.',
+                        content: '📋 메뉴 순서 변경 - 위로 올릴 메뉴를 선택하세요',
+                        components: [new ActionRowBuilder().addComponents(reorderMenu)],
                         ephemeral: true
                     });
                     break;
                     
                 case 'favorite_menu':
+                    // 즐겨찾기 설정
+                    const favUser = await User.findOne({ discordId: interaction.user.id });
+                    const favoriteMenus = favUser?.menuSettings?.favoriteMenus || [];
+                    const allMenus = Object.keys(MENU_DEFINITIONS);
+                    
+                    const favoriteMenu = new StringSelectMenuBuilder()
+                        .setCustomId('favorite_toggle')
+                        .setPlaceholder('⭐ 즐겨찾기 추가/제거할 메뉴 선택')
+                        .addOptions(
+                            allMenus.map(menuId => {
+                                const menuDef = MENU_DEFINITIONS[menuId];
+                                const isFavorite = favoriteMenus.includes(menuId);
+                                return {
+                                    label: `${isFavorite ? '⭐ ' : ''}${menuDef.label}`,
+                                    description: `${menuDef.description} ${isFavorite ? '(즐겨찾기 해제)' : '(즐겨찾기 추가)'}`,
+                                    value: menuId,
+                                    emoji: menuDef.emoji
+                                };
+                            })
+                        );
+                    
                     await interaction.reply({
-                        content: '⭐ 즐겨찾기 설정 기능은 준비 중입니다.',
+                        content: '⭐ 즐겨찾기 메뉴 설정',
+                        components: [new ActionRowBuilder().addComponents(favoriteMenu)],
                         ephemeral: true
                     });
                     break;
                     
                 case 'toggle_menu':
+                    // 메뉴 숨기기/보이기
+                    const hideUser = await User.findOne({ discordId: interaction.user.id });
+                    const hiddenMenus = hideUser?.menuSettings?.hiddenMenus || [];
+                    const visibleMenus = Object.keys(MENU_DEFINITIONS);
+                    
+                    const toggleMenu = new StringSelectMenuBuilder()
+                        .setCustomId('hide_toggle')
+                        .setPlaceholder('👁️ 숨기기/보이기할 메뉴 선택')
+                        .addOptions(
+                            visibleMenus.map(menuId => {
+                                const menuDef = MENU_DEFINITIONS[menuId];
+                                const isHidden = hiddenMenus.includes(menuId);
+                                return {
+                                    label: `${isHidden ? '🚫 ' : '👁️ '}${menuDef.label}`,
+                                    description: `${menuDef.description} ${isHidden ? '(숨김 → 보이기)' : '(보이기 → 숨김)'}`,
+                                    value: menuId,
+                                    emoji: menuDef.emoji
+                                };
+                            })
+                        );
+                    
                     await interaction.reply({
-                        content: '👁️ 메뉴 숨기기/보이기 기능은 준비 중입니다.',
+                        content: '👁️ 메뉴 숨기기/보이기 설정',
+                        components: [new ActionRowBuilder().addComponents(toggleMenu)],
                         ephemeral: true
                     });
                     break;
@@ -8352,6 +9121,96 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
         
+        // 메뉴 순서 변경 처리
+        else if (customId === 'reorder_select') {
+            const selectedMenu = values[0];
+            const user = await User.findOne({ discordId: interaction.user.id });
+            const currentOrder = user?.menuSettings?.menuOrder || [
+                'daily', 'work', 'quest', 
+                'hunting', 'racing', 'pvp', 'mushroom', 'oddeven',
+                'stats', 'skills', 'equipment', 'enhancement',
+                'shop', 'inventory', 'stocks', 'artifacts', 'auction',
+                'ranking', 'profile'
+            ];
+            
+            // 선택한 메뉴를 맨 위로 이동
+            const newOrder = currentOrder.filter(id => id !== selectedMenu);
+            newOrder.unshift(selectedMenu);
+            
+            await User.findOneAndUpdate(
+                { discordId: interaction.user.id },
+                { 'menuSettings.menuOrder': newOrder },
+                { upsert: true }
+            );
+            
+            await interaction.reply({
+                content: `✅ **${MENU_DEFINITIONS[selectedMenu].label}** 메뉴가 맨 위로 이동되었습니다!`,
+                ephemeral: true
+            });
+        }
+        
+        // 즐겨찾기 토글 처리
+        else if (customId === 'favorite_toggle') {
+            const selectedMenu = values[0];
+            const user = await User.findOne({ discordId: interaction.user.id });
+            const favoriteMenus = user?.menuSettings?.favoriteMenus || [];
+            
+            let newFavorites;
+            let message;
+            
+            if (favoriteMenus.includes(selectedMenu)) {
+                // 즐겨찾기에서 제거
+                newFavorites = favoriteMenus.filter(id => id !== selectedMenu);
+                message = `⭐ **${MENU_DEFINITIONS[selectedMenu].label}** 메뉴가 즐겨찾기에서 제거되었습니다.`;
+            } else {
+                // 즐겨찾기에 추가
+                newFavorites = [...favoriteMenus, selectedMenu];
+                message = `⭐ **${MENU_DEFINITIONS[selectedMenu].label}** 메뉴가 즐겨찾기에 추가되었습니다!`;
+            }
+            
+            await User.findOneAndUpdate(
+                { discordId: interaction.user.id },
+                { 'menuSettings.favoriteMenus': newFavorites },
+                { upsert: true }
+            );
+            
+            await interaction.reply({
+                content: message,
+                ephemeral: true
+            });
+        }
+        
+        // 메뉴 숨김 토글 처리
+        else if (customId === 'hide_toggle') {
+            const selectedMenu = values[0];
+            const user = await User.findOne({ discordId: interaction.user.id });
+            const hiddenMenus = user?.menuSettings?.hiddenMenus || [];
+            
+            let newHidden;
+            let message;
+            
+            if (hiddenMenus.includes(selectedMenu)) {
+                // 숨김에서 제거 (보이기)
+                newHidden = hiddenMenus.filter(id => id !== selectedMenu);
+                message = `👁️ **${MENU_DEFINITIONS[selectedMenu].label}** 메뉴가 다시 표시됩니다.`;
+            } else {
+                // 숨김에 추가
+                newHidden = [...hiddenMenus, selectedMenu];
+                message = `🚫 **${MENU_DEFINITIONS[selectedMenu].label}** 메뉴가 숨겨졌습니다.`;
+            }
+            
+            await User.findOneAndUpdate(
+                { discordId: interaction.user.id },
+                { 'menuSettings.hiddenMenus': newHidden },
+                { upsert: true }
+            );
+            
+            await interaction.reply({
+                content: message,
+                ephemeral: true
+            });
+        }
+        
     } catch (error) {
         console.error('메뉴 시스템 오류:', error);
         if (!interaction.replied && !interaction.deferred) {
@@ -8367,7 +9226,28 @@ client.on('interactionCreate', async (interaction) => {
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
-    console.log(`명령어 실행 - 채널: ${interaction.channelId}, 개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}, 개발 모드: ${DEV_MODE}`);
+    console.log(`명령어 실행 - 채널: ${interaction.channelId}, 사용자: ${interaction.user.id}, 베타 모드: ${BETA_MODE}`);
+    
+    // 베타 모드 체크
+    if (BETA_MODE) {
+        // 베타 채널이 아닌 경우
+        if (!isBetaChannel(interaction.channelId)) {
+            await interaction.reply({ 
+                content: '🚧 현재 클로즈베타 테스트 중입니다.\n지정된 베타 채널에서만 사용 가능합니다.', 
+                ephemeral: true 
+            });
+            return;
+        }
+        
+        // 베타 테스터가 아닌 경우
+        if (!isBetaTester(interaction.user.id)) {
+            await interaction.reply({ 
+                content: '🔒 현재 클로즈베타 테스트 중입니다.\n베타 테스터로 등록된 사용자만 이용할 수 있습니다.', 
+                ephemeral: true 
+            });
+            return;
+        }
+    }
     
     // 개발 모드에서 채널 제한
     if (DEV_MODE && DEV_CHANNEL_IDS.length > 0 && !DEV_CHANNEL_IDS.includes(interaction.channelId)) {
@@ -10684,7 +11564,12 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`${randomMessage}\n\n현재 레벨: **Lv.${user.level}**`)
                 .setImage(`attachment://${huntingGifName}`);
             
-            await interaction.update({ embeds: [huntGifEmbed], components: [], files: [huntGifAttachment] });
+            // Check if interaction has already been replied/deferred
+            if (interaction.replied || interaction.deferred) {
+                await interaction.editReply({ embeds: [huntGifEmbed], components: [], files: [huntGifAttachment] });
+            } else {
+                await interaction.update({ embeds: [huntGifEmbed], components: [], files: [huntGifAttachment] });
+            }
             
             // 주식 시장 이벤트 트리거 (사냥 시작)
             recordPlayerAction('hunt_start');
@@ -10901,7 +11786,7 @@ client.on('interactionCreate', async (interaction) => {
                         },
                         { 
                             name: '💎 보상', 
-                            value: `✨ 경험치: \`+${finalExp.toLocaleString()} EXP\`${bonusExp > 0 ? ` \`보너스 +${bonusExp.toLocaleString()}\`` : ''} | 💰 골드: \`+${adjustedGold.toLocaleString()}<:currency_emoji:1377404064316522778>\`${adjustedBonusGold > 0 ? ` \`보너스 +${adjustedBonusGold.toLocaleString()}<:currency_emoji:1377404064316522778>\`` : ''}${goldPenalty < 1.0 ? `\n📉 **고레벨 페널티**: ${Math.round((1-goldPenalty)*100)}% 골드 감소` : ''}${energyFragmentDrop ? `\n🔮 **에너지 조각 획득!** \`${energyFragmentDrop.tier}단계 조각 x${energyFragmentDrop.count}\` ✨` : ''}${droppedItems.length > 0 ? `\n\n🎁 **아이템 드롭!**\n${droppedItems.map(item => {
+                            value: `✨ 경험치: +${finalExp.toLocaleString()} EXP${bonusExp > 0 ? ` (+${bonusExp.toLocaleString()} 보너스)` : ''} | <:currency_emoji:1377404064316522778> 골드: +${adjustedGold.toLocaleString()}${adjustedBonusGold > 0 ? ` (+${adjustedBonusGold.toLocaleString()} 보너스)` : ''}${goldPenalty < 1.0 ? `\n📉 고레벨 페널티: ${Math.round((1-goldPenalty)*100)}% 골드 감소` : ''}${energyFragmentDrop ? `\n🔮 **에너지 조각 획득!** \`${energyFragmentDrop.tier}단계 조각 x${energyFragmentDrop.count}\` ✨` : ''}${droppedItems.length > 0 ? `\n\n🎁 **아이템 드롭!**\n${droppedItems.map(item => {
                                 const rarityEmojis = {
                                     '일반': '⚪',
                                     '고급': '🟢', 
@@ -10916,7 +11801,7 @@ client.on('interactionCreate', async (interaction) => {
                         },
                         { 
                             name: '📊 현재 상태', 
-                            value: `🏆 레벨: \`Lv.${user.level}\` | ✨ 경험치: \`${user.exp}/${user.level * 100} EXP\` | 💰 골드: \`${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>\``, 
+                            value: `🏆 레벨: Lv.${user.level} | ✨ 경험치: ${user.exp}/${user.level * 100} EXP | <:currency_emoji:1377404064316522778> 골드: ${user.gold.toLocaleString()}`, 
                             inline: false 
                         }
                     );
@@ -10975,12 +11860,12 @@ client.on('interactionCreate', async (interaction) => {
                         },
                         { 
                             name: '💸 손실', 
-                            value: `💰 벌금: \`-${actualPenalty.toLocaleString()}<:currency_emoji:1377404064316522778>\` | ❌ 몬스터 드랍 골드의 **${Math.floor(actualPenalty/baseGold)}배** 손실`, 
+                            value: `<:currency_emoji:1377404064316522778> 벌금: -${actualPenalty.toLocaleString()} | ❌ 몬스터 드랍 골드의 **${Math.floor(actualPenalty/baseGold)}배** 손실`, 
                             inline: false 
                         },
                         { 
                             name: '📊 현재 상태', 
-                            value: `🏆 레벨: \`Lv.${user.level}\` | ✨ 경험치: \`${user.exp}/${user.level * 100} EXP\` | 💰 골드: \`${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>\``, 
+                            value: `🏆 레벨: Lv.${user.level} | ✨ 경험치: ${user.exp}/${user.level * 100} EXP | <:currency_emoji:1377404064316522778> 골드: ${user.gold.toLocaleString()}`, 
                             inline: false 
                         },
                         { 
@@ -11016,39 +11901,570 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'work') {
-            const cooldown = 45 * 60 * 1000; // 45분 쿨타임 (골드 인플레이션 방지)
+            // 운동하기 메인 메뉴 표시
+            await showExerciseMenu(interaction, user);
+        }
+        
+        else if (interaction.customId === 'exercise_select') {
+            // 운동 선택 메뉴
+            const availableExercises = [];
             
-            if (now - user.lastWork < cooldown) {
-                const remaining = Math.ceil((cooldown - (now - user.lastWork)) / 60000);
-                await interaction.reply({ content: `쿨타임 ${remaining}분 남았습니다!`, flags: 64 });
+            // 사용 가능한 운동 확인
+            for (const [id, exercise] of Object.entries(EXERCISE_SYSTEM.exercises)) {
+                let canUse = false;
+                
+                if (exercise.requirements === null) {
+                    canUse = true;
+                } else if (exercise.requirements === 'gym' && user.fitness.memberships.gym.active) {
+                    const now = Date.now();
+                    if (user.fitness.memberships.gym.expiresAt > now) {
+                        canUse = true;
+                    }
+                } else if (exercise.requirements === 'premium' && user.fitness.memberships.premium.active) {
+                    const now = Date.now();
+                    if (user.fitness.memberships.premium.expiresAt > now) {
+                        canUse = true;
+                    }
+                }
+                
+                if (canUse || user.fitness.unlockedExercises.includes(id)) {
+                    availableExercises.push(exercise);
+                }
+            }
+            
+            const embed = new EmbedBuilder()
+                .setColor('#4ecdc4')
+                .setTitle('🏃 운동 선택')
+                .setDescription('시작할 운동을 선택해주세요!')
+                .addFields({
+                    name: '💦 현재 피로도',
+                    value: `${user.fitness.fatigue}/100 ${getFatigueBar(user.fitness.fatigue)}`,
+                    inline: false
+                });
+            
+            // 카테고리별로 운동 표시
+            const categories = {
+                basic: { name: '💪 기본 운동', exercises: [] },
+                gym: { name: '🏋️ 헬스장 운동', exercises: [] },
+                premium: { name: '🏊 프리미엄 운동', exercises: [] }
+            };
+            
+            availableExercises.forEach(exercise => {
+                categories[exercise.category].exercises.push(exercise);
+            });
+            
+            for (const [catId, catData] of Object.entries(categories)) {
+                if (catData.exercises.length > 0) {
+                    let exerciseList = '';
+                    catData.exercises.forEach(ex => {
+                        const maxMinutes = Math.floor(ex.maxDuration / 60000);
+                        exerciseList += `${ex.emoji} **${ex.name}** - 최대 ${maxMinutes}분\n`;
+                        exerciseList += `   효과: ${ex.description}\n`;
+                        exerciseList += `   보상: ${ex.rewards.goldPerMinute}G/분, ${ex.rewards.expPerMinute}EXP/분\n\n`;
+                    });
+                    
+                    embed.addFields({
+                        name: catData.name,
+                        value: exerciseList,
+                        inline: false
+                    });
+                }
+            }
+            
+            // 운동 선택 버튼들
+            const selectOptions = availableExercises.slice(0, 25).map(exercise => ({
+                label: exercise.name,
+                description: `${exercise.description} - 피로도 +${Math.round(exercise.fatigueRate * 10)}/10분`,
+                value: `start_exercise_${exercise.id}`,
+                emoji: exercise.emoji
+            }));
+            
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('select_exercise_type')
+                .setPlaceholder('운동을 선택하세요')
+                .addOptions(selectOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('work')
+                        .setLabel('🔙 뒤로가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [embed],
+                components: [selectRow, backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'exercise_equipment') {
+            // 운동 장비 메뉴
+            const embed = new EmbedBuilder()
+                .setColor('#f39c12')
+                .setTitle('🎽 운동 장비')
+                .setDescription('운동 효율을 높여주는 장비들입니다!')
+                .addFields(
+                    {
+                        name: '👕 운동복',
+                        value: Object.entries(EXERCISE_SYSTEM.equipment.clothes).map(([id, item]) => {
+                            const equipped = user.fitness.equipment.clothes === id ? ' ✅' : '';
+                            const bonus = ((item.efficiency - 1) * 100).toFixed(0);
+                            return `${item.name}${equipped}\n효율 ${bonus > 0 ? '+' : ''}${bonus}% | 가격: ${item.cost.toLocaleString()}G`;
+                        }).join('\n\n'),
+                        inline: true
+                    },
+                    {
+                        name: '👟 운동화',
+                        value: Object.entries(EXERCISE_SYSTEM.equipment.shoes).map(([id, item]) => {
+                            const equipped = user.fitness.equipment.shoes === id ? ' ✅' : '';
+                            const bonus = ((item.speed - 1) * 100).toFixed(0);
+                            return `${item.name}${equipped}\n속도 ${bonus > 0 ? '+' : ''}${bonus}% | 가격: ${item.cost.toLocaleString()}G`;
+                        }).join('\n\n'),
+                        inline: true
+                    }
+                );
+            
+            const equipmentButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('buy_clothes_brand')
+                        .setLabel('브랜드 운동복 구매')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.fitness.equipment.clothes !== 'basic' || user.gold < 5000),
+                    new ButtonBuilder()
+                        .setCustomId('buy_clothes_pro')
+                        .setLabel('프로 운동복 구매')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.fitness.equipment.clothes === 'pro' || user.gold < 20000),
+                    new ButtonBuilder()
+                        .setCustomId('buy_shoes_running')
+                        .setLabel('러닝화 구매')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.fitness.equipment.shoes !== 'basic' || user.gold < 8000),
+                    new ButtonBuilder()
+                        .setCustomId('buy_shoes_pro')
+                        .setLabel('프로 운동화 구매')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.fitness.equipment.shoes === 'pro' || user.gold < 30000)
+                );
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('work')
+                        .setLabel('🔙 운동 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [embed],
+                components: [equipmentButtons, backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'exercise_supplements') {
+            // 보충제 메뉴
+            const now = Date.now();
+            const activeBooster = user.fitness.equipment.activeBooster;
+            let activeInfo = '현재 사용 중인 보충제가 없습니다.';
+            
+            if (activeBooster.type && activeBooster.expiresAt > now) {
+                const remaining = Math.ceil((activeBooster.expiresAt - now) / 60000);
+                const supplement = EXERCISE_SYSTEM.supplements[activeBooster.type];
+                activeInfo = `${supplement.emoji} **${supplement.name}** 사용 중 (${remaining}분 남음)`;
+            }
+            
+            const embed = new EmbedBuilder()
+                .setColor('#e17055')
+                .setTitle('🥤 보충제')
+                .setDescription(`운동 효과를 증가시키는 보충제입니다!\n\n${activeInfo}`)
+                .addFields(
+                    Object.entries(EXERCISE_SYSTEM.supplements).map(([id, item]) => ({
+                        name: `${item.emoji} ${item.name}`,
+                        value: `${item.description}\n지속: ${Math.floor(item.duration / 60000)}분 | 가격: ${item.cost.toLocaleString()}G`,
+                        inline: false
+                    }))
+                );
+            
+            const supplementButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('use_supplement_protein')
+                        .setLabel('🥤 프로틴 사용')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.gold < 1000 || (activeBooster.type && activeBooster.expiresAt > now)),
+                    new ButtonBuilder()
+                        .setCustomId('use_supplement_bcaa')
+                        .setLabel('💊 BCAA 사용')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.gold < 1500 || (activeBooster.type && activeBooster.expiresAt > now)),
+                    new ButtonBuilder()
+                        .setCustomId('use_supplement_booster')
+                        .setLabel('⚡ 부스터 사용')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.gold < 2000 || (activeBooster.type && activeBooster.expiresAt > now))
+                );
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('work')
+                        .setLabel('🔙 운동 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [embed],
+                components: [supplementButtons, backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'exercise_goals') {
+            // 운동 목표
+            const today = new Date().toDateString();
+            if (user.fitness.goals.daily.lastReset !== today) {
+                user.fitness.goals.daily.minutes30 = false;
+                user.fitness.goals.daily.minutes60 = false;
+                user.fitness.goals.daily.minutes180 = false;
+                user.fitness.goals.daily.claimed30 = false;
+                user.fitness.goals.daily.claimed60 = false;
+                user.fitness.goals.daily.claimed180 = false;
+                user.fitness.goals.daily.lastReset = today;
+                await user.save();
+            }
+            
+            const dailyGoals = [
+                { 
+                    name: '30분 운동', 
+                    completed: user.fitness.goals.daily.minutes30,
+                    reward: '500G + 100 EXP'
+                },
+                { 
+                    name: '1시간 운동', 
+                    completed: user.fitness.goals.daily.minutes60,
+                    reward: '1,000G + 300 EXP'
+                },
+                { 
+                    name: '3시간 운동', 
+                    completed: user.fitness.goals.daily.minutes180,
+                    reward: '3,000G + 1,000 EXP'
+                }
+            ];
+            
+            const embed = new EmbedBuilder()
+                .setColor('#74b9ff')
+                .setTitle('🎯 운동 목표')
+                .setDescription('일일 목표를 달성하고 추가 보상을 받으세요!')
+                .addFields(
+                    {
+                        name: '📅 일일 목표',
+                        value: dailyGoals.map(goal => 
+                            `${goal.completed ? '✅' : '⬜'} **${goal.name}**\n   보상: ${goal.reward}`
+                        ).join('\n\n'),
+                        inline: false
+                    },
+                    {
+                        name: '📊 진행 상황',
+                        value: `오늘 운동 시간: ${Math.floor(getTodayExerciseTime(user) / 60000)}분\n연속 운동: ${user.fitness.streak}일`,
+                        inline: false
+                    }
+                );
+            
+            const claimButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('claim_goal_30')
+                        .setLabel('30분 보상 수령')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(!user.fitness.goals.daily.minutes30 || user.fitness.goals.daily.claimed30),
+                    new ButtonBuilder()
+                        .setCustomId('claim_goal_60')
+                        .setLabel('1시간 보상 수령')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(!user.fitness.goals.daily.minutes60 || user.fitness.goals.daily.claimed60),
+                    new ButtonBuilder()
+                        .setCustomId('claim_goal_180')
+                        .setLabel('3시간 보상 수령')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(!user.fitness.goals.daily.minutes180 || user.fitness.goals.daily.claimed180),
+                    new ButtonBuilder()
+                        .setCustomId('work')
+                        .setLabel('🔙 운동 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [embed],
+                components: [claimButtons]
+            });
+        }
+        
+        else if (interaction.customId === 'exercise_stats') {
+            // 운동 통계
+            const totalMinutes = Math.floor(user.fitness.totalExerciseTime / 60000);
+            const totalHours = Math.floor(totalMinutes / 60);
+            const remainingMinutes = totalMinutes % 60;
+            
+            // 최근 7일 운동 기록
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const recentExercises = user.fitness.exerciseHistory
+                .filter(record => new Date(record.date) > sevenDaysAgo)
+                .slice(-10);
+            
+            // 운동별 통계
+            const exerciseStats = {};
+            user.fitness.exerciseHistory.forEach(record => {
+                if (!exerciseStats[record.type]) {
+                    exerciseStats[record.type] = {
+                        count: 0,
+                        totalTime: 0,
+                        totalGold: 0
+                    };
+                }
+                exerciseStats[record.type].count++;
+                exerciseStats[record.type].totalTime += record.duration;
+                exerciseStats[record.type].totalGold += record.rewards.gold;
+            });
+            
+            // 가장 많이 한 운동
+            let favoriteExercise = null;
+            let maxCount = 0;
+            for (const [type, stats] of Object.entries(exerciseStats)) {
+                if (stats.count > maxCount) {
+                    maxCount = stats.count;
+                    favoriteExercise = type;
+                }
+            }
+            
+            const embed = new EmbedBuilder()
+                .setColor('#00cec9')
+                .setTitle('📊 운동 통계')
+                .setDescription(`**${user.nickname}**님의 운동 기록`)
+                .addFields(
+                    {
+                        name: '⏱️ 총 운동 시간',
+                        value: `${totalHours}시간 ${remainingMinutes}분`,
+                        inline: true
+                    },
+                    {
+                        name: '💪 피트니스 레벨',
+                        value: `Lv.${user.fitness.level}`,
+                        inline: true
+                    },
+                    {
+                        name: '🔥 최장 연속',
+                        value: `${user.fitness.streak}일`,
+                        inline: true
+                    },
+                    {
+                        name: '🏃 즐겨하는 운동',
+                        value: favoriteExercise ? EXERCISE_SYSTEM.exercises[favoriteExercise].name : '없음',
+                        inline: true
+                    },
+                    {
+                        name: '💰 총 획득 골드',
+                        value: `${user.fitness.exerciseHistory.reduce((sum, r) => sum + r.rewards.gold, 0).toLocaleString()}G`,
+                        inline: true
+                    },
+                    {
+                        name: '📈 총 운동 횟수',
+                        value: `${user.fitness.exerciseHistory.length}회`,
+                        inline: true
+                    }
+                );
+            
+            if (recentExercises.length > 0) {
+                const recentList = recentExercises.map(record => {
+                    const exercise = EXERCISE_SYSTEM.exercises[record.type];
+                    const minutes = Math.floor(record.duration / 60000);
+                    return `${exercise.emoji} ${exercise.name} - ${minutes}분`;
+                }).join('\n');
+                
+                embed.addFields({
+                    name: '📅 최근 운동 기록',
+                    value: recentList,
+                    inline: false
+                });
+            }
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('work')
+                        .setLabel('🔙 운동 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [embed],
+                components: [backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'exercise_membership') {
+            // 이용권 메뉴 (미구현)
+            await interaction.reply({ 
+                content: '이용권 시스템은 준비 중입니다!', 
+                flags: 64 
+            });
+        }
+        
+        else if (interaction.customId === 'ranking') {
+            // 통합 랭킹 메뉴
+            await showRankingMenu(interaction, 0);
+        }
+        
+        // 랭킹 페이지 네비게이션
+        else if (interaction.customId.startsWith('ranking_prev_')) {
+            const currentPage = parseInt(interaction.customId.replace('ranking_prev_', ''));
+            await showRankingMenu(interaction, Math.max(0, currentPage - 1));
+        }
+        
+        else if (interaction.customId.startsWith('ranking_next_')) {
+            const currentPage = parseInt(interaction.customId.replace('ranking_next_', ''));
+            await showRankingMenu(interaction, currentPage + 1);
+        }
+        
+        else if (interaction.customId === 'ranking_select') {
+            // 랭킹 카테고리 선택 메뉴
+            const selectOptions = [
+                { label: '📈 레벨 랭킹', value: 'ranking_goto_0', emoji: '📈' },
+                { label: '💰 부자 랭킹', value: 'ranking_goto_1', emoji: '💰' },
+                { label: '🎯 사냥 랭킹', value: 'ranking_goto_2', emoji: '🎯' },
+                { label: '⚔️ 강화 랭킹', value: 'ranking_goto_3', emoji: '⚔️' },
+                { label: '🏆 PVP 랭킹', value: 'ranking_goto_4', emoji: '🏆' },
+                { label: '🏁 레이싱 랭킹', value: 'ranking_goto_5', emoji: '🏁' },
+                { label: '⚡ 에너지 랭킹', value: 'ranking_goto_6', emoji: '⚡' },
+                { label: '🎲 홀짝 랭킹', value: 'ranking_goto_7', emoji: '🎲' },
+                { label: '🏺 유물 랭킹', value: 'ranking_goto_8', emoji: '🏺' },
+                { label: '💪 운동 랭킹', value: 'ranking_goto_9', emoji: '💪' },
+                { label: '❤️ 인기 랭킹', value: 'ranking_goto_10', emoji: '❤️' },
+                { label: '🔥 출석 랭킹', value: 'ranking_goto_11', emoji: '🔥' }
+            ];
+            
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('ranking_category_select')
+                .setPlaceholder('랭킹 카테고리를 선택하세요')
+                .addOptions(selectOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+            
+            await interaction.update({ 
+                components: [selectRow] 
+            });
+        }
+        
+        else if (interaction.customId === 'exercise_ranking') {
+            // 운동 랭킹 페이지로 이동
+            await showRankingMenu(interaction, 9);
+        }
+        
+        // 장비 구매 핸들러들
+        else if (interaction.customId.startsWith('buy_clothes_')) {
+            const type = interaction.customId.replace('buy_clothes_', '');
+            const item = EXERCISE_SYSTEM.equipment.clothes[type];
+            
+            if (user.gold < item.cost) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
                 return;
             }
-
-            const goldReward = Math.floor(Math.random() * 200) + 150; // 150-350골드 (인플레이션 방지)
-            const expReward = Math.floor(Math.random() * 50) + 25; // 25-75경험치
             
-            user.gold += goldReward;
-            user.exp += expReward;
-            user.lastWork = now;
+            user.gold -= item.cost;
+            user.fitness.equipment.clothes = type;
+            await user.save();
+            
+            await interaction.reply({ 
+                content: `✅ **${item.name}**을(를) 구매했습니다! 운동 효율이 증가합니다.`, 
+                flags: 64 
+            });
+        }
+        
+        else if (interaction.customId.startsWith('buy_shoes_')) {
+            const type = interaction.customId.replace('buy_shoes_', '');
+            const item = EXERCISE_SYSTEM.equipment.shoes[type];
+            
+            if (user.gold < item.cost) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            user.gold -= item.cost;
+            user.fitness.equipment.shoes = type;
+            await user.save();
+            
+            await interaction.reply({ 
+                content: `✅ **${item.name}**을(를) 구매했습니다! 운동 속도가 증가합니다.`, 
+                flags: 64 
+            });
+        }
+        
+        // 보충제 사용 핸들러
+        else if (interaction.customId.startsWith('use_supplement_')) {
+            const type = interaction.customId.replace('use_supplement_', '');
+            const supplement = EXERCISE_SYSTEM.supplements[type];
+            
+            if (user.gold < supplement.cost) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            const now = Date.now();
+            if (user.fitness.equipment.activeBooster.type && user.fitness.equipment.activeBooster.expiresAt > now) {
+                await interaction.reply({ content: '이미 보충제를 사용 중입니다!', flags: 64 });
+                return;
+            }
+            
+            user.gold -= supplement.cost;
+            user.fitness.equipment.activeBooster = {
+                type: type,
+                expiresAt: new Date(now + supplement.duration)
+            };
+            await user.save();
+            
+            await interaction.reply({ 
+                content: `✅ ${supplement.emoji} **${supplement.name}**을(를) 사용했습니다!\n${supplement.description}`, 
+                flags: 64 
+            });
+        }
+        
+        // 목표 보상 수령 핸들러
+        else if (interaction.customId.startsWith('claim_goal_')) {
+            const goalType = interaction.customId.replace('claim_goal_', '');
+            const rewards = {
+                '30': { gold: 500, exp: 100 },
+                '60': { gold: 1000, exp: 300 },
+                '180': { gold: 3000, exp: 1000 }
+            };
+            
+            const reward = rewards[goalType];
+            if (!reward) {
+                await interaction.reply({ content: '잘못된 목표입니다!', flags: 64 });
+                return;
+            }
+            
+            // 이미 수령했는지 확인
+            if (user.fitness.goals.daily[`claimed${goalType}`]) {
+                await interaction.reply({ content: '이미 보상을 수령했습니다!', flags: 64 });
+                return;
+            }
+            
+            user.gold += reward.gold;
+            user.exp += reward.exp;
+            user.fitness.goals.daily[`claimed${goalType}`] = true;
             
             // 레벨업 체크
             const { leveledUp, levelsGained, oldLevel } = processLevelUp(user);
-            
             await user.save();
-
-            const levelUpMessage = leveledUp ? `\n\n🎉 **레벨업!** Lv.${oldLevel} → Lv.${user.level}` : '';
-
-            const embed = new EmbedBuilder()
-                .setColor('#0099ff')
-                .setTitle('일하기 완료!')
-                .setDescription(`열심히 일해서 골드와 경험치를 얻었습니다!${levelUpMessage}`)
-                .addFields(
-                    { name: '획득 골드', value: `+${goldReward.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
-                    { name: '획득 경험치', value: `+${expReward} EXP`, inline: true },
-                    { name: '현재 골드', value: `${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
-                );
-
-            await interaction.reply({ embeds: [embed], flags: 64 });
+            
+            const levelUpMessage = leveledUp ? `\n🎉 **레벨업!** Lv.${oldLevel} → Lv.${user.level}` : '';
+            
+            await interaction.reply({ 
+                content: `✅ ${goalType}분 운동 목표 보상을 수령했습니다!\n💰 +${reward.gold.toLocaleString()}G | ✨ +${reward.exp} EXP${levelUpMessage}`, 
+                flags: 64 
+            });
         }
         
         else if (interaction.customId === 'info') {
@@ -11063,7 +12479,7 @@ client.on('interactionCreate', async (interaction) => {
                     { name: '골드', value: `${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
                     { name: '인기도', value: `${user.popularity} ${user.popularity > 0 ? '❤️' : user.popularity < 0 ? '💔' : ''}`, inline: true },
                     { name: '출석체크', value: user.lastDaily === new Date().toDateString() ? '완료' : '미완료', inline: true },
-                    { name: '일하기', value: now - user.lastWork < 30 * 60 * 1000 ? '쿨타임' : '가능', inline: true },
+                    { name: '운동상태', value: user.fitness.currentExercise.type ? '운동중' : '대기중', inline: true },
                     { name: '연속 출석', value: `${user.attendanceStreak || 0}일 🔥`, inline: true },
                     { name: '주간 출석', value: `${user.weeklyAttendance ? user.weeklyAttendance.filter(x => x).length : 0}/7일`, inline: true }
                 );
@@ -11596,6 +13012,107 @@ client.on('interactionCreate', async (interaction) => {
             const allComponents = [...itemButtons, navButtons];
 
             await interaction.update({
+                embeds: [categoryEmbed],
+                components: allComponents,
+                files: [categoryAttachment]
+            });
+        }
+        
+        // 상점 카테고리 버튼 처리 (shop_weapon, shop_armor 등)
+        else if (interaction.customId.startsWith('shop_') && !interaction.customId.includes('_page') && interaction.customId !== 'shop_category') {
+            const category = interaction.customId.replace('shop_', '');
+            
+            // 전역 상점 카테고리 데이터 사용
+            const categoryData = SHOP_CATEGORIES[category];
+            if (!categoryData) {
+                await interaction.reply({ content: '해당 카테고리는 아직 준비 중입니다!', flags: 64 });
+                return;
+            }
+            
+            // 카테고리 이미지 첨부파일 생성
+            const categoryAttachment = new AttachmentBuilder(
+                path.join(__dirname, 'resource', categoryData.image), 
+                { name: categoryData.image }
+            );
+            
+            // 첫 번째 페이지 데이터
+            const currentPage = 0;
+            const itemsPerPage = 4;
+            const startIndex = currentPage * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, categoryData.items.length);
+            const currentItems = categoryData.items.slice(startIndex, endIndex);
+            const totalPages = Math.ceil(categoryData.items.length / itemsPerPage);
+            
+            // 카테고리 정보 임베드
+            const description = `**${user.nickname}** 모험가님의 현재 보유금액: **${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>**\n\n구매하고 싶은 아이템을 선택하세요!`;
+            
+            const categoryEmbed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle(`🛒 ${categoryData.name}`)
+                .setDescription(description)
+                .setImage(`attachment://${categoryData.image}`)
+                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages}` });
+            
+            // 아이템 버튼들 생성 (최대 2행)
+            const itemButtons = [];
+            for (let i = 0; i < currentItems.length; i += 2) {
+                const row = new ActionRowBuilder();
+                
+                // 첫 번째 아이템
+                if (currentItems[i]) {
+                    const item = currentItems[i];
+                    row.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`buy_${item.id}`)
+                            .setLabel(`${item.name} (${item.price.toLocaleString()}G)`)
+                            .setStyle(ButtonStyle.Success)
+                            .setEmoji(item.emoji || '💎')
+                    );
+                }
+                
+                // 두 번째 아이템 (있는 경우)
+                if (currentItems[i + 1]) {
+                    const item = currentItems[i + 1];
+                    row.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`buy_${item.id}`)
+                            .setLabel(`${item.name} (${item.price.toLocaleString()}G)`)
+                            .setStyle(ButtonStyle.Success)
+                            .setEmoji(item.emoji || '💎')
+                    );
+                }
+                
+                itemButtons.push(row);
+            }
+            
+            // 네비게이션 버튼
+            const navButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`shop_${category}_prev_page`)
+                        .setLabel('◀ 이전')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage === 0),
+                    new ButtonBuilder()
+                        .setCustomId(`shop_${category}_page_info`)
+                        .setLabel(`${currentPage + 1}/${totalPages}`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true),
+                    new ButtonBuilder()
+                        .setCustomId(`shop_${category}_next_page`)
+                        .setLabel('다음 ▶')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(currentPage >= totalPages - 1),
+                    new ButtonBuilder()
+                        .setCustomId('shop')
+                        .setLabel('🔙 상점 메인')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            // 모든 버튼 합치기
+            const allComponents = [...itemButtons, navButtons];
+            
+            await interaction.reply({
                 embeds: [categoryEmbed],
                 components: allComponents,
                 files: [categoryAttachment]
@@ -14691,53 +16208,8 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'pvp_ranking') {
-            try {
-                await interaction.deferUpdate();
-                
-                const topUsers = await User.find({ registered: true })
-                    .sort({ 'pvp.rating': -1 })
-                    .limit(10);
-
-                const tierEmoji = {
-                    'Bronze': '🥉',
-                    'Silver': '🥈', 
-                    'Gold': '🥇',
-                    'Platinum': '💎',
-                    'Master': '🌟',
-                    'Grandmaster': '👑',
-                    'Challenger': '🏆'
-                };
-
-                let rankingText = '';
-                topUsers.forEach((user, index) => {
-                    const tier = pvpSystem.getTierByRating(user.pvp.rating);
-                    const emoji = tierEmoji[tier] || '🥉';
-                    const winRate = user.pvp.totalDuels > 0 ? 
-                        ((user.pvp.wins / user.pvp.totalDuels) * 100).toFixed(1) : 0;
-                    
-                    rankingText += `**${index + 1}.** ${emoji} ${user.nickname}\n`;
-                    rankingText += `　　레이팅: ${user.pvp.rating} | 승률: ${winRate}% (${user.pvp.wins}승 ${user.pvp.losses}패)\n\n`;
-                });
-
-                const embed = new EmbedBuilder()
-                    .setColor('#FFD700')
-                    .setTitle('🏆 PVP 랭킹')
-                    .setDescription(rankingText || '아직 PVP 기록이 없습니다.')
-                    .setFooter({ text: '레이팅은 ELO 시스템을 기반으로 계산됩니다!' });
-
-                const backButton = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('pvp_menu')
-                            .setLabel('🔙 PVP 메뉴')
-                            .setStyle(ButtonStyle.Primary)
-                    );
-
-                await interaction.editReply({ embeds: [embed], components: [backButton] });
-            } catch (error) {
-                console.error('PVP 랭킹 조회 오류:', error);
-                await interaction.followUp({ content: 'PVP 랭킹 조회 중 오류가 발생했습니다!', flags: 64 });
-            }
+            // PVP 랭킹 페이지로 이동
+            await showRankingMenu(interaction, 4);
         }
         
         else if (interaction.customId === 'pvp_info') {
@@ -14804,48 +16276,8 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'racing_ranking') {
-            // 레이싱 랭킹 표시
-            try {
-                const [winRanking, earningsRanking, streakRanking] = await Promise.all([
-                    User.find({ 'racingStats.wins': { $gt: 0 } }).sort({ 'racingStats.wins': -1 }).limit(5),
-                    User.find({ 'racingStats.totalWinnings': { $gt: 0 } }).sort({ 'racingStats.totalWinnings': -1 }).limit(5),
-                    User.find({ 'racingStats.longestWinStreak': { $gt: 0 } }).sort({ 'racingStats.longestWinStreak': -1 }).limit(5)
-                ]);
-                
-                let winText = '';
-                winRanking.forEach((user, index) => {
-                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-                    winText += `${medal} **${user.nickname}** - ${user.racingStats.wins}승\n`;
-                });
-                
-                let earningsText = '';
-                earningsRanking.forEach((user, index) => {
-                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-                    earningsText += `${medal} **${user.nickname}** - ${user.racingStats.totalWinnings.toLocaleString()}<:currency_emoji:1377404064316522778>\n`;
-                });
-                
-                let streakText = '';
-                streakRanking.forEach((user, index) => {
-                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-                    streakText += `${medal} **${user.nickname}** - ${user.racingStats.longestWinStreak}연승\n`;
-                });
-                
-                const rankingEmbed = new EmbedBuilder()
-                    .setColor('#FFD700')
-                    .setTitle('🏁 레이싱 명예의 전당')
-                    .setDescription('최고의 레이서들을 확인해보세요!')
-                    .addFields(
-                        { name: '🏆 최다승 TOP 5', value: winText || '아직 우승자가 없습니다.', inline: false },
-                        { name: '💰 최다수익 TOP 5', value: earningsText || '아직 수익자가 없습니다.', inline: false },
-                        { name: '🔥 최장연승 TOP 5', value: streakText || '아직 연승자가 없습니다.', inline: false }
-                    )
-                    .setFooter({ text: '🎲 다음 레전드는 당신일지도?' });
-                
-                await interaction.reply({ embeds: [rankingEmbed], flags: 64 });
-            } catch (error) {
-                console.error('레이싱 랭킹 조회 오류:', error);
-                await interaction.reply({ content: '랭킹을 불러오는 중 오류가 발생했습니다.', flags: 64 });
-            }
+            // 레이싱 랭킹 페이지로 이동
+            await showRankingMenu(interaction, 5);
         }
         
         else if (interaction.customId === 'back_to_game_menu') {
@@ -15401,8 +16833,13 @@ client.on('interactionCreate', async (interaction) => {
             // 판매 가능한 유물 목록
             let sellList = '';
             artifacts.forEach((artifact, index) => {
+                const currentPrice = calculateArtifactValue(artifact);
+                const basePrice = artifact.value;
+                const changePercent = ((currentPrice - basePrice) / basePrice * 100).toFixed(1);
+                const changeIcon = currentPrice > basePrice ? '📈' : currentPrice < basePrice ? '📉' : '➡️';
+                
                 sellList += `${index + 1}. ${artifact.emoji} **${artifact.name}** (${getRarityText(artifact.rarity)})\n`;
-                sellList += `   💰 판매가: ${artifact.value.toLocaleString()}G\n\n`;
+                sellList += `   💰 판매가: ${currentPrice.toLocaleString()}G ${changeIcon} ${changePercent > 0 ? '+' : ''}${changePercent}%\n\n`;
             });
             
             const embed = new EmbedBuilder()
@@ -15416,12 +16853,18 @@ client.on('interactionCreate', async (interaction) => {
 
             // 유물이 있으면 선택 메뉴 생성
             if (artifacts.length > 0) {
-                const selectOptions = artifacts.slice(0, 25).map((artifact, index) => ({
-                    label: `${artifact.name} (${artifact.value.toLocaleString()}G)`,
-                    description: `${getRarityText(artifact.rarity)} - ${artifact.description.substring(0, 50)}`,
-                    value: `sell_artifact_${index}`,
-                    emoji: artifact.emoji
-                }));
+                const selectOptions = artifacts.slice(0, 25).map((artifact, index) => {
+                    const currentPrice = calculateArtifactValue(artifact);
+                    const changePercent = ((currentPrice - artifact.value) / artifact.value * 100).toFixed(0);
+                    const trend = currentPrice > artifact.value ? '↑' : currentPrice < artifact.value ? '↓' : '';
+                    
+                    return {
+                        label: `${artifact.name} (${currentPrice.toLocaleString()}G ${trend}${changePercent}%)`,
+                        description: `${getRarityText(artifact.rarity)} - ${artifact.description.substring(0, 50)}`,
+                        value: `sell_artifact_${index}`,
+                        emoji: artifact.emoji
+                    };
+                });
 
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId('sell_artifact_select')
@@ -15449,6 +16892,134 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
         
+        else if (interaction.customId === 'artifact_market_chart') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            
+            // 사용자가 보유한 유물들의 시세 차트 표시
+            const artifacts = user.artifacts || [];
+            if (artifacts.length === 0) {
+                await interaction.editReply({
+                    content: '보유한 유물이 없어 시세를 확인할 수 없습니다.',
+                    embeds: [],
+                    components: []
+                });
+                return;
+            }
+            
+            // 고유한 유물 타입별로 그룹화
+            const uniqueArtifacts = new Map();
+            artifacts.forEach(artifact => {
+                if (!uniqueArtifacts.has(artifact.name)) {
+                    uniqueArtifacts.set(artifact.name, {
+                        ...artifact,
+                        count: 1,
+                        totalValue: calculateArtifactValue(artifact)
+                    });
+                } else {
+                    const existing = uniqueArtifacts.get(artifact.name);
+                    existing.count++;
+                    existing.totalValue += calculateArtifactValue(artifact);
+                }
+            });
+            
+            // 시세 정보 텍스트 생성
+            let marketInfo = '';
+            let totalCurrentValue = 0;
+            let totalOriginalValue = 0;
+            
+            uniqueArtifacts.forEach((artifactData, name) => {
+                const priceData = artifactMarket.priceHistory.get(name);
+                if (priceData) {
+                    const currentPrice = priceData.currentPrice;
+                    const basePrice = (artifactData.value[0] + artifactData.value[1]) / 2;
+                    const changePercent = ((currentPrice - basePrice) / basePrice * 100).toFixed(1);
+                    const trend = currentPrice > basePrice ? '📈' : currentPrice < basePrice ? '📉' : '➡️';
+                    
+                    marketInfo += `${artifactData.emoji} **${name}** (x${artifactData.count})\n`;
+                    marketInfo += `   현재가: ${currentPrice.toLocaleString()}G ${trend} ${changePercent > 0 ? '+' : ''}${changePercent}%\n`;
+                    marketInfo += `   보유 가치: ${(currentPrice * artifactData.count).toLocaleString()}G\n\n`;
+                    
+                    totalCurrentValue += currentPrice * artifactData.count;
+                    totalOriginalValue += basePrice * artifactData.count;
+                }
+            });
+            
+            const totalChangePercent = ((totalCurrentValue - totalOriginalValue) / totalOriginalValue * 100).toFixed(1);
+            const marketEvent = artifactMarket.currentEvent;
+            
+            const embed = new EmbedBuilder()
+                .setColor('#f39c12')
+                .setTitle('📈 유물 시세 차트')
+                .setDescription(`**${user.nickname}**님의 유물 포트폴리오`)
+                .addFields(
+                    { 
+                        name: '💰 총 평가액', 
+                        value: `${totalCurrentValue.toLocaleString()}G (${totalChangePercent > 0 ? '+' : ''}${totalChangePercent}%)`, 
+                        inline: true 
+                    },
+                    { 
+                        name: '📊 보유 종류', 
+                        value: `${uniqueArtifacts.size}종`, 
+                        inline: true 
+                    },
+                    { 
+                        name: '🎯 총 보유량', 
+                        value: `${artifacts.length}개`, 
+                        inline: true 
+                    }
+                );
+            
+            if (marketEvent) {
+                embed.addFields({
+                    name: '🌟 시장 이벤트',
+                    value: `**${marketEvent.name}**\n${marketEvent.description}\n효과: 시세 ${marketEvent.effect > 1 ? '+' : ''}${((marketEvent.effect - 1) * 100).toFixed(0)}%`,
+                    inline: false
+                });
+            }
+            
+            embed.addFields({
+                name: '📊 보유 유물 시세',
+                value: marketInfo || '시세 정보가 없습니다.',
+                inline: false
+            });
+            
+            // 시세 변동 팁
+            const tips = [
+                '💡 유물 시세는 10분마다 변동됩니다.',
+                '💡 시간대에 따라 거래량이 달라집니다.',
+                '💡 특별 이벤트 발생시 시세가 크게 변동할 수 있습니다.',
+                '💡 희귀도가 높을수록 변동폭이 큽니다.'
+            ];
+            embed.setFooter({ text: tips[Math.floor(Math.random() * tips.length)] });
+            
+            const buttons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('artifact_inventory')
+                        .setLabel('🎒 보관함으로')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_shop')
+                        .setLabel('🏪 판매하기')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_main_menu')
+                        .setLabel('🔙 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({
+                embeds: [embed],
+                components: [buttons]
+            });
+        }
+        
         else if (interaction.customId === 'artifact_main_menu') {
             const user = await getUser(interaction.user.id);
             if (!user || !user.registered) {
@@ -15460,71 +17031,8 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'artifact_rankings') {
-            const user = await getUser(interaction.user.id);
-            if (!user || !user.registered) {
-                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
-                return;
-            }
-            
-            try {
-                // 각 랭킹별 데이터 가져오기
-                const [explorationRanking, valueRanking, rareRanking] = await Promise.all([
-                    User.find({ registered: true, 'explorationStats.totalExplorations': { $gt: 0 } })
-                        .sort({ 'explorationStats.totalExplorations': -1 }).limit(5),
-                    User.find({ registered: true, 'explorationStats.totalEarned': { $gt: 0 } })
-                        .sort({ 'explorationStats.totalEarned': -1 }).limit(5),
-                    User.find({ registered: true, 'explorationStats.rareFinds': { $gt: 0 } })
-                        .sort({ 'explorationStats.rareFinds': -1 }).limit(5)
-                ]);
-                
-                // 탐사 횟수 랭킹
-                let explorationText = '';
-                explorationRanking.forEach((user, index) => {
-                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-                    const successRate = user.explorationStats.totalExplorations > 0 ? 
-                        ((user.explorationStats.successfulFinds / user.explorationStats.totalExplorations) * 100).toFixed(1) : 0;
-                    explorationText += `${medal} **${user.nickname}** - ${user.explorationStats.totalExplorations}회 (성공률: ${successRate}%)\n`;
-                });
-                
-                // 수익 랭킹
-                let valueText = '';
-                valueRanking.forEach((user, index) => {
-                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-                    const profit = user.explorationStats.totalEarned - user.explorationStats.totalInvested;
-                    valueText += `${medal} **${user.nickname}** - ${user.explorationStats.totalEarned.toLocaleString()}G (순익: ${profit >= 0 ? '+' : ''}${profit.toLocaleString()}G)\n`;
-                });
-                
-                // 레어 발견 랭킹
-                let rareText = '';
-                rareRanking.forEach((user, index) => {
-                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-                    rareText += `${medal} **${user.nickname}** - ${user.explorationStats.rareFinds}개\n`;
-                });
-                
-                const rankingEmbed = new EmbedBuilder()
-                    .setColor('#f39c12')
-                    .setTitle('🏆 유물탐사가 명예의 전당')
-                    .setDescription('최고의 탐사가들을 확인해보세요!')
-                    .addFields(
-                        { name: '⛏️ 탐사 횟수 TOP 5', value: explorationText || '아직 탐사 기록이 없습니다.', inline: false },
-                        { name: '💰 수익 TOP 5', value: valueText || '아직 수익 기록이 없습니다.', inline: false },
-                        { name: '💎 레어 발견 TOP 5', value: rareText || '아직 레어 발견 기록이 없습니다.', inline: false }
-                    )
-                    .setFooter({ text: '🏺 다음 전설의 탐사가는 당신일지도?' });
-                
-                const backButton = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('artifact_main_menu')
-                            .setLabel('🔙 유물탐사 메뉴')
-                            .setStyle(ButtonStyle.Primary)
-                    );
-                
-                await interaction.update({ embeds: [rankingEmbed], components: [backButton] });
-            } catch (error) {
-                console.error('유물탐사 랭킹 조회 오류:', error);
-                await interaction.followUp({ content: '랭킹을 불러오는 중 오류가 발생했습니다.', flags: 64 });
-            }
+            // 유물 랭킹 페이지로 이동
+            await showRankingMenu(interaction, 8);
         }
         
         else if (interaction.customId === 'artifact_guide') {
@@ -15792,7 +17300,101 @@ client.on('interactionCreate', async (interaction) => {
     
     console.log('🔵 모달 제출됨:', interaction.customId);
     
-    if (interaction.customId === 'registerModal') {
+    // 운동 시간 설정 모달
+    if (interaction.customId.startsWith('exercise_duration_')) {
+        const exerciseId = interaction.customId.replace('exercise_duration_', '');
+        const durationInput = interaction.fields.getTextInputValue('duration');
+        const duration = parseInt(durationInput);
+        
+        const exercise = EXERCISE_SYSTEM.exercises[exerciseId];
+        if (!exercise) {
+            await interaction.reply({ content: '운동을 찾을 수 없습니다!', flags: 64 });
+            return;
+        }
+        
+        const maxMinutes = Math.floor(exercise.maxDuration / 60000);
+        if (isNaN(duration) || duration < 1 || duration > maxMinutes) {
+            await interaction.reply({ content: `운동 시간은 1분에서 ${maxMinutes}분 사이여야 합니다!`, flags: 64 });
+            return;
+        }
+        
+        const user = await getUser(interaction.user.id);
+        if (!user || !user.registered) {
+            await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+            return;
+        }
+        
+        // 피로도 확인
+        if (user.fitness.fatigue >= EXERCISE_SYSTEM.fatigue.exerciseLimit) {
+            await interaction.reply({ content: '피로도가 너무 높아 운동할 수 없습니다! 휴식이 필요합니다.', flags: 64 });
+            return;
+        }
+        
+        // 이미 운동 중인지 확인
+        if (user.fitness.currentExercise.type) {
+            await interaction.reply({ content: '이미 운동 중입니다!', flags: 64 });
+            return;
+        }
+        
+        // 운동 시작
+        const now = Date.now();
+        const durationMs = duration * 60000;
+        
+        user.fitness.currentExercise = {
+            type: exerciseId,
+            startTime: now,
+            duration: durationMs,
+            accumulated: 0
+        };
+        
+        // 연속 운동 체크
+        const today = new Date().toDateString();
+        const yesterday = new Date(Date.now() - 86400000).toDateString();
+        
+        if (user.fitness.lastExerciseDate !== today) {
+            if (user.fitness.lastExerciseDate === yesterday) {
+                user.fitness.streak += 1;
+            } else {
+                user.fitness.streak = 1;
+            }
+            user.fitness.lastExerciseDate = today;
+        }
+        
+        await user.save();
+        
+        // 운동 시작 임베드
+        const embed = new EmbedBuilder()
+            .setColor('#00b894')
+            .setTitle(`${exercise.emoji} ${exercise.name} 시작!`)
+            .setDescription(`**${user.nickname}**님이 운동을 시작했습니다!`)
+            .addFields(
+                { name: '⏱️ 운동 시간', value: `${duration}분`, inline: true },
+                { name: '🏁 완료 예정', value: `<t:${Math.floor((now + durationMs) / 1000)}:R>`, inline: true },
+                { name: '🔥 연속 운동', value: `${user.fitness.streak}일`, inline: true },
+                { name: '💰 예상 보상', value: `골드: ~${(exercise.rewards.goldPerMinute * duration).toLocaleString()}G\n경험치: ~${(exercise.rewards.expPerMinute * duration).toLocaleString()} EXP`, inline: false }
+            )
+            .setFooter({ text: '운동이 끝나면 다시 운동 메뉴를 열어 보상을 확인하세요!' });
+        
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('work')
+                    .setLabel('🏃 운동 상태 확인')
+                    .setStyle(ButtonStyle.Primary)
+            );
+        
+        await interaction.reply({
+            embeds: [embed],
+            components: [backButton]
+        });
+        
+        // 피로도 증가 (시작시 일부만 증가)
+        const fatigueIncrease = Math.floor(exercise.fatigueRate * duration * 0.5);
+        user.fitness.fatigue = Math.min(100, user.fitness.fatigue + fatigueIncrease);
+        await user.save();
+    }
+    
+    else if (interaction.customId === 'registerModal') {
         const nickname = interaction.fields.getTextInputValue('nickname');
         const email = interaction.fields.getTextInputValue('email');
         
@@ -16152,8 +17754,47 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
+        // 랭킹 카테고리 선택 처리
+        if (interaction.customId === 'ranking_category_select') {
+            const selectedValue = interaction.values[0];
+            const page = parseInt(selectedValue.replace('ranking_goto_', ''));
+            await showRankingMenu(interaction, page);
+        }
+        
+        // 운동 선택 처리
+        else if (interaction.customId === 'select_exercise_type') {
+            const selectedValue = interaction.values[0];
+            const exerciseId = selectedValue.replace('start_exercise_', '');
+            const exercise = EXERCISE_SYSTEM.exercises[exerciseId];
+            
+            if (!exercise) {
+                await interaction.reply({ content: '운동을 찾을 수 없습니다!', flags: 64 });
+                return;
+            }
+            
+            // 운동 시간 선택 모달
+            const modal = new ModalBuilder()
+                .setCustomId(`exercise_duration_${exerciseId}`)
+                .setTitle(`${exercise.name} 시간 설정`);
+            
+            const maxMinutes = Math.floor(exercise.maxDuration / 60000);
+            const durationInput = new TextInputBuilder()
+                .setCustomId('duration')
+                .setLabel(`운동 시간 (분) - 최대 ${maxMinutes}분`)
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder(`1 ~ ${maxMinutes}`)
+                .setRequired(true)
+                .setMaxLength(3)
+                .setMinLength(1);
+            
+            const firstRow = new ActionRowBuilder().addComponents(durationInput);
+            modal.addComponents(firstRow);
+            
+            await interaction.showModal(modal);
+        }
+        
         // 유물 판매 선택
-        if (interaction.customId === 'sell_artifact_select') {
+        else if (interaction.customId === 'sell_artifact_select') {
             const selectionValue = interaction.values[0];
             const artifactIndex = parseInt(selectionValue.replace('sell_artifact_', ''));
             
@@ -16165,13 +17806,20 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
-            // 골드 추가 및 유물 제거
+            // 현재 시세 계산
+            const currentPrice = calculateArtifactValue(selectedArtifact);
+            const basePrice = selectedArtifact.value;
+            const priceChange = currentPrice - basePrice;
+            const changePercent = ((priceChange / basePrice) * 100).toFixed(1);
+            const changeIcon = priceChange > 0 ? '📈' : priceChange < 0 ? '📉' : '➡️';
+            
+            // 골드 추가 및 유물 제거 (시세 반영)
             await User.updateOne(
                 { discordId: interaction.user.id },
                 { 
                     $inc: { 
-                        gold: selectedArtifact.value,
-                        'explorationStats.totalEarned': selectedArtifact.value 
+                        gold: currentPrice,
+                        'explorationStats.totalEarned': currentPrice 
                     },
                     $pull: { artifacts: { _id: selectedArtifact._id } }
                 }
@@ -16183,7 +17831,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`**${selectedArtifact.name}**을(를) 성공적으로 판매했습니다!`)
                 .addFields(
                     { name: '💎 판매 유물', value: `${selectedArtifact.emoji} **${selectedArtifact.name}**\n${getRarityText(selectedArtifact.rarity)}`, inline: true },
-                    { name: '💰 판매 가격', value: `${selectedArtifact.value.toLocaleString()}G`, inline: true },
+                    { name: '💰 판매 가격', value: `${currentPrice.toLocaleString()}G ${changeIcon} ${changePercent > 0 ? '+' : ''}${changePercent}%\n(기준가: ${basePrice.toLocaleString()}G)`, inline: true },
                     { name: '💳 현재 골드', value: `${(user.gold + selectedArtifact.value).toLocaleString()}G`, inline: true }
                 )
                 .setFooter({ text: '판매된 유물은 복구할 수 없습니다!' });
