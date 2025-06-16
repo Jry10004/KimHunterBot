@@ -14000,10 +14000,9 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                 );
             
-            await interaction.reply({
+            await interaction.update({
                 embeds: [embed],
-                components: [selectRow, backButton],
-                flags: 64
+                components: [selectRow, backButton]
             });
         }
         
