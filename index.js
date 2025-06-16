@@ -13,6 +13,7 @@ const MONSTER_BATTLE = require('./data/oddEvenGame');
 const MUSHROOM_GAME = require('./data/mushroomGame');
 const ARTIFACT_SYSTEM = require('./data/artifactSystem');
 const EXERCISE_SYSTEM = require('./data/exerciseSystem');
+const { QUEST_SYSTEM, checkQuestProgress } = require('./data/questSystem');
 
 // 아이템 경매장 시스템
 const AUCTION_HOUSE = {
@@ -511,37 +512,43 @@ function createDefaultMenu() {
 function createMenuCustomizer() {
     return new StringSelectMenuBuilder()
         .setCustomId('customize_menu')
-        .setPlaceholder('⚙️ 메뉴 커스터마이징')
+        .setPlaceholder('🎨 원하는 설정을 선택하세요')
         .addOptions([
             {
-                label: '📋 메뉴 순서 변경',
-                description: '자주 사용하는 메뉴를 위로 배치하세요',
-                value: 'reorder_menu',
-                emoji: '📋'
-            },
-            {
-                label: '⭐ 즐겨찾기 설정',
-                description: '자주 사용하는 메뉴를 즐겨찾기에 추가',
-                value: 'favorite_menu',
+                label: '⭐ 즐겨찾기 관리',
+                description: '자주 사용하는 메뉴를 즐겨찾기에 추가/제거',
+                value: 'manage_favorites',
                 emoji: '⭐'
             },
             {
-                label: '👁️ 메뉴 숨기기/보이기',
-                description: '사용하지 않는 메뉴를 숨기세요',
-                value: 'toggle_menu',
-                emoji: '👁️'
+                label: '🎯 퀵슬롯 설정',
+                description: '빠른 접근을 위한 퀵슬롯 버튼 설정',
+                value: 'manage_quickslots',
+                emoji: '🎯'
             },
             {
-                label: '🎨 메뉴 스타일 변경',
-                description: '메뉴 표시 방식을 변경하세요',
-                value: 'menu_style',
+                label: '🎨 테마 설정',
+                description: '인터페이스 색상 테마 변경',
+                value: 'change_theme',
                 emoji: '🎨'
             },
             {
-                label: '🔄 기본값으로 초기화',
-                description: '모든 설정을 초기 상태로 되돌립니다',
-                value: 'reset_menu',
-                emoji: '🔄'
+                label: '📊 UI 레이아웃',
+                description: '메뉴 표시 방식 설정 (목록/그리드)',
+                value: 'change_layout',
+                emoji: '📊'
+            },
+            {
+                label: '🔔 알림 설정',
+                description: '게임 알림 설정 관리',
+                value: 'notification_settings',
+                emoji: '🔔'
+            },
+            {
+                label: '♻️ 설정 초기화',
+                description: '모든 설정을 기본값으로 초기화',
+                value: 'reset_settings',
+                emoji: '♻️'
             }
         ]);
 }
@@ -8405,6 +8412,24 @@ client.on('interactionCreate', async (interaction) => {
                 const today = new Date().toDateString();
                 const attendanceStatus = user.lastDaily === today ? '출석' : '결석';
                 
+                // 시간대별 이미지 및 색상 설정
+                const now = new Date();
+                const hour = now.getHours();
+                
+                let timeImage = '';
+                let timeColor = '';
+                
+                if (hour >= 6 && hour < 12) {
+                    timeImage = 'kim_main_morning.png';
+                    timeColor = '#ffeb3b';
+                } else if (hour >= 12 && hour < 18) {
+                    timeImage = 'kim_main_lunch.png';
+                    timeColor = '#ff9800';
+                } else {
+                    timeImage = 'kim_main_night.png';
+                    timeColor = '#3f51b5';
+                }
+                
                 const statusEmbed = new EmbedBuilder()
                     .setColor('#3498db')
                     .setTitle(`${getUserTitle(user)} ${user.nickname}님의 상태`)
@@ -8966,12 +8991,64 @@ client.on('interactionCreate', async (interaction) => {
                         return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
                     
+                    // 퀘스트 진행도 초기화 체크
+                    if (!questUser.quests) {
+                        questUser.quests = {
+                            daily: {},
+                            weekly: {},
+                            achievements: {},
+                            lastDailyReset: new Date().toDateString(),
+                            lastWeeklyReset: new Date()
+                        };
+                    }
+                    
+                    // 일일 로그인 퀘스트 체크
+                    checkQuestProgress(questUser, 'daily', 'login');
+                    
                     const questEmbed = new EmbedBuilder()
                         .setColor('#ff00ff')
                         .setTitle('📜 의뢰 시스템')
-                        .setDescription('의뢰 시스템은 준비 중입니다!\n곧 다양한 퀘스트를 수행할 수 있습니다.');
+                        .setDescription('다양한 퀘스트를 완료하고 보상을 받으세요!');
                     
-                    return await interaction.editReply({ embeds: [questEmbed] });
+                    // 일일 퀘스트 표시
+                    let dailyQuestText = '';
+                    Object.values(QUEST_SYSTEM.dailyQuests).forEach(quest => {
+                        const progress = questUser.quests.daily[quest.id] || { progress: 0, completed: false, claimedReward: false };
+                        const targetProgress = quest.requirements.count || quest.requirements.minutes || 1;
+                        const icon = progress.completed ? (progress.claimedReward ? '✅' : '🟡') : '⬜';
+                        dailyQuestText += `${icon} **${quest.name}**\n${quest.description}\n진행도: ${progress.progress}/${targetProgress}\n보상: ${quest.rewards.gold.toLocaleString()}G, ${quest.rewards.exp}EXP\n\n`;
+                    });
+                    
+                    // 주간 퀘스트 표시
+                    let weeklyQuestText = '';
+                    Object.values(QUEST_SYSTEM.weeklyQuests).forEach(quest => {
+                        const progress = questUser.quests.weekly[quest.id] || { progress: 0, completed: false, claimedReward: false };
+                        const targetProgress = quest.requirements.count || 1;
+                        const icon = progress.completed ? (progress.claimedReward ? '✅' : '🟡') : '⬜';
+                        weeklyQuestText += `${icon} **${quest.name}**\n${quest.description}\n진행도: ${progress.progress}/${targetProgress}\n보상: ${quest.rewards.gold.toLocaleString()}G\n\n`;
+                    });
+                    
+                    questEmbed.addFields(
+                        { name: '📅 일일 퀘스트', value: dailyQuestText || '없음', inline: false },
+                        { name: '📆 주간 퀘스트', value: weeklyQuestText || '없음', inline: false }
+                    );
+                    
+                    const questButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('claim_quest_rewards')
+                                .setLabel('🎁 보상 받기')
+                                .setStyle(ButtonStyle.Success)
+                                .setDisabled(!Object.values(questUser.quests.daily).some(q => q.completed && !q.claimedReward) &&
+                                           !Object.values(questUser.quests.weekly).some(q => q.completed && !q.claimedReward)),
+                            new ButtonBuilder()
+                                .setCustomId('view_achievements')
+                                .setLabel('🏆 업적 보기')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    await questUser.save();
+                    return await interaction.editReply({ embeds: [questEmbed], components: [questButtons] });
                     
                 case 'pvp':
                     // PVP 메뉴
@@ -9752,6 +9829,169 @@ client.on('interactionCreate', async (interaction) => {
             const selectedValue = values[0];
             
             switch (selectedValue) {
+                case 'manage_favorites':
+                    // 즐겨찾기 관리
+                    const favUser = await User.findOne({ discordId: interaction.user.id });
+                    const favoriteMenus = favUser?.menuSettings?.favoriteMenus || [];
+                    const allCategories = Object.keys(MENU_CATEGORIES);
+                    
+                    const favoriteEmbed = new EmbedBuilder()
+                        .setColor('#ffd700')
+                        .setTitle('⭐ 즐겨찾기 관리')
+                        .setDescription('자주 사용하는 카테고리를 즐겨찾기에 추가하면 빠르게 접근할 수 있습니다.')
+                        .addFields(
+                            { name: '현재 즐겨찾기', value: favoriteMenus.length > 0 ? favoriteMenus.map(id => MENU_CATEGORIES[id]?.label || id).join(', ') : '없음', inline: false }
+                        );
+                    
+                    const favoriteMenu = new StringSelectMenuBuilder()
+                        .setCustomId('favorite_category_toggle')
+                        .setPlaceholder('⭐ 즐겨찾기할 카테고리 선택')
+                        .addOptions(
+                            allCategories.map(catId => {
+                                const cat = MENU_CATEGORIES[catId];
+                                const isFavorite = favoriteMenus.includes(catId);
+                                return {
+                                    label: `${isFavorite ? '⭐ ' : ''}${cat.label}`,
+                                    description: `${cat.description} ${isFavorite ? '(제거)' : '(추가)'}`,
+                                    value: catId,
+                                    emoji: cat.emoji
+                                };
+                            })
+                        );
+                    
+                    await interaction.reply({
+                        embeds: [favoriteEmbed],
+                        components: [new ActionRowBuilder().addComponents(favoriteMenu)],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'manage_quickslots':
+                    // 퀵슬롯 설정
+                    const quickEmbed = new EmbedBuilder()
+                        .setColor('#ff9800')
+                        .setTitle('🎯 퀵슬롯 설정')
+                        .setDescription('메인 화면에 표시될 4개의 퀵슬롯을 설정하세요.')
+                        .addFields(
+                            { name: '현재 퀵슬롯', value: '🎁 일일보상 | 🎯 사냥하기 | ⚔️ 장비관리 | 🛒 상점', inline: false }
+                        );
+                    
+                    await interaction.reply({
+                        content: '🎯 퀵슬롯 설정 기능은 곧 추가됩니다!',
+                        embeds: [quickEmbed],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'change_theme':
+                    // 테마 설정
+                    const themeEmbed = new EmbedBuilder()
+                        .setColor('#9c27b0')
+                        .setTitle('🎨 테마 설정')
+                        .setDescription('인터페이스 색상 테마를 선택하세요.');
+                    
+                    const themeButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('theme_default')
+                                .setLabel('🌈 기본')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('theme_dark')
+                                .setLabel('🌙 다크')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('theme_light')
+                                .setLabel('☀️ 라이트')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('theme_rpg')
+                                .setLabel('⚔️ RPG')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    
+                    await interaction.reply({
+                        embeds: [themeEmbed],
+                        components: [themeButtons],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'change_layout':
+                    // UI 레이아웃
+                    const layoutEmbed = new EmbedBuilder()
+                        .setColor('#4caf50')
+                        .setTitle('📊 UI 레이아웃')
+                        .setDescription('메뉴 표시 방식을 선택하세요.');
+                    
+                    const layoutButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('layout_list')
+                                .setLabel('📋 목록형')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('layout_grid')
+                                .setLabel('⬛ 그리드형')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('layout_compact')
+                                .setLabel('📦 간소형')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    await interaction.reply({
+                        embeds: [layoutEmbed],
+                        components: [layoutButtons],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'notification_settings':
+                    // 알림 설정
+                    const notifEmbed = new EmbedBuilder()
+                        .setColor('#2196f3')
+                        .setTitle('🔔 알림 설정')
+                        .setDescription('게임 알림을 관리하세요.')
+                        .addFields(
+                            { name: '🎁 일일보상', value: '✅ 활성화', inline: true },
+                            { name: '⚔️ PVP 대전', value: '✅ 활성화', inline: true },
+                            { name: '📈 주식 변동', value: '❌ 비활성화', inline: true },
+                            { name: '🏆 랭킹 변동', value: '✅ 활성화', inline: true }
+                        );
+                    
+                    await interaction.reply({
+                        embeds: [notifEmbed],
+                        ephemeral: true
+                    });
+                    break;
+                    
+                case 'reset_settings':
+                    // 설정 초기화
+                    const confirmEmbed = new EmbedBuilder()
+                        .setColor('#f44336')
+                        .setTitle('♻️ 설정 초기화')
+                        .setDescription('⚠️ 정말로 모든 설정을 초기화하시겠습니까?');
+                    
+                    const confirmButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('confirm_reset_settings')
+                                .setLabel('✅ 초기화')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('cancel_reset_settings')
+                                .setLabel('❌ 취소')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    await interaction.reply({
+                        embeds: [confirmEmbed],
+                        components: [confirmButtons],
+                        ephemeral: true
+                    });
+                    break;
+                    
                 case 'reorder_menu':
                     // 메뉴 순서 변경
                     const user = await User.findOne({ discordId: interaction.user.id });
@@ -9788,17 +10028,17 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'favorite_menu':
                     // 즐겨찾기 설정
-                    const favUser = await User.findOne({ discordId: interaction.user.id });
-                    const favoriteMenus = favUser?.menuSettings?.favoriteMenus || [];
+                    const favUserOld = await User.findOne({ discordId: interaction.user.id });
+                    const favoriteMenusOld = favUserOld?.menuSettings?.favoriteMenus || [];
                     const allMenus = Object.keys(MENU_DEFINITIONS);
                     
-                    const favoriteMenu = new StringSelectMenuBuilder()
+                    const favoriteMenuOld = new StringSelectMenuBuilder()
                         .setCustomId('favorite_toggle')
                         .setPlaceholder('⭐ 즐겨찾기 추가/제거할 메뉴 선택')
                         .addOptions(
                             allMenus.map(menuId => {
                                 const menuDef = MENU_DEFINITIONS[menuId];
-                                const isFavorite = favoriteMenus.includes(menuId);
+                                const isFavorite = favoriteMenusOld.includes(menuId);
                                 return {
                                     label: `${isFavorite ? '⭐ ' : ''}${menuDef.label}`,
                                     description: `${menuDef.description} ${isFavorite ? '(즐겨찾기 해제)' : '(즐겨찾기 추가)'}`,
@@ -9810,7 +10050,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                     await interaction.reply({
                         content: '⭐ 즐겨찾기 메뉴 설정',
-                        components: [new ActionRowBuilder().addComponents(favoriteMenu)],
+                        components: [new ActionRowBuilder().addComponents(favoriteMenuOld)],
                         ephemeral: true
                     });
                     break;
@@ -13088,6 +13328,12 @@ client.on('interactionCreate', async (interaction) => {
                 // 유저 데이터 업데이트
                 user.exp += finalExp + bonusExp;
                 user.gold += adjustedGold + adjustedBonusGold;
+                
+                // 퀘스트 진행도 업데이트
+                const completedQuests = checkQuestProgress(user, 'daily', 'kill', { monsterType: selectedMonster.type || 'any' });
+                if (selectedMonster.isBoss) {
+                    checkQuestProgress(user, 'weekly', 'kill_boss');
+                }
 
                 // 에너지 조각 드랍 체크 (0.1% 확률)
                 let energyFragmentDrop = null;
@@ -13327,6 +13573,9 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (interaction.customId === 'exercise_select') {
             // 운동 선택 메뉴
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
             const availableExercises = [];
             
             // 사용 가능한 운동 확인
@@ -13414,7 +13663,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                 );
             
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [embed],
                 components: [selectRow, backButton]
             });
@@ -15676,6 +15925,9 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'equipment') {
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
             // 장비 메인 이미지 첨부파일 생성
             const equipmentAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_equipment.gif'), { name: 'kim_equipment.gif' });
             
@@ -15767,7 +16019,7 @@ client.on('interactionCreate', async (interaction) => {
                 components.push(unequipButtons);
             }
 
-            await interaction.update({ 
+            await interaction.editReply({ 
                 embeds: [equipmentEmbed], 
                 components: components,
                 files: [equipmentAttachment]
@@ -16182,9 +16434,12 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'enhancement') {
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
             // 강화 메뉴 처리
             if (user.level < 10) {
-                await interaction.update({ content: '강화는 레벨 10부터 사용할 수 있습니다!', embeds: [], components: [] });
+                await interaction.editReply({ content: '강화는 레벨 10부터 사용할 수 있습니다!', embeds: [], components: [] });
                 return;
             }
             
@@ -16204,7 +16459,7 @@ client.on('interactionCreate', async (interaction) => {
             });
             
             if (equippedItems.length === 0) {
-                await interaction.update({ 
+                await interaction.editReply({ 
                     content: '강화할 장비가 없습니다! 먼저 장비를 착용해주세요.', 
                     embeds: [], 
                     components: [] 
@@ -16266,24 +16521,27 @@ client.on('interactionCreate', async (interaction) => {
             
             const components = [enhanceButtons, backButton];
             
-            await interaction.update({ 
+            await interaction.editReply({ 
                 embeds: [enhanceEmbed], 
                 components: components
             });
         }
         
         else if (interaction.customId.startsWith('enhance_')) {
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
             // 특정 장비 강화 처리
             const slotName = interaction.customId.replace('enhance_', '');
             const equipment = getEquippedItem(user, slotName);
             
             if (!equipment) {
-                await interaction.update({ content: '해당 슬롯에 장착된 장비가 없습니다!', embeds: [], components: [] });
+                await interaction.editReply({ content: '해당 슬롯에 장착된 장비가 없습니다!', embeds: [], components: [] });
                 return;
             }
             
             if (equipment.enhanceLevel >= 30) {
-                await interaction.update({ content: '이미 최대 강화 단계(30강)입니다!', embeds: [], components: [] });
+                await interaction.editReply({ content: '이미 최대 강화 단계(30강)입니다!', embeds: [], components: [] });
                 return;
             }
             
@@ -16293,9 +16551,10 @@ client.on('interactionCreate', async (interaction) => {
             const cost = calculateEnhanceCost(itemLevel, currentStar);
             
             if (user.gold < cost) {
-                await interaction.reply({ 
-                    content: `골드가 부족합니다! 필요: ${cost.toLocaleString()}<:currency_emoji:1377404064316522778>, 보유: ${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, 
-                    flags: 64 
+                await interaction.editReply({ 
+                    content: `골드가 부족합니다! 필요: ${cost.toLocaleString()}<:currency_emoji:1377404064316522778>, 보유: ${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`,
+                    embeds: [],
+                    components: []
                 });
                 return;
             }
@@ -16332,24 +16591,27 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                 );
             
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [confirmEmbed],
                 components: [confirmButtons]
             });
         }
         
         else if (interaction.customId.startsWith('confirm_enhance_')) {
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
             // 강화 실행
             const slotName = interaction.customId.replace('confirm_enhance_', '');
             const equipment = getEquippedItem(user, slotName);
             
             if (!equipment) {
-                await interaction.update({ content: '해당 슬롯에 장착된 장비가 없습니다!', embeds: [], components: [] });
+                await interaction.editReply({ content: '해당 슬롯에 장착된 장비가 없습니다!', embeds: [], components: [] });
                 return;
             }
             
             if (equipment.enhanceLevel >= 30) {
-                await interaction.update({ content: '이미 최대 강화 단계(30강)입니다!', embeds: [], components: [] });
+                await interaction.editReply({ content: '이미 최대 강화 단계(30강)입니다!', embeds: [], components: [] });
                 return;
             }
             
@@ -16359,7 +16621,7 @@ client.on('interactionCreate', async (interaction) => {
             const cost = calculateEnhanceCost(itemLevel, currentStar);
             
             if (user.gold < cost) {
-                await interaction.update({ 
+                await interaction.editReply({ 
                     content: `골드가 부족합니다! 필요: ${cost.toLocaleString()}<:currency_emoji:1377404064316522778>, 보유: ${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, 
                     embeds: [], 
                     components: [] 
@@ -16386,12 +16648,19 @@ client.on('interactionCreate', async (interaction) => {
             user.enhanceStats.totalAttempts += 1;
             user.enhanceStats.totalCost += cost;
             
+            // 퀘스트 진행도 업데이트 (강화 시도)
+            checkQuestProgress(user, 'daily', 'enhance_attempt');
+            
             let resultEmbed;
             
             if (result === 'success') {
                 equipment.enhanceLevel += 1;
                 user.enhanceStats.successCount += 1;
                 user.enhanceStats.maxEnhanceLevel = Math.max(user.enhanceStats.maxEnhanceLevel, equipment.enhanceLevel);
+                
+                // 퀘스트 진행도 업데이트 (강화 성공)
+                checkQuestProgress(user, 'weekly', 'enhance_success');
+                checkQuestProgress(user, 'achievement', 'enhance_level', equipment.enhanceLevel);
                 
                 // 신식 시스템: getEquippedItem이 이미 인벤토리의 실제 아이템을 참조하므로 별도 업데이트 불필요
                 
@@ -16465,10 +16734,230 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Success)
                 );
             
-            await interaction.update({
+            await interaction.editReply({
                 embeds: [resultEmbed],
                 components: [afterButtons]
             });
+        }
+        
+        else if (interaction.customId === 'claim_quest_rewards') {
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
+            // 퀘스트 보상 받기
+            let totalGold = 0;
+            let totalExp = 0;
+            const claimedQuests = [];
+            
+            // 일일 퀘스트 보상
+            Object.entries(user.quests.daily).forEach(([questId, progress]) => {
+                if (progress.completed && !progress.claimedReward) {
+                    const quest = QUEST_SYSTEM.dailyQuests[questId];
+                    if (quest) {
+                        totalGold += quest.rewards.gold;
+                        totalExp += quest.rewards.exp;
+                        progress.claimedReward = true;
+                        claimedQuests.push(quest.name);
+                        
+                        // 아이템 보상
+                        if (quest.rewards.items && quest.rewards.items.length > 0) {
+                            quest.rewards.items.forEach(item => {
+                                const existingItem = user.inventory.find(i => i.name === item.name);
+                                if (existingItem) {
+                                    existingItem.quantity += item.quantity;
+                                } else {
+                                    user.inventory.push({
+                                        name: item.name,
+                                        quantity: item.quantity,
+                                        type: 'consumable'
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+            
+            // 주간 퀘스트 보상
+            Object.entries(user.quests.weekly).forEach(([questId, progress]) => {
+                if (progress.completed && !progress.claimedReward) {
+                    const quest = QUEST_SYSTEM.weeklyQuests[questId];
+                    if (quest) {
+                        totalGold += quest.rewards.gold;
+                        totalExp += quest.rewards.exp;
+                        progress.claimedReward = true;
+                        claimedQuests.push(quest.name);
+                        
+                        // 아이템 보상
+                        if (quest.rewards.items && quest.rewards.items.length > 0) {
+                            quest.rewards.items.forEach(item => {
+                                const existingItem = user.inventory.find(i => i.name === item.name);
+                                if (existingItem) {
+                                    existingItem.quantity += item.quantity;
+                                } else {
+                                    user.inventory.push({
+                                        name: item.name,
+                                        quantity: item.quantity,
+                                        type: 'consumable'
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+            
+            if (claimedQuests.length === 0) {
+                await interaction.editReply({ 
+                    content: '받을 수 있는 보상이 없습니다!', 
+                    embeds: [], 
+                    components: [] 
+                });
+                return;
+            }
+            
+            // 보상 지급
+            user.gold += totalGold;
+            user.exp += totalExp;
+            
+            // 레벨업 체크
+            while (user.exp >= user.level * 100) {
+                user.exp -= user.level * 100;
+                user.level += 1;
+                user.statPoints += 5;
+                
+                // 레벨업 퀘스트 체크
+                checkQuestProgress(user, 'achievement', 'level_up', user.level);
+            }
+            
+            await user.save();
+            
+            const rewardEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('🎁 퀘스트 보상 획득!')
+                .setDescription(`다음 퀘스트의 보상을 받았습니다:\n\n${claimedQuests.map(q => `✅ ${q}`).join('\n')}`)
+                .addFields(
+                    { name: '💰 골드', value: `+${totalGold.toLocaleString()}G`, inline: true },
+                    { name: '⭐ 경험치', value: `+${totalExp}EXP`, inline: true }
+                );
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('quest')
+                        .setLabel('📜 퀘스트 목록')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            await interaction.editReply({
+                embeds: [rewardEmbed],
+                components: [backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'view_achievements') {
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
+            // 업적 보기
+            const achievementEmbed = new EmbedBuilder()
+                .setColor('#ffd700')
+                .setTitle('🏆 업적')
+                .setDescription('달성한 업적과 진행중인 업적을 확인하세요!');
+            
+            let achievementText = '';
+            Object.values(QUEST_SYSTEM.achievements).forEach(achievement => {
+                const progress = user.quests.achievements[achievement.id] || { progress: 0, completed: false, claimedReward: false };
+                const icon = progress.completed ? '🏆' : '⬜';
+                const targetProgress = achievement.requirements.level || achievement.requirements.amount || 1;
+                achievementText += `${icon} **${achievement.name}**\n${achievement.description}\n`;
+                
+                if (!progress.completed) {
+                    achievementText += `진행도: ${progress.progress}/${targetProgress}\n`;
+                }
+                
+                achievementText += `보상: ${achievement.rewards.gold.toLocaleString()}G`;
+                if (achievement.rewards.title) {
+                    achievementText += `, 칭호: "${achievement.rewards.title}"`;
+                }
+                achievementText += '\n\n';
+            });
+            
+            achievementEmbed.addFields({ name: '📋 업적 목록', value: achievementText || '없음', inline: false });
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('quest')
+                        .setLabel('📜 퀘스트 목록')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({
+                embeds: [achievementEmbed],
+                components: [backButton]
+            });
+        }
+        
+        else if (interaction.customId === 'quest') {
+            // Defer update to prevent timeout
+            await interaction.deferUpdate();
+            
+            // 퀘스트 목록으로 돌아가기
+            if (!user.quests) {
+                user.quests = {
+                    daily: {},
+                    weekly: {},
+                    achievements: {},
+                    lastDailyReset: new Date().toDateString(),
+                    lastWeeklyReset: new Date()
+                };
+            }
+            
+            const questEmbed = new EmbedBuilder()
+                .setColor('#ff00ff')
+                .setTitle('📜 의뢰 시스템')
+                .setDescription('다양한 퀘스트를 완료하고 보상을 받으세요!');
+            
+            // 일일 퀘스트 표시
+            let dailyQuestText = '';
+            Object.values(QUEST_SYSTEM.dailyQuests).forEach(quest => {
+                const progress = user.quests.daily[quest.id] || { progress: 0, completed: false, claimedReward: false };
+                const targetProgress = quest.requirements.count || quest.requirements.minutes || 1;
+                const icon = progress.completed ? (progress.claimedReward ? '✅' : '🟡') : '⬜';
+                dailyQuestText += `${icon} **${quest.name}**\n${quest.description}\n진행도: ${progress.progress}/${targetProgress}\n보상: ${quest.rewards.gold.toLocaleString()}G, ${quest.rewards.exp}EXP\n\n`;
+            });
+            
+            // 주간 퀘스트 표시
+            let weeklyQuestText = '';
+            Object.values(QUEST_SYSTEM.weeklyQuests).forEach(quest => {
+                const progress = user.quests.weekly[quest.id] || { progress: 0, completed: false, claimedReward: false };
+                const targetProgress = quest.requirements.count || 1;
+                const icon = progress.completed ? (progress.claimedReward ? '✅' : '🟡') : '⬜';
+                weeklyQuestText += `${icon} **${quest.name}**\n${quest.description}\n진행도: ${progress.progress}/${targetProgress}\n보상: ${quest.rewards.gold.toLocaleString()}G\n\n`;
+            });
+            
+            questEmbed.addFields(
+                { name: '📅 일일 퀘스트', value: dailyQuestText || '없음', inline: false },
+                { name: '📆 주간 퀘스트', value: weeklyQuestText || '없음', inline: false }
+            );
+            
+            const questButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('claim_quest_rewards')
+                        .setLabel('🎁 보상 받기')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(!Object.values(user.quests.daily).some(q => q.completed && !q.claimedReward) &&
+                                   !Object.values(user.quests.weekly).some(q => q.completed && !q.claimedReward)),
+                    new ButtonBuilder()
+                        .setCustomId('view_achievements')
+                        .setLabel('🏆 업적 보기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await user.save();
+            await interaction.editReply({ embeds: [questEmbed], components: [questButtons] });
         }
         
         else if (interaction.customId === 'prev_page' || interaction.customId === 'next_page') {
