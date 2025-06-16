@@ -8603,7 +8603,7 @@ client.on('interactionCreate', async (interaction) => {
                 if (!categoryInfo) {
                     return await interaction.reply({ 
                         content: '❌ 잘못된 카테고리입니다!', 
-                        ephemeral: true 
+                        flags: 64 
                     });
                 }
                 
@@ -8725,7 +8725,7 @@ client.on('interactionCreate', async (interaction) => {
             if (selectedValue === 'admin_panel' && !isAdmin(user.id)) {
                 return await interaction.reply({ 
                     content: '❌ 관리자만 접근할 수 있습니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             
@@ -9871,7 +9871,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '⚙️ 메뉴 설정',
                         components: [new ActionRowBuilder().addComponents(createMenuCustomizer())],
-                        ephemeral: true
+                        flags: 64
                     });
                     return;
                     
@@ -9920,14 +9920,14 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '🛠️ 관리자 패널에 접근합니다.',
                         components: [new ActionRowBuilder().addComponents(createAdminPanel())],
-                        ephemeral: true
+                        flags: 64
                     });
                     return;
                     
                 default:
                     await interaction.reply({ 
                         content: `❌ 알 수 없는 메뉴: ${selectedValue}`, 
-                        ephemeral: true 
+                        flags: 64 
                     });
             }
         }
@@ -10033,7 +10033,7 @@ client.on('interactionCreate', async (interaction) => {
                         
                         await interaction.reply({
                             content: `✅ **${item.name}**을(를) 해제했습니다!`,
-                            ephemeral: true
+                            flags: 64
                         });
                     }
                 }
@@ -10062,7 +10062,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                     await interaction.reply({
                         content: `✅ **${newItem.name}**을(를) 장착했습니다!`,
-                        ephemeral: true
+                        flags: 64
                     });
                 }
             }
@@ -10174,7 +10174,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         embeds: [favoriteEmbed],
                         components: [new ActionRowBuilder().addComponents(favoriteMenu)],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10191,7 +10191,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '🎯 퀵슬롯 설정 기능은 곧 추가됩니다!',
                         embeds: [quickEmbed],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10225,7 +10225,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         embeds: [themeEmbed],
                         components: [themeButtons],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10255,7 +10255,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         embeds: [layoutEmbed],
                         components: [layoutButtons],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10274,7 +10274,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                     await interaction.reply({
                         embeds: [notifEmbed],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10300,7 +10300,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         embeds: [confirmEmbed],
                         components: [confirmButtons],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10334,7 +10334,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '📋 메뉴 순서 변경 - 위로 올릴 메뉴를 선택하세요',
                         components: [new ActionRowBuilder().addComponents(reorderMenu)],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10363,7 +10363,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '⭐ 즐겨찾기 메뉴 설정',
                         components: [new ActionRowBuilder().addComponents(favoriteMenuOld)],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10392,14 +10392,14 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '👁️ 메뉴 숨기기/보이기 설정',
                         components: [new ActionRowBuilder().addComponents(toggleMenu)],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
                 case 'menu_style':
                     await interaction.reply({
                         content: '🎨 메뉴 스타일 변경 기능은 준비 중입니다.',
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10417,7 +10417,7 @@ client.on('interactionCreate', async (interaction) => {
                     );
                     await interaction.reply({
                         content: '🔄 메뉴 설정이 초기화되었습니다!',
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
             }
@@ -10432,7 +10432,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '👥 사용자 관리',
                         components: [new ActionRowBuilder().addComponents(createUserManagementMenu())],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10440,7 +10440,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '💰 경제 관리',
                         components: [new ActionRowBuilder().addComponents(createEconomyManagementMenu())],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10448,7 +10448,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({
                         content: '🔧 시스템 제어',
                         components: [new ActionRowBuilder().addComponents(createSystemControlMenu())],
-                        ephemeral: true
+                        flags: 64
                     });
                     break;
                     
@@ -10474,7 +10474,7 @@ client.on('interactionCreate', async (interaction) => {
                 default:
                     await interaction.reply({
                         content: `🔧 ${selectedValue} 기능은 준비 중입니다.`,
-                        ephemeral: true
+                        flags: 64
                     });
             }
         }
@@ -10503,7 +10503,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await interaction.reply({
                 content: `✅ **${MENU_DEFINITIONS[selectedMenu].label}** 메뉴가 맨 위로 이동되었습니다!`,
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -10534,7 +10534,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await interaction.reply({
                 content: message,
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -10565,7 +10565,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await interaction.reply({
                 content: message,
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -10693,7 +10693,7 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({
                 embeds: [confirmEmbed],
                 components: [confirmButtons],
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -10824,7 +10824,7 @@ client.on('interactionCreate', async (interaction) => {
             if (currentFatigue >= EXERCISE_SYSTEM.fatigue.exerciseLimit) {
                 return await interaction.reply({ 
                     content: `❌ 피로도가 너무 높습니다! (${currentFatigue}/${EXERCISE_SYSTEM.fatigue.maxFatigue})\n잠시 휴식을 취하세요.`,
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -11169,7 +11169,9 @@ client.on('interactionCreate', async (interaction) => {
         if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ 
                 content: '❌ 오류가 발생했습니다. 다시 시도해주세요.', 
-                ephemeral: true 
+                flags: 64 
+            }).catch(() => {
+                // 이미 응답된 경우 무시
             });
         }
     }
@@ -11187,7 +11189,7 @@ client.on('interactionCreate', async (interaction) => {
         if (!isBetaChannel(interaction.channelId)) {
             await interaction.reply({ 
                 content: '🚧 현재 클로즈베타 테스트 중입니다.\n지정된 베타 채널에서만 사용 가능합니다.', 
-                ephemeral: true 
+                flags: 64 
             });
             return;
         }
@@ -11196,7 +11198,7 @@ client.on('interactionCreate', async (interaction) => {
         if (!isBetaTester(interaction.user.id)) {
             await interaction.reply({ 
                 content: '🔒 현재 클로즈베타 테스트 중입니다.\n베타 테스터로 등록된 사용자만 이용할 수 있습니다.', 
-                ephemeral: true 
+                flags: 64 
             });
             return;
         }
@@ -20231,7 +20233,7 @@ client.on('interactionCreate', async (interaction) => {
             if (session.currentTurn !== 'player') {
                 return await interaction.followUp({ 
                     content: '❌ 봇이 선택하고 있습니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             
@@ -20241,7 +20243,7 @@ client.on('interactionCreate', async (interaction) => {
             if (selectedMushroom.revealed) {
                 return await interaction.followUp({ 
                     content: '❌ 이미 선택된 버섯입니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             
@@ -20477,38 +20479,6 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [cashoutEmbed], 
                 components: [] 
             });
-        }
-        
-        // 운동 선택 처리
-        else if (interaction.customId === 'select_exercise_type') {
-            const selectedValue = interaction.values[0];
-            const exerciseId = selectedValue.replace('start_exercise_', '');
-            const exercise = EXERCISE_SYSTEM.exercises[exerciseId];
-            
-            if (!exercise) {
-                await interaction.reply({ content: '운동을 찾을 수 없습니다!', flags: 64 });
-                return;
-            }
-            
-            // 운동 시간 선택 모달
-            const modal = new ModalBuilder()
-                .setCustomId(`exercise_duration_${exerciseId}`)
-                .setTitle(`${exercise.name} 시간 설정`);
-            
-            const maxMinutes = Math.floor(exercise.maxDuration / 60000);
-            const durationInput = new TextInputBuilder()
-                .setCustomId('duration')
-                .setLabel(`운동 시간 (분) - 최대 ${maxMinutes}분`)
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder(`1 ~ ${maxMinutes}`)
-                .setRequired(true)
-                .setMaxLength(3)
-                .setMinLength(1);
-            
-            const firstRow = new ActionRowBuilder().addComponents(durationInput);
-            modal.addComponents(firstRow);
-            
-            await interaction.showModal(modal);
         }
         
         // 유물 판매 선택
