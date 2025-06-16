@@ -38,46 +38,246 @@ let lastFortuneUpdate = 0;
 
 // 독버섯 게임 세션 관리
 const mushroomGameSessions = new Map();
-const mushroomMatchmakingQueue = new Map(); // userId -> {timestamp, difficulty}
 
-// 독버섯 게임 생성 함수
-function generateMushroomGame() {
+// 독버섯 게임 생성 함수 (라운드별)
+function generateMushroomGameRound(round) {
+    const totalMushrooms = 6;
+    const poisonCount = MUSHROOM_GAME.difficultyByRound[round].poisonCount;
     const mushrooms = [];
-    const poisonCount = Math.floor(Math.random() * 3) + 2; // 2-4개의 독버섯
-    const goldenCount = 1; // 1개의 황금버섯
-    const normalCount = 9 - poisonCount - goldenCount; // 나머지는 일반버섯
     
-    // 버섯 타입 배열 생성
-    for (let i = 0; i < poisonCount; i++) mushrooms.push('poison');
-    for (let i = 0; i < goldenCount; i++) mushrooms.push('golden');
-    for (let i = 0; i < normalCount; i++) mushrooms.push('normal');
+    // 독버섯 위치 랜덤 생성
+    const poisonPositions = new Set();
+    while (poisonPositions.size < poisonCount) {
+        poisonPositions.add(Math.floor(Math.random() * totalMushrooms));
+    }
     
-    // 배열 섞기
-    for (let i = mushrooms.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [mushrooms[i], mushrooms[j]] = [mushrooms[j], mushrooms[i]];
+    // 버섯 배열 생성
+    for (let i = 0; i < totalMushrooms; i++) {
+        mushrooms.push({
+            position: i,
+            isPoisonous: poisonPositions.has(i),
+            revealed: false,
+            selectedBy: null
+        });
     }
     
     return mushrooms;
 }
 
 // 독버섯 게임 버튼 생성 함수
-function createMushroomButtons(gameId, mushrooms) {
+function createMushroomGameButtons(gameId, mushrooms, currentPlayer) {
     const rows = [];
-    for (let i = 0; i < 3; i++) {
-        const row = new ActionRowBuilder();
-        for (let j = 0; j < 3; j++) {
-            const index = i * 3 + j;
-            row.addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`mushroom_pick_${gameId}_${index}`)
-                    .setLabel('🍄')
-                    .setStyle(ButtonStyle.Secondary)
-            );
+    const row1 = new ActionRowBuilder();
+    const row2 = new ActionRowBuilder();
+    
+    // 랜덤 버섯 타입 선택
+    const mushroomTypes = Object.keys(MUSHROOM_GAME.mushroomTypes);
+    const selectedType = mushroomTypes[Math.floor(Math.random() * mushroomTypes.length)];
+    const mushroomInfo = MUSHROOM_GAME.mushroomTypes[selectedType];
+    
+    // 6개 버섯을 2줄로 배치
+    mushrooms.forEach((mushroom, index) => {
+        const button = new ButtonBuilder()
+            .setCustomId(`mushroom_select_${gameId}_${index}`)
+            .setStyle(mushroom.revealed ? 
+                (mushroom.isPoisonous ? ButtonStyle.Danger : ButtonStyle.Success) : 
+                ButtonStyle.Primary)
+            .setDisabled(mushroom.revealed || currentPlayer !== 'player');
+        
+        // 버튼 라벨 설정
+        if (mushroom.revealed) {
+            button.setLabel(mushroom.isPoisonous ? '☠️' : '✨');
+        } else {
+            button.setLabel(`${mushroomInfo.emoji} ${index + 1}`);
         }
-        rows.push(row);
-    }
+        
+        if (index < 3) {
+            row1.addComponents(button);
+        } else {
+            row2.addComponents(button);
+        }
+    });
+    
+    rows.push(row1, row2);
     return rows;
+}
+
+// 봇 선택 로직
+function getBotChoice(bot, mushrooms, round) {
+    const availablePositions = mushrooms
+        .map((m, i) => ({ index: i, mushroom: m }))
+        .filter(m => !m.mushroom.revealed)
+        .map(m => m.index);
+    
+    if (availablePositions.length === 0) return -1;
+    
+    switch (bot.strategy) {
+        case 'sequential':
+            // 순차적으로 선택
+            for (let i = 0; i < mushrooms.length; i++) {
+                if (!mushrooms[i].revealed) return i;
+            }
+            break;
+            
+        case 'random':
+            // 완전 랜덤
+            return availablePositions[Math.floor(Math.random() * availablePositions.length)];
+            
+        case 'safe_guess':
+            // 통계적으로 안전한 위치 선택 (중간 위치 선호)
+            const middlePositions = availablePositions.filter(p => p >= 2 && p <= 3);
+            if (middlePositions.length > 0) {
+                return middlePositions[Math.floor(Math.random() * middlePositions.length)];
+            }
+            return availablePositions[Math.floor(Math.random() * availablePositions.length)];
+            
+        case 'dangerous_guess':
+            // 모험적인 선택 (가장자리 선호)
+            const edgePositions = availablePositions.filter(p => p === 0 || p === 5);
+            if (edgePositions.length > 0) {
+                return edgePositions[Math.floor(Math.random() * edgePositions.length)];
+            }
+            return availablePositions[Math.floor(Math.random() * availablePositions.length)];
+            
+        default:
+            return availablePositions[0];
+    }
+}
+
+// 다음 라운드 처리 함수
+async function processNextRound(interaction, session, gameId) {
+    session.round++;
+    const roundReward = MUSHROOM_GAME.gameSettings.baseReward * (session.round - 1);
+    session.earnings += roundReward;
+    
+    // 5라운드 완료 체크
+    if (session.round > MUSHROOM_GAME.gameSettings.maxRounds) {
+        // 게임 완료
+        const perfectReward = session.earnings + MUSHROOM_GAME.gameSettings.perfectBonus;
+        const user = await getUser(session.userId);
+        user.gold += perfectReward;
+        await user.save();
+        
+        mushroomGameSessions.delete(gameId);
+        
+        const completeEmbed = new EmbedBuilder()
+            .setColor('#ffd700')
+            .setTitle('🏆 게임 완료!')
+            .setDescription('모든 라운드를 통과했습니다! 완벽한 승리!')
+            .addFields(
+                { name: '💰 총 보상', value: `${session.earnings}G`, inline: true },
+                { name: '🎁 완벽 보너스', value: `${MUSHROOM_GAME.gameSettings.perfectBonus}G`, inline: true },
+                { name: '💎 총 획득', value: `${perfectReward}G`, inline: true }
+            )
+            .setImage('attachment://kim_hunting_win.gif');
+        
+        const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
+        
+        await interaction.followUp({ 
+            embeds: [completeEmbed],
+            files: [winGif]
+        });
+        return;
+    }
+    
+    // 다음 라운드 준비
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 새로운 라운드 버섯 생성
+    const difficulty = MUSHROOM_GAME.difficultyByRound[session.round];
+    session.mushrooms = generateMushroomGameRound(session.round);
+    session.currentTurn = 'player';
+    
+    const nextRoundEmbed = new EmbedBuilder()
+        .setColor('#f39c12')
+        .setTitle(`🍄 라운드 ${session.round}`)
+        .setDescription(`${difficulty.message}\n\n라운드 보상이 ${roundReward}G 증가했습니다!`)
+        .addFields(
+            { name: '💰 누적 보상', value: `${session.earnings}G`, inline: true },
+            { name: '🏆 현재 배율', value: `x${session.round}`, inline: true },
+            { name: '🎯 남은 라운드', value: `${MUSHROOM_GAME.gameSettings.maxRounds - session.round + 1}`, inline: true }
+        )
+        .setImage('attachment://kim_hunting_main.png');
+    
+    const backgroundImage = new AttachmentBuilder(`./img/${MUSHROOM_GAME.backgrounds.mushroomSelect}`);
+    const mushroomButtons = createMushroomGameButtons(gameId, session.mushrooms, 'player');
+    
+    await interaction.followUp({ 
+        embeds: [nextRoundEmbed], 
+        components: mushroomButtons,
+        files: [backgroundImage]
+    });
+}
+
+// 다음 라운드 처리 함수
+async function processNextRound(interaction, session, gameId) {
+    const user = await getUser(session.userId);
+    session.round++;
+    
+    // 라운드 보상 추가
+    const roundReward = MUSHROOM_GAME.gameSettings.baseReward + (MUSHROOM_GAME.gameSettings.survivalBonus * (session.round - 1));
+    session.earnings += roundReward;
+    
+    if (session.round > MUSHROOM_GAME.gameSettings.maxRounds) {
+        // 게임 완료
+        const totalReward = session.earnings + MUSHROOM_GAME.gameSettings.perfectBonus;
+        user.gold += totalReward;
+        await user.save();
+        
+        mushroomGameSessions.delete(gameId);
+        
+        const completeEmbed = new EmbedBuilder()
+            .setColor('#ffd700')
+            .setTitle('🏆 완벽한 승리!')
+            .setDescription(MUSHROOM_GAME.messages.perfectVictory)
+            .addFields(
+                { name: '💰 라운드 보상', value: `${session.earnings}G`, inline: true },
+                { name: '🎁 완벽 보너스', value: `${MUSHROOM_GAME.gameSettings.perfectBonus}G`, inline: true },
+                { name: '💎 총 획득', value: `${totalReward}G`, inline: true }
+            )
+            .setImage('attachment://kim_hunting_win.gif');
+        
+        const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
+        
+        await interaction.followUp({ 
+            embeds: [completeEmbed], 
+            files: [winGif]
+        });
+    } else {
+        // 다음 라운드 시작
+        session.mushrooms = generateMushroomGameRound(session.round);
+        session.currentTurn = 'player';
+        session.mushroomType = Object.keys(MUSHROOM_GAME.mushroomTypes)[Math.floor(Math.random() * Object.keys(MUSHROOM_GAME.mushroomTypes).length)];
+        
+        const mushroomInfo = MUSHROOM_GAME.mushroomTypes[session.mushroomType];
+        const nextRoundEmbed = new EmbedBuilder()
+            .setColor('#2ecc71')
+            .setTitle(`🍄 ${MUSHROOM_GAME.difficultyByRound[session.round].message}`)
+            .setDescription(`라운드 ${session.round - 1} 클리어!\n\n${mushroomInfo.name}이 나타났습니다!`)
+            .addFields(
+                { name: '💰 라운드 보상', value: `+${roundReward}G`, inline: true },
+                { name: '💎 누적 보상', value: `${session.earnings}G`, inline: true },
+                { name: '🎯 현재 라운드', value: `${session.round}/5`, inline: true }
+            )
+            .setImage('attachment://kim_hunting2.gif');
+        
+        const nextGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.thinking}`);
+        
+        await interaction.followUp({ 
+            embeds: [nextRoundEmbed], 
+            files: [nextGif]
+        });
+        
+        // 3초 후 버튼 표시
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const buttons = createMushroomGameButtons(gameId, session.mushrooms, 'player');
+        
+        await interaction.followUp({ 
+            content: '🍄 버섯을 선택하세요!',
+            components: buttons 
+        });
+    }
 }
 
 // 등급별 이모지 반환 함수
@@ -19923,319 +20123,288 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.deferReply({ flags: 64 });
             
             const user = await getUser(interaction.user.id);
-            if (user.gold < 100) {
-                return await interaction.editReply({ content: '💸 골드가 부족합니다! 독버섯 게임은 100골드가 필요합니다.' });
-            }
             
-            // 게임 시작
-            const gameId = Date.now().toString();
-            const mushrooms = generateMushroomGame();
+            // 봇 선택 메뉴 표시
+            const botSelectEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🍄 김헌터의 신비한 숲 탐험')
+                .setDescription('어떤 봇과 대결하시겠습니까?')
+                .setImage('attachment://kim_hunting_main.png');
             
-            mushroomGameSessions.set(gameId, {
-                userId: interaction.user.id,
-                mushrooms: mushrooms,
-                round: 1,
-                totalEarnings: 0,
-                betAmount: 100,
-                startTime: Date.now()
-            });
+            const botOptions = Object.entries(MUSHROOM_GAME.botCharacters).map(([id, bot]) => ({
+                label: bot.name,
+                description: bot.description,
+                value: `start_mushroom_${id}`,
+                emoji: bot.emoji
+            }));
             
-            user.gold -= 100;
-            await user.save();
+            const botSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('select_mushroom_bot')
+                .setPlaceholder('대결할 봇을 선택하세요')
+                .addOptions(botOptions);
             
-            const gameEmbed = new EmbedBuilder()
-                .setColor('#32cd32')
-                .setTitle('🍄 독버섯 찾기 게임')
-                .setDescription('황금버섯을 찾아 보상을 획득하세요!\n독버섯을 고르면 게임이 끝납니다.')
-                .addFields(
-                    { name: '🎯 라운드', value: '1', inline: true },
-                    { name: '💰 누적 상금', value: '0G', inline: true },
-                    { name: '🏆 배율', value: 'x1', inline: true }
-                );
+            const selectRow = new ActionRowBuilder().addComponents(botSelectMenu);
             
-            const mushroomButtons = createMushroomButtons(gameId, mushrooms);
+            const mainGif = new AttachmentBuilder(`./img/kim_hunting_main.png`);
             
             await interaction.editReply({ 
-                embeds: [gameEmbed], 
-                components: mushroomButtons 
+                embeds: [botSelectEmbed], 
+                components: [selectRow],
+                files: [mainGif]
             });
         }
         
         else if (interaction.customId === 'mushroom_pvp') {
             await interaction.deferReply({ flags: 64 });
             
-            // PVP 매치메이킹
-            const userId = interaction.user.id;
-            const user = await getUser(userId);
+            // PVP는 나중에 구현
+            await interaction.editReply({ 
+                content: '🚧 PVP 모드는 준비 중입니다! 솔로 모드를 즐겨주세요.' 
+            });
+        }
+        
+        // 독버섯 봇 선택 처리
+        else if (interaction.customId === 'select_mushroom_bot') {
+            await interaction.deferUpdate();
             
-            if (user.gold < 500) {
-                return await interaction.editReply({ content: '💸 PVP 독버섯 게임은 500골드가 필요합니다!' });
-            }
+            const selectedValue = interaction.values[0];
+            const botId = selectedValue.replace('start_mushroom_', '');
+            const bot = MUSHROOM_GAME.botCharacters[botId];
+            const user = await getUser(interaction.user.id);
             
-            // 매치메이킹 큐에 추가
-            mushroomMatchmakingQueue.set(userId, {
-                timestamp: Date.now(),
-                difficulty: 'normal',
+            // 게임 시작
+            const gameId = Date.now().toString();
+            const mushrooms = generateMushroomGameRound(1);
+            
+            mushroomGameSessions.set(gameId, {
+                type: 'solo',
+                userId: interaction.user.id,
                 user: user,
-                channel: interaction.channel
+                bot: bot,
+                botId: botId,
+                round: 1,
+                playerAlive: true,
+                botAlive: true,
+                mushrooms: mushrooms,
+                currentTurn: 'player',
+                mushroomType: Object.keys(MUSHROOM_GAME.mushroomTypes)[Math.floor(Math.random() * Object.keys(MUSHROOM_GAME.mushroomTypes).length)],
+                earnings: 0,
+                startTime: Date.now()
             });
             
-            // 매치 찾기
-            let opponent = null;
-            for (const [opponentId, opponentData] of mushroomMatchmakingQueue) {
-                if (opponentId !== userId && Date.now() - opponentData.timestamp < 60000) {
-                    opponent = opponentData;
-                    break;
-                }
-            }
+            const mushroomInfo = MUSHROOM_GAME.mushroomTypes[mushroomGameSessions.get(gameId).mushroomType];
+            const gameEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle(`🍄 ${MUSHROOM_GAME.difficultyByRound[1].message}`)
+                .setDescription(`${MUSHROOM_GAME.messages.gameStart}\n\n${mushroomInfo.name}이 나타났습니다!\n당신의 차례입니다.`)
+                .addFields(
+                    { name: '👤 플레이어', value: user.nickname, inline: true },
+                    { name: '🤖 상대', value: `${bot.emoji} ${bot.name}`, inline: true },
+                    { name: '🎯 라운드', value: '1/5', inline: true }
+                )
+                .setImage('attachment://kim_hunting.gif');
             
-            if (opponent) {
-                // 매치 성공
-                mushroomMatchmakingQueue.delete(userId);
-                mushroomMatchmakingQueue.delete(opponent.user.discordId);
-                
-                await interaction.editReply({ 
-                    content: `⚔️ 매치 성공! ${user.nickname} vs ${opponent.user.nickname}\n게임이 곧 시작됩니다...` 
-                });
-                
-                // PVP 게임 시작
-                const pvpGameId = `pvp_${Date.now()}`;
-                const pvpMushrooms = generateMushroomGame();
-                
-                // 양 플레이어 골드 차감
-                user.gold -= 500;
-                opponent.user.gold -= 500;
-                await user.save();
-                await opponent.user.save();
-                
-                // PVP 세션 생성
-                mushroomGameSessions.set(pvpGameId, {
-                    type: 'pvp',
-                    player1: { id: userId, user: user, score: 0, alive: true },
-                    player2: { id: opponent.user.discordId, user: opponent.user, score: 0, alive: true },
-                    mushrooms: pvpMushrooms,
-                    round: 1,
-                    currentTurn: userId,
-                    pot: 1000, // 총 상금
-                    startTime: Date.now()
-                });
-                
-                const pvpEmbed = new EmbedBuilder()
-                    .setColor('#ff0000')
-                    .setTitle('⚔️ PVP 독버섯 대결!')
-                    .setDescription(`${user.nickname} VS ${opponent.user.nickname}\n총 상금: 1000G`)
-                    .addFields(
-                        { name: '🎯 라운드', value: '1', inline: true },
-                        { name: '💰 상금', value: '1000G', inline: true },
-                        { name: '🎮 현재 차례', value: user.nickname, inline: true }
-                    );
-                
-                const pvpButtons = createMushroomButtons(pvpGameId, pvpMushrooms);
-                
-                await interaction.editReply({ 
-                    embeds: [pvpEmbed], 
-                    components: pvpButtons 
-                });
-                
-                // 상대방에게도 알림
-                if (opponent.channel) {
-                    await opponent.channel.send({
-                        content: `⚔️ ${opponent.user.nickname}님! ${user.nickname}님과 PVP 독버섯 대결이 시작되었습니다!`,
-                        embeds: [pvpEmbed],
-                        components: pvpButtons
-                    });
-                }
-            } else {
-                await interaction.editReply({ 
-                    content: '🔍 상대를 찾는 중입니다... (60초 대기)\n다른 플레이어를 기다리고 있습니다.' 
-                });
-            }
+            const buttons = createMushroomGameButtons(gameId, mushrooms, 'player');
+            const huntingGif = new AttachmentBuilder(`./img/kim_hunting.gif`);
+            
+            await interaction.editReply({ 
+                embeds: [gameEmbed], 
+                components: buttons,
+                files: [huntingGif]
+            });
         }
         
         // 독버섯 선택 처리
-        else if (interaction.customId.startsWith('mushroom_pick_')) {
+        else if (interaction.customId.startsWith('mushroom_select_')) {
             await interaction.deferUpdate();
             
             const [, , gameId, index] = interaction.customId.split('_');
             const session = mushroomGameSessions.get(gameId);
             
-            if (!session) {
+            if (!session || session.userId !== interaction.user.id) {
                 return await interaction.editReply({ 
                     content: '❌ 유효하지 않은 게임입니다!', 
                     components: [] 
                 });
             }
             
-            // PVP 게임인 경우
-            if (session.type === 'pvp') {
-                // 현재 차례인지 확인
-                if (session.currentTurn !== interaction.user.id) {
-                    return await interaction.followUp({ 
-                        content: '❌ 당신의 차례가 아닙니다!', 
-                        ephemeral: true 
-                    });
-                }
-            } else {
-                // 솔로 게임인 경우 본인 게임인지 확인
-                if (session.userId !== interaction.user.id) {
-                    return await interaction.editReply({ 
-                        content: '❌ 다른 사람의 게임입니다!', 
-                        components: [] 
-                    });
-                }
+            if (session.currentTurn !== 'player') {
+                return await interaction.followUp({ 
+                    content: '❌ 봇이 선택하고 있습니다!', 
+                    ephemeral: true 
+                });
             }
             
-            const selectedMushroom = session.mushrooms[parseInt(index)];
+            const mushroomIndex = parseInt(index);
+            const selectedMushroom = session.mushrooms[mushroomIndex];
+            
+            if (selectedMushroom.revealed) {
+                return await interaction.followUp({ 
+                    content: '❌ 이미 선택된 버섯입니다!', 
+                    ephemeral: true 
+                });
+            }
+            
+            // 버섯 공개
+            selectedMushroom.revealed = true;
+            selectedMushroom.selectedBy = 'player';
+            
+            const mushroomInfo = MUSHROOM_GAME.mushroomTypes[session.mushroomType];
             const user = await getUser(interaction.user.id);
             
-            if (selectedMushroom === 'poison') {
-                // 독버섯 선택 - 게임 종료
-                if (session.type === 'pvp') {
-                    // PVP: 선택한 플레이어가 패배
-                    const loser = interaction.user.id === session.player1.id ? session.player1 : session.player2;
-                    const winner = interaction.user.id === session.player1.id ? session.player2 : session.player1;
-                    
-                    winner.user.gold += session.pot;
-                    await winner.user.save();
+            // 플레이어가 독버섯을 선택한 경우
+            if (selectedMushroom.isPoisonous) {
+                // 게임 종료 처리
+                mushroomGameSessions.delete(gameId);
+                
+                const loseEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('☠️ 독버섯!')
+                    .setDescription(`${mushroomInfo.poisonDesc}\n\n게임이 종료되었습니다!`)
+                    .addFields(
+                        { name: '🏆 최종 라운드', value: `${session.round}/5`, inline: true },
+                        { name: '💰 획득 실패', value: `${session.earnings}G`, inline: true },
+                        { name: '🤖 상대 봇', value: `${session.bot.emoji} ${session.bot.name}`, inline: true }
+                    )
+                    .setImage('attachment://kim_hunting_lose.gif');
+                
+                const loseGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.poisonDeath}`);
+                
+                await interaction.editReply({ 
+                    embeds: [loseEmbed], 
+                    components: [],
+                    files: [loseGif]
+                });
+                return;
+            }
+            
+            // 안전한 버섯을 선택한 경우
+            const safeEmbed = new EmbedBuilder()
+                .setColor('#32cd32')
+                .setTitle('✨ 안전한 버섯!')
+                .setDescription(`${mushroomInfo.safeDesc}\n\n이제 ${session.bot.emoji} ${session.bot.name}의 차례입니다...`)
+                .setImage('attachment://kim_hunting3.gif');
+            
+            const safeGif = new AttachmentBuilder(`./img/${mushroomInfo.safeGif}`);
+            
+            await interaction.editReply({ 
+                embeds: [safeEmbed], 
+                components: [],
+                files: [safeGif]
+            });
+            
+            // 봇이 생각하는 시간
+            await new Promise(resolve => setTimeout(resolve, MUSHROOM_GAME.gameSettings.botThinkingTime));
+            
+            // 봇 턴 처리
+            session.currentTurn = 'bot';
+            const botChoice = getBotChoice(session.bot, session.mushrooms, session.round);
+            
+            if (botChoice === -1) {
+                // 모든 버섯이 공개됨 - 다음 라운드로
+                await processNextRound(interaction, session, gameId);
+                return;
+            }
+            
+            const botMushroom = session.mushrooms[botChoice];
+            botMushroom.revealed = true;
+            botMushroom.selectedBy = 'bot';
+            
+            // 봇이 독버섯을 선택한 경우
+            if (botMushroom.isPoisonous) {
+                // 플레이어 승리 - 라운드 보상 계산
+                const roundReward = MUSHROOM_GAME.gameSettings.baseReward * session.round;
+                session.earnings += roundReward;
+                
+                // 5라운드 완료 체크
+                if (session.round >= MUSHROOM_GAME.gameSettings.maxRounds) {
+                    // 완벽한 승리
+                    const perfectReward = session.earnings + MUSHROOM_GAME.gameSettings.perfectBonus;
+                    user.gold += perfectReward;
+                    await user.save();
                     
                     mushroomGameSessions.delete(gameId);
                     
-                    const pvpLoseEmbed = new EmbedBuilder()
-                        .setColor('#ff0000')
-                        .setTitle('☠️ PVP 종료 - 독버섯!')
-                        .setDescription(`${loser.user.nickname}님이 독버섯을 선택했습니다!`)
-                        .addFields(
-                            { name: '🏆 승자', value: winner.user.nickname, inline: true },
-                            { name: '💰 상금', value: `${session.pot}G`, inline: true },
-                            { name: '🎯 최종 라운드', value: `${session.round}`, inline: true }
-                        );
-                    
-                    await interaction.editReply({ 
-                        embeds: [pvpLoseEmbed], 
-                        components: [] 
-                    });
-                } else {
-                    // 솔로 게임
-                    mushroomGameSessions.delete(gameId);
-                    
-                    const loseEmbed = new EmbedBuilder()
-                        .setColor('#ff0000')
-                        .setTitle('☠️ 독버섯!')
-                        .setDescription('독버섯을 선택했습니다! 게임이 종료되었습니다.')
-                        .addFields(
-                            { name: '💸 손실', value: `${session.betAmount}G`, inline: true },
-                            { name: '🏆 최종 라운드', value: `${session.round}`, inline: true }
-                        );
-                    
-                    await interaction.editReply({ 
-                        embeds: [loseEmbed], 
-                        components: [] 
-                    });
-                }
-            } else if (selectedMushroom === 'golden') {
-                // 황금버섯 선택
-                if (session.type === 'pvp') {
-                    // PVP: 황금버섯을 찾은 플레이어가 승리
-                    const winner = interaction.user.id === session.player1.id ? session.player1 : session.player2;
-                    const loser = interaction.user.id === session.player1.id ? session.player2 : session.player1;
-                    
-                    winner.user.gold += session.pot;
-                    await winner.user.save();
-                    
-                    mushroomGameSessions.delete(gameId);
-                    
-                    const pvpWinEmbed = new EmbedBuilder()
+                    const perfectWinEmbed = new EmbedBuilder()
                         .setColor('#ffd700')
-                        .setTitle('✨ PVP 종료 - 황금버섯!')
-                        .setDescription(`${winner.user.nickname}님이 황금버섯을 찾았습니다!`)
+                        .setTitle('🏆 완벽한 승리!')
+                        .setDescription(`${session.bot.emoji} ${session.bot.name}이(가) 독버섯을 선택했습니다!\n\n모든 라운드를 통과하여 완벽한 승리를 달성했습니다!`)
                         .addFields(
-                            { name: '🏆 승자', value: winner.user.nickname, inline: true },
-                            { name: '💰 상금', value: `${session.pot}G`, inline: true },
-                            { name: '🎯 최종 라운드', value: `${session.round}`, inline: true }
-                        );
+                            { name: '💰 라운드 보상', value: `${session.earnings}G`, inline: true },
+                            { name: '🎁 완벽 보너스', value: `${MUSHROOM_GAME.gameSettings.perfectBonus}G`, inline: true },
+                            { name: '💎 총 획득', value: `${perfectReward}G`, inline: true }
+                        )
+                        .setImage('attachment://kim_hunting_win.gif');
                     
-                    await interaction.editReply({ 
-                        embeds: [pvpWinEmbed], 
-                        components: [] 
+                    const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
+                    
+                    await interaction.followUp({ 
+                        embeds: [perfectWinEmbed], 
+                        files: [winGif]
                     });
                 } else {
-                    // 솔로 게임
-                    session.round++;
-                    session.totalEarnings += session.betAmount * session.round;
+                    // 라운드 승리
+                    user.gold += session.earnings;
+                    await user.save();
+                    
+                    mushroomGameSessions.delete(gameId);
                     
                     const winEmbed = new EmbedBuilder()
-                        .setColor('#ffd700')
-                        .setTitle('✨ 황금버섯!')
-                        .setDescription('황금버섯을 찾았습니다! 계속하시겠습니까?')
+                        .setColor('#00ff00')
+                        .setTitle('🎉 승리!')
+                        .setDescription(`${session.bot.emoji} ${session.bot.name}이(가) 독버섯을 선택했습니다!`)
                         .addFields(
-                            { name: '🎯 라운드', value: `${session.round}`, inline: true },
-                            { name: '💰 누적 상금', value: `${session.totalEarnings}G`, inline: true },
-                            { name: '🏆 배율', value: `x${session.round}`, inline: true }
-                        );
+                            { name: '🏆 최종 라운드', value: `${session.round}/5`, inline: true },
+                            { name: '💰 획득 금액', value: `${session.earnings}G`, inline: true },
+                            { name: '🎯 승리 배율', value: `x${session.round}`, inline: true }
+                        )
+                        .setImage('attachment://kim_hunting_win.gif');
                     
-                    const continueButtons = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(`mushroom_continue_${gameId}`)
-                                .setLabel('🎮 계속하기')
-                                .setStyle(ButtonStyle.Success),
-                            new ButtonBuilder()
-                                .setCustomId(`mushroom_cashout_${gameId}`)
-                                .setLabel('💰 상금 받기')
-                                .setStyle(ButtonStyle.Primary)
-                        );
+                    const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
                     
-                    await interaction.editReply({ 
+                    await interaction.followUp({ 
                         embeds: [winEmbed], 
-                        components: [continueButtons] 
+                        files: [winGif]
                     });
                 }
+                return;
+            }
+            
+            // 봇도 안전한 버섯을 선택한 경우 - 게임 계속
+            const botSafeEmbed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle('🤖 봇도 안전!')
+                .setDescription(`${session.bot.emoji} ${session.bot.name}도 안전한 버섯을 선택했습니다!`);
+            
+            await interaction.followUp({ embeds: [botSafeEmbed] });
+            
+            // 모든 버섯이 공개되었는지 확인
+            const unrevealed = session.mushrooms.filter(m => !m.revealed);
+            
+            if (unrevealed.length === 0) {
+                // 라운드 종료 - 다음 라운드로
+                await processNextRound(interaction, session, gameId);
             } else {
-                // 일반버섯 선택 - 계속 진행
-                const mushrooms = session.mushrooms;
-                mushrooms[parseInt(index)] = 'revealed';
+                // 게임 계속
+                session.currentTurn = 'player';
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 
-                if (session.type === 'pvp') {
-                    // PVP: 차례 변경
-                    const currentPlayer = interaction.user.id === session.player1.id ? session.player1 : session.player2;
-                    const nextPlayer = interaction.user.id === session.player1.id ? session.player2 : session.player1;
-                    session.currentTurn = nextPlayer.id;
-                    
-                    const pvpContinueEmbed = new EmbedBuilder()
-                        .setColor('#32cd32')
-                        .setTitle('🍄 일반 버섯')
-                        .setDescription(`${currentPlayer.user.nickname}님이 일반 버섯을 선택했습니다.\n이제 ${nextPlayer.user.nickname}님의 차례입니다!`)
-                        .addFields(
-                            { name: '🎯 라운드', value: `${session.round}`, inline: true },
-                            { name: '💰 상금', value: `${session.pot}G`, inline: true },
-                            { name: '🎮 현재 차례', value: nextPlayer.user.nickname, inline: true }
-                        );
-                    
-                    const mushroomButtons = createMushroomButtons(gameId, mushrooms);
-                    
-                    await interaction.editReply({ 
-                        embeds: [pvpContinueEmbed], 
-                        components: mushroomButtons 
-                    });
-                } else {
-                    // 솔로 게임
-                    const continueEmbed = new EmbedBuilder()
-                        .setColor('#32cd32')
-                        .setTitle('🍄 일반 버섯')
-                        .setDescription('일반 버섯입니다. 계속 진행하세요!')
-                        .addFields(
-                            { name: '🎯 라운드', value: `${session.round}`, inline: true },
-                            { name: '💰 누적 상금', value: `${session.totalEarnings}G`, inline: true },
-                            { name: '🏆 배율', value: `x${session.round}`, inline: true }
-                        );
-                    
-                    const mushroomButtons = createMushroomButtons(gameId, mushrooms);
-                    
-                    await interaction.editReply({ 
-                        embeds: [continueEmbed], 
-                        components: mushroomButtons 
-                    });
-                }
+                const continueEmbed = new EmbedBuilder()
+                    .setColor('#3498db')
+                    .setTitle('🍄 게임 계속!')
+                    .setDescription('다른 버섯을 선택하세요!')
+                    .addFields(
+                        { name: '🎯 현재 라운드', value: `${session.round}/5`, inline: true },
+                        { name: '💰 누적 보상', value: `${session.earnings}G`, inline: true },
+                        { name: '🍄 남은 버섯', value: `${unrevealed.length}개`, inline: true }
+                    );
+                
+                const mushroomButtons = createMushroomGameButtons(gameId, session.mushrooms, 'player');
+                
+                await interaction.followUp({ 
+                    embeds: [continueEmbed], 
+                    components: mushroomButtons 
+                });
             }
         }
         
