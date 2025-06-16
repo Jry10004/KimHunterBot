@@ -13911,7 +13911,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (interaction.customId === 'exercise_select') {
             // 운동 선택 메뉴
-            await interaction.deferUpdate();
+            // deferUpdate 제거 - 새로운 메시지로 응답
             
             const availableExercises = [];
             
@@ -14000,9 +14000,10 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                 );
             
-            await interaction.editReply({
+            await interaction.reply({
                 embeds: [embed],
-                components: [selectRow, backButton]
+                components: [selectRow, backButton],
+                flags: 64
             });
         }
         
