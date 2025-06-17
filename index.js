@@ -13405,50 +13405,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
         
-        // PVP 펜들럼 스타일 액션 처리
-        else if (interaction.customId.startsWith('pvp_pendulum_')) {
-            const parts = interaction.customId.split('_');
-            const matchId = parts[2];
-            const position = parts[3]; // high, middle, low
-            
-            const match = pvpSystem.activeMatches.get(matchId);
-            if (!match) {
-                await interaction.reply({ content: '매치를 찾을 수 없습니다!', flags: 64 });
-                return;
-            }
-            
-            // 플레이어 확인
-            const isPlayer1 = interaction.user.id === match.player1.id;
-            const isPlayer2 = interaction.user.id === match.player2.id;
-            
-            if (!isPlayer1 && !isPlayer2) {
-                await interaction.reply({ content: '이 대전의 참가자가 아닙니다!', flags: 64 });
-                return;
-            }
-            
-            // 이미 선택했는지 확인
-            if (match.pendingActions.has(interaction.user.id)) {
-                await interaction.reply({ content: '이미 선택하셨습니다!', flags: 64 });
-                return;
-            }
-            
-            // 선택 저장
-            match.pendingActions.set(interaction.user.id, position);
-            
-            // 선택 확인 메시지
-            const positionText = position === 'high' ? '상단' : position === 'middle' ? '중단' : '하단';
-            await interaction.reply({ 
-                content: `🎯 **${positionText}**을 선택하셨습니다! 상대방의 선택을 기다리는 중...`, 
-                flags: 64 
-            });
-            
-            // 모든 플레이어가 선택했는지 확인
-            if (match.pendingActions.size === 2) {
-                // 즉시 결과 처리
-                clearTimeout(match.roundTimeout);
-                await pvpSystem.resolveRound(match);
-            }
-        }
         
         // 메인화면의 게임하기 버튼 처리
         else if (interaction.customId === 'game_start') {
