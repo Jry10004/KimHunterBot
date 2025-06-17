@@ -345,9 +345,15 @@ const MENU_DEFINITIONS = {
         emoji: '🏃',
         category: 'daily'
     },
+    missions: {
+        label: '📝 숙제',
+        description: '일일 미션 수행',
+        emoji: '📝',
+        category: 'daily'
+    },
     quest: {
         label: '📜 의뢰',
-        description: '다양한 퀘스트 수행',
+        description: '랜덤 퀘스트 수행',
         emoji: '📜',
         category: 'daily'
     },
@@ -365,10 +371,10 @@ const MENU_DEFINITIONS = {
         category: 'battle'
     },
     ranking: {
-        label: '🏆 랭킹',
+        label: '🏆 통합 랭킹',
         description: '각종 순위 확인',
         emoji: '🏆',
-        category: 'battle'
+        category: 'ranking'
     },
     // 미니게임 (Mini Games)
     racing: {
@@ -460,6 +466,12 @@ const MENU_CATEGORIES = {
         description: '골드 관련 거래 시스템',
         emoji: '💰',
         color: '#f39c12'
+    },
+    ranking: {
+        name: '랭킹',
+        description: '다양한 분야별 순위',
+        emoji: '🏆',
+        color: '#9b59b6'
     }
 };
 
@@ -3155,7 +3167,7 @@ async function completeExercise(user) {
     
     // 운동 기록 저장
     user.fitness.exerciseHistory.push({
-        type: exerciseType,
+        exerciseType: exerciseType,
         duration: duration,
         rewards: {
             gold: goldReward,
@@ -6660,20 +6672,22 @@ class PVPSystem {
         }
 
         const match = {
-            id: matchId,
+            matchId: matchId,
             player1,
             player2,
             status: 'preparing',
-            startTime: Date.now()
+            startTime: Date.now(),
+            round: 0,
+            battleLog: [],
+            pendingActions: new Map(),
+            player1HP: 100,
+            player2HP: 100
         };
 
         this.activeMatches.set(matchId, match);
 
-        // 전투 시뮬레이션
-        const battleResult = await this.simulateBattle(player1, player2);
-        
-        // 결과 처리
-        await this.processMatchResult(match, battleResult);
+        // 펜들럼 배틀 시작
+        await this.startPendulumBattle(match);
         
         return { 
             success: true, 
@@ -8459,7 +8473,20 @@ const commands = [
                 
     new SlashCommandBuilder()
         .setName('유물탐사')
-        .setDescription('🏺 유물을 탐사하여 보물을 찾아보세요!')
+        .setDescription('🏺 유물을 탐사하여 보물을 찾아보세요!'),
+        
+    new SlashCommandBuilder()
+        .setName('돈지급')
+        .setDescription('💰 사용자에게 골드를 지급합니다 (관리자 전용)')
+        .addUserOption(option =>
+            option.setName('유저')
+                .setDescription('골드를 받을 유저')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('금액')
+                .setDescription('지급할 골드 금액')
+                .setRequired(true)
+                .setMinValue(1))
 ];
 
 // 봇이 준비되었을 때
@@ -9232,7 +9259,7 @@ client.on('interactionCreate', async (interaction) => {
                     });
                     
                 case 'quest':
-                    // 의뢰 기능
+                    // 랜덤 의뢰 기능
                     await interaction.deferReply({ flags: 64 });
                     
                     const questUser = await getUser(interaction.user.id);
@@ -9240,85 +9267,45 @@ client.on('interactionCreate', async (interaction) => {
                         return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
                     
-                    // 퀘스트 진행도 초기화 체크
-                    if (!questUser.quests) {
-                        questUser.quests = {
-                            daily: {},
-                            weekly: {},
-                            achievements: {},
-                            lastDailyReset: new Date().toDateString(),
-                            lastWeeklyReset: new Date()
-                        };
+                    // 쿨타임 체크
+                    const cooldownMinutes = checkQuestCooldown(interaction.user.id);
+                    if (cooldownMinutes) {
+                        await interaction.editReply({ 
+                            content: `⏰ 의뢰 쿨타임이 **${cooldownMinutes}분** 남았습니다!` 
+                        });
+                        return;
                     }
                     
-                    // 일일 로그인 퀘스트 체크
-                    checkQuestProgress(questUser, 'daily', 'login');
+                    // 랜덤 의뢰 선택
+                    const quest = getRandomQuest();
                     
                     const questEmbed = new EmbedBuilder()
-                        .setColor('#ff00ff')
-                        .setTitle('📜 의뢰 시스템')
-                        .setDescription('다양한 퀘스트를 완료하고 보상을 받으세요!')
-                        .setFooter({ text: '퀘스트를 완료하면 보상을 받을 수 있습니다!' });
-                    
+                        .setColor('#f39c12')
+                        .setTitle(`${quest.emoji} ${quest.title}`)
+                        .setDescription(`**${quest.name}**\n\n"${quest.description}"`)
+                        .setFooter({ text: '의뢰를 수락하시겠습니까?' });
+
+                    if (quest.type === 'scam') {
+                        questEmbed.setColor('#e74c3c');
+                    }
+
                     const questButtons = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
-                                .setCustomId('quest_daily')
-                                .setLabel('📅 일일 퀘스트')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('quest_weekly')
-                                .setLabel('📆 주간 퀘스트')
+                                .setCustomId(`accept_quest_${quest.id}`)
+                                .setLabel('✅ 수락')
                                 .setStyle(ButtonStyle.Success),
                             new ButtonBuilder()
-                                .setCustomId('quest_achievements')
-                                .setLabel('🏆 업적 퀘스트')
-                                .setStyle(ButtonStyle.Secondary),
-                            new ButtonBuilder()
-                                .setCustomId('quest_special')
-                                .setLabel('⭐ 특별 의뢰')
+                                .setCustomId('decline_quest')
+                                .setLabel('❌ 거절')
                                 .setStyle(ButtonStyle.Danger)
                         );
-                    
-                    // 일일 퀘스트 표시
-                    let dailyQuestText = '';
-                    Object.values(QUEST_SYSTEM.dailyQuests).forEach(quest => {
-                        const progress = questUser.quests.daily[quest.id] || { progress: 0, completed: false, claimedReward: false };
-                        const targetProgress = quest.requirements.count || quest.requirements.minutes || 1;
-                        const icon = progress.completed ? (progress.claimedReward ? '✅' : '🟡') : '⬜';
-                        dailyQuestText += `${icon} **${quest.name}**\n${quest.description}\n진행도: ${progress.progress}/${targetProgress}\n보상: ${quest.rewards.gold.toLocaleString()}G, ${quest.rewards.exp}EXP\n\n`;
+
+                    await interaction.editReply({ 
+                        embeds: [questEmbed], 
+                        components: [questButtons]
                     });
-                    
-                    // 주간 퀘스트 표시
-                    let weeklyQuestText = '';
-                    Object.values(QUEST_SYSTEM.weeklyQuests).forEach(quest => {
-                        const progress = questUser.quests.weekly[quest.id] || { progress: 0, completed: false, claimedReward: false };
-                        const targetProgress = quest.requirements.count || 1;
-                        const icon = progress.completed ? (progress.claimedReward ? '✅' : '🟡') : '⬜';
-                        weeklyQuestText += `${icon} **${quest.name}**\n${quest.description}\n진행도: ${progress.progress}/${targetProgress}\n보상: ${quest.rewards.gold.toLocaleString()}G\n\n`;
-                    });
-                    
-                    questEmbed.addFields(
-                        { name: '📅 일일 퀘스트', value: dailyQuestText || '없음', inline: false },
-                        { name: '📆 주간 퀘스트', value: weeklyQuestText || '없음', inline: false }
-                    );
-                    
-                    const questRewardButtons = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('claim_quest_rewards')
-                                .setLabel('🎁 보상 받기')
-                                .setStyle(ButtonStyle.Success)
-                                .setDisabled(!Object.values(questUser.quests.daily).some(q => q.completed && !q.claimedReward) &&
-                                           !Object.values(questUser.quests.weekly).some(q => q.completed && !q.claimedReward)),
-                            new ButtonBuilder()
-                                .setCustomId('view_achievements')
-                                .setLabel('🏆 업적 보기')
-                                .setStyle(ButtonStyle.Secondary)
-                        );
-                    
-                    await questUser.save();
-                    return await interaction.editReply({ embeds: [questEmbed], components: [questButtons, questRewardButtons] });
+                    return;
                     
                 case 'pvp':
                     // PVP 메뉴
@@ -10805,8 +10792,9 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         // 운동 선택 드롭다운 처리
-        else if (customId === 'exercise_select') {
-            const exerciseId = values[0];
+        else if (customId === 'select_exercise_type') {
+            const selectedValue = values[0];
+            const exerciseId = selectedValue.replace('start_exercise_', '');
             const exercise = EXERCISE_SYSTEM.exercises[exerciseId];
             
             if (!exercise) {
@@ -12935,6 +12923,60 @@ client.on('interactionCreate', async (interaction) => {
             await showArtifactExplorationMenu(interaction, user);
         }
         
+        else if (commandName === '돈지급') {
+            // 관리자 권한 체크
+            const ADMIN_IDS = ['302737668842086401', '1123609568397836309']; // 관리자 ID 리스트
+            
+            if (!ADMIN_IDS.includes(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const targetUser = interaction.options.getUser('유저');
+            const amount = interaction.options.getInteger('금액');
+            
+            try {
+                const user = await getUser(targetUser.id);
+                
+                if (!user || !user.registered) {
+                    await interaction.reply({ 
+                        content: '❌ 해당 유저를 찾을 수 없거나 가입하지 않은 유저입니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                // 골드 지급
+                user.gold += amount;
+                await user.save();
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#2ecc71')
+                    .setTitle('💰 골드 지급 완료')
+                    .setDescription(`**${targetUser.username}**님에게 **${amount.toLocaleString()} 골드**를 지급했습니다!`)
+                    .addFields(
+                        { name: '💵 지급 금액', value: `${amount.toLocaleString()} 골드`, inline: true },
+                        { name: '💰 현재 보유 골드', value: `${user.gold.toLocaleString()} 골드`, inline: true }
+                    )
+                    .setTimestamp();
+                
+                await interaction.reply({ embeds: [embed] });
+                
+                // 로그 남기기
+                console.log(`[관리자 골드 지급] ${interaction.user.username}(${interaction.user.id})가 ${targetUser.username}(${targetUser.id})에게 ${amount} 골드 지급`);
+                
+            } catch (error) {
+                console.error('골드 지급 오류:', error);
+                await interaction.reply({ 
+                    content: '❌ 골드 지급 중 오류가 발생했습니다!', 
+                    flags: 64 
+                });
+            }
+        }
+        
         else if (commandName === '독버섯') {
             const user = await getUser(interaction.user.id);
             
@@ -13055,6 +13097,51 @@ client.on('interactionCreate', async (interaction) => {
             
             await interaction.showModal(sellModal);
             return;
+        }
+        
+        // PVP 펜들럼 스타일 액션 처리
+        else if (interaction.customId.startsWith('pvp_pendulum_')) {
+            const parts = interaction.customId.split('_');
+            const matchId = parts[2];
+            const position = parts[3]; // high, middle, low
+            
+            const match = pvpSystem.activeMatches.get(matchId);
+            if (!match) {
+                await interaction.reply({ content: '매치를 찾을 수 없습니다!', flags: 64 });
+                return;
+            }
+            
+            // 플레이어 확인
+            const isPlayer1 = interaction.user.id === match.player1.id;
+            const isPlayer2 = interaction.user.id === match.player2.id;
+            
+            if (!isPlayer1 && !isPlayer2) {
+                await interaction.reply({ content: '이 대전의 참가자가 아닙니다!', flags: 64 });
+                return;
+            }
+            
+            // 이미 선택했는지 확인
+            if (match.pendingActions.has(interaction.user.id)) {
+                await interaction.reply({ content: '이미 선택하셨습니다!', flags: 64 });
+                return;
+            }
+            
+            // 선택 저장
+            match.pendingActions.set(interaction.user.id, position);
+            
+            // 선택 확인 메시지
+            const positionText = position === 'high' ? '상단' : position === 'middle' ? '중단' : '하단';
+            await interaction.reply({ 
+                content: `🎯 **${positionText}**을 선택하셨습니다! 상대방의 선택을 기다리는 중...`, 
+                flags: 64 
+            });
+            
+            // 모든 플레이어가 선택했는지 확인
+            if (match.pendingActions.size === 2) {
+                // 즉시 결과 처리
+                clearTimeout(match.roundTimeout);
+                await pvpSystem.resolveRound(match);
+            }
         }
         
         // 메인화면의 게임하기 버튼 처리
@@ -14360,6 +14447,64 @@ client.on('interactionCreate', async (interaction) => {
             
             await interaction.update({ 
                 components: [selectRow] 
+            });
+        }
+        
+        else if (interaction.customId === 'exercise_status') {
+            // 운동 현황 표시
+            await interaction.deferUpdate();
+            
+            const statusEmbed = new EmbedBuilder()
+                .setColor('#4ecdc4')
+                .setTitle('📊 운동 현황')
+                .setDescription(`**${user.nickname}**님의 운동 상태`)
+                .addFields(
+                    { name: '💪 피트니스 레벨', value: `Lv.${user.fitness.level}`, inline: true },
+                    { name: '✨ 피트니스 경험치', value: `${user.fitness.exp}/${getFitnessLevelRequirement(user.fitness.level + 1)}`, inline: true },
+                    { name: '💦 피로도', value: `${user.fitness.fatigue}/100`, inline: true },
+                    { name: '⏱️ 총 운동 시간', value: `${Math.floor(user.fitness.totalExerciseTime / 60000)}분`, inline: true },
+                    { name: '🔥 연속 운동일', value: `${user.fitness.streak}일`, inline: true },
+                    { name: '📅 오늘 운동 시간', value: `${user.fitness.dailyExerciseTime}분`, inline: true }
+                );
+            
+            // 최근 운동 기록
+            if (user.fitness.exerciseHistory && user.fitness.exerciseHistory.length > 0) {
+                const recentExercises = user.fitness.exerciseHistory.slice(-5).reverse();
+                let historyText = '';
+                recentExercises.forEach(record => {
+                    const date = new Date(record.date);
+                    const timeStr = `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+                    historyText += `${EXERCISE_SYSTEM.exercises[record.exerciseType]?.emoji || '🏃'} **${record.exerciseType}** - ${Math.floor(record.duration/60000)}분 (${timeStr})\n`;
+                });
+                statusEmbed.addFields({ name: '📝 최근 운동 기록', value: historyText || '기록 없음', inline: false });
+            }
+            
+            // 현재 운동 상태
+            if (user.fitness.currentExercise) {
+                const exercise = EXERCISE_SYSTEM.exercises[user.fitness.currentExercise.type];
+                const elapsed = Date.now() - user.fitness.currentExercise.startTime;
+                const remaining = user.fitness.currentExercise.duration - elapsed;
+                
+                if (remaining > 0) {
+                    statusEmbed.addFields({
+                        name: '🏃 현재 운동 중',
+                        value: `${exercise.emoji} **${exercise.name}** - 남은 시간: ${Math.ceil(remaining/60000)}분`,
+                        inline: false
+                    });
+                }
+            }
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('work')
+                        .setLabel('🔙 운동 메뉴로')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [statusEmbed], 
+                components: [backButton] 
             });
         }
         
@@ -17236,7 +17381,7 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
-        else if (interaction.customId === 'quest') {
+        else if (interaction.customId === 'quest_old_system_disabled') {
             // Defer update to prevent timeout
             await interaction.deferUpdate();
             
@@ -17511,6 +17656,14 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId.startsWith('accept_quest_')) {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
             const questId = parseInt(interaction.customId.split('_')[2]);
             
             // 의뢰 찾기
@@ -17601,7 +17754,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setDisabled(true) // 쿨타임 때문에 비활성화
                 );
 
-            await interaction.update({ 
+            await interaction.editReply({ 
                 embeds: [resultEmbed], 
                 components: [newQuestButton]
             });
@@ -17812,6 +17965,77 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
         
+        // 숙제(미션) 버튼 핸들러
+        else if (interaction.customId === 'missions') {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            // 간단한 일일 미션 시스템
+            const dailyMissions = [
+                { name: '🎯 사냥 10회', description: '몬스터를 10마리 처치하세요', reward: { gold: 5000, exp: 1000 } },
+                { name: '💪 운동 30분', description: '30분 이상 운동하세요', reward: { gold: 3000, exp: 800 } },
+                { name: '🎰 홀짝 5회', description: '홀짝 게임을 5회 플레이하세요', reward: { gold: 2000, exp: 500 } },
+                { name: '⚔️ 강화 3회', description: '장비 강화를 3회 시도하세요', reward: { gold: 4000, exp: 700 } }
+            ];
+            
+            const missionEmbed = new EmbedBuilder()
+                .setColor('#4ecdc4')
+                .setTitle('📝 일일 숙제')
+                .setDescription('매일 오전 6시에 초기화됩니다.')
+                .setTimestamp();
+            
+            // 미션 목록 표시
+            dailyMissions.forEach((mission, index) => {
+                missionEmbed.addFields({
+                    name: mission.name,
+                    value: `${mission.description}\n보상: ${mission.reward.gold.toLocaleString()}G, ${mission.reward.exp} EXP`,
+                    inline: false
+                });
+            });
+            
+            // 주간 출석 체크 표시
+            const weeklyAttendance = user.weeklyAttendance || [];
+            const attendanceDays = ['일', '월', '화', '수', '목', '금', '토'];
+            let attendanceText = '';
+            
+            attendanceDays.forEach((day, index) => {
+                attendanceText += weeklyAttendance[index] ? '✅ ' : '❌ ';
+                attendanceText += `${day} `;
+            });
+            
+            missionEmbed.addFields({
+                name: '📅 주간 출석 체크',
+                value: `${attendanceText}\n완료: ${weeklyAttendance.filter(x => x).length}/7일`,
+                inline: false
+            });
+            
+            if (weeklyAttendance.filter(x => x).length === 7) {
+                missionEmbed.addFields({
+                    name: '🏆 주간 미션 완료!',
+                    value: '7일 연속 출석 보상: 5000G',
+                    inline: false
+                });
+            }
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🔙 게임 메뉴로')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [missionEmbed], 
+                components: [backButton] 
+            });
+        }
+        
         // 주식 시장 버튼 핸들러들
         else if (interaction.customId === 'stock_regions') {
             const regionSelect = new ActionRowBuilder()
@@ -17873,6 +18097,135 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [chainEmbed],
                 components: [chainButtons]
             });
+        }
+        
+        // PVP 매치메이킹 버튼 처리
+        else if (interaction.customId === 'pvp_matchmaking') {
+            await interaction.deferReply();
+            
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+                return;
+            }
+            
+            // 매치메이킹 큐 참가
+            const result = await pvpSystem.joinQueue(interaction.user.id, user, interaction.channel);
+            
+            if (result.success) {
+                const queueEmbed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('🎯 매치메이킹 시작!')
+                    .setDescription(result.message)
+                    .addFields(
+                        { name: '🎫 남은 결투권', value: `${result.tickets}개`, inline: true },
+                        { name: '⏱️ 매칭 시작', value: '초기 범위: ±200점', inline: true }
+                    )
+                    .setFooter({ text: '60초 후 도 매칭이 안되면 봇과 대전합니다!' });
+                
+                const cancelButton = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('cancel_pvp_queue')
+                            .setLabel('❌ 매칭 취소')
+                            .setStyle(ButtonStyle.Danger)
+                    );
+                
+                await interaction.editReply({ embeds: [queueEmbed], components: [cancelButton] });
+            } else {
+                await interaction.editReply({ content: `❌ ${result.message}` });
+            }
+        }
+        
+        // PVP 매칭 취소
+        else if (interaction.customId === 'cancel_pvp_queue') {
+            const result = pvpSystem.leaveQueue(interaction.user.id);
+            
+            if (result.success) {
+                const cancelEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ 매칭 취소')
+                    .setDescription(result.message);
+                    
+                await interaction.update({ embeds: [cancelEmbed], components: [] });
+            } else {
+                await interaction.reply({ content: result.message, flags: 64 });
+            }
+        }
+        
+        // PVP 랭킹
+        else if (interaction.customId === 'pvp_ranking') {
+            await interaction.deferReply();
+            
+            try {
+                const topUsers = await User.find({ 'pvp.totalDuels': { $gt: 0 } })
+                    .sort({ 'pvp.rating': -1 })
+                    .limit(10);
+                
+                if (topUsers.length === 0) {
+                    await interaction.editReply({ content: '🏆 아직 PVP 기록이 없습니다!' });
+                    return;
+                }
+                
+                let rankingText = '';
+                topUsers.forEach((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}위`;
+                    const tierEmoji = pvpSystem.getTierEmoji ? pvpSystem.getTierEmoji(user.pvp.tier) : '';
+                    rankingText += `${medal} **${user.nickname}** ${tierEmoji}\n`;
+                    rankingText += `   레이팅: ${user.pvp.rating} | 승률: ${((user.pvp.wins / user.pvp.totalDuels) * 100).toFixed(1)}%\n\n`;
+                });
+                
+                const rankingEmbed = new EmbedBuilder()
+                    .setColor('#FFD700')
+                    .setTitle('🏆 PVP 랭킹 TOP 10')
+                    .setDescription(rankingText)
+                    .setFooter({ text: '매시간 업데이트됩니다!' });
+                
+                await interaction.editReply({ embeds: [rankingEmbed] });
+            } catch (error) {
+                console.error('PVP 랭킹 조회 오류:', error);
+                await interaction.editReply({ content: '❌ 랭킹 조회 중 오류가 발생했습니다!' });
+            }
+        }
+        
+        // PVP 정보
+        else if (interaction.customId === 'pvp_info') {
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.reply({ content: '유저 데이터를 불러올 수 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const pvpInfo = await pvpSystem.getPVPInfo(user);
+            
+            const infoEmbed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle('🎮 내 PVP 정보')
+                .setDescription(`**${user.nickname}**님의 PVP 통계`)
+                .addFields(
+                    { name: '🎖️ 티어', value: `${pvpInfo.tierEmoji} ${pvpInfo.tier}`, inline: true },
+                    { name: '📈 레이팅', value: `${pvpInfo.rating}점`, inline: true },
+                    { name: '🎫 결투권', value: `${pvpInfo.duelTickets}개`, inline: true },
+                    { name: '⚔️ 총 전투', value: `${pvpInfo.totalDuels}회`, inline: true },
+                    { name: '🏆 전적', value: `${pvpInfo.wins}승 ${pvpInfo.losses}패`, inline: true },
+                    { name: '📈 승률', value: `${pvpInfo.winRate}%`, inline: true },
+                    { name: '🔥 연승', value: `${pvpInfo.winStreak}회`, inline: true },
+                    { name: '🌟 최고 연승', value: `${pvpInfo.maxWinStreak}회`, inline: true },
+                    { name: '👑 최고 레이팅', value: `${pvpInfo.highestRating}점`, inline: true }
+                );
+            
+            // 최근 매치 기록
+            if (pvpInfo.matchHistory.length > 0) {
+                let historyText = '';
+                pvpInfo.matchHistory.slice(0, 5).forEach(match => {
+                    const resultEmoji = match.result === 'win' ? '🟢' : '🔴';
+                    const ratingChangeText = match.ratingChange > 0 ? `+${match.ratingChange}` : `${match.ratingChange}`;
+                    historyText += `${resultEmoji} vs **${match.opponent}** (${ratingChangeText})\n`;
+                });
+                infoEmbed.addFields({ name: '📊 최근 5경기', value: historyText, inline: false });
+            }
+            
+            await interaction.reply({ embeds: [infoEmbed], flags: 64 });
         }
         
         else if (interaction.customId === 'stock_portfolio') {
@@ -18880,15 +19233,36 @@ client.on('interactionCreate', async (interaction) => {
                 .setImage(`attachment://${timeImage}`)
                 .setFooter({ text: '게임 메뉴에 오신 것을 환영합니다!' });
 
-            // 커스터마이징된 드롭다운 메뉴 생성 (/게임과 동일)
-            const mainMenu = await createCustomizedMenu(interaction.user.id);
+            // /게임 명령어와 동일한 카테고리 메뉴 생성
+            const mainMenu = createCategoryMenu();
             const menuRow = new ActionRowBuilder().addComponents(mainMenu);
+            
+            // 빠른 접근 버튼들 추가 (/게임과 동일)
+            const quickButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('daily')
+                        .setLabel('🎁 일일보상')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('hunting')
+                        .setLabel('🎯 사냥하기')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('equipment')
+                        .setLabel('⚔️ 장비관리')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('shop')
+                        .setLabel('🛒 상점')
+                        .setStyle(ButtonStyle.Secondary)
+                );
                 
             const attachment = new AttachmentBuilder(path.join(__dirname, 'resource', timeImage), { name: timeImage });
 
             await interaction.update({ 
                 embeds: [statusEmbed], 
-                components: [menuRow], 
+                components: [menuRow, quickButtons], 
                 files: [attachment] 
             });
         }
@@ -19658,8 +20032,8 @@ client.on('interactionCreate', async (interaction) => {
     console.log('🔵 모달 제출됨:', interaction.customId);
     
     // 운동 시간 설정 모달
-    if (interaction.customId.startsWith('exercise_duration_')) {
-        const exerciseId = interaction.customId.replace('exercise_duration_', '');
+    if (interaction.customId.startsWith('exercise_modal_')) {
+        const exerciseId = interaction.customId.replace('exercise_modal_', '');
         const durationInput = interaction.fields.getTextInputValue('duration');
         const duration = parseInt(durationInput);
         
