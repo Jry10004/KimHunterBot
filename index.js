@@ -6504,7 +6504,7 @@ class PVPSystem {
                     }
                 }
                 
-                this.createMatch(currentPlayer, opponent);
+                await this.createMatch(currentPlayer, opponent);
                 return;
             }
             
@@ -7126,15 +7126,26 @@ class PVPSystem {
         
         // 디버깅용 로그
         console.log(`펜들럼 선택 - User ID: ${userId}`);
-        console.log(`Player1 ID: ${match.player1.userId}, isBot: ${match.player1.isBot}`);
-        console.log(`Player2 ID: ${match.player2.userId}, isBot: ${match.player2.isBot}`);
+        console.log(`Player1 전체 데이터:`, JSON.stringify({
+            userId: match.player1.userId,
+            isBot: match.player1.isBot,
+            discordId: match.player1.user?.discordId,
+            nickname: match.player1.user?.nickname
+        }));
+        console.log(`Player2 전체 데이터:`, JSON.stringify({
+            userId: match.player2.userId,
+            isBot: match.player2.isBot,
+            discordId: match.player2.user?.discordId,
+            nickname: match.player2.user?.nickname
+        }));
         
-        // userId로 비교
+        // userId로 비교 (봇이 아닌 경우)
         if (!match.player1.isBot && match.player1.userId === userId) {
             playerKey = 'player1';
         } else if (!match.player2.isBot && match.player2.userId === userId) {
             playerKey = 'player2';
         } else {
+            console.log(`매치 참가자 확인 실패 - 요청 userId: ${userId}`);
             await interaction.reply({ content: '이 대결의 참가자가 아닙니다!', ephemeral: true });
             return;
         }
