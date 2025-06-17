@@ -6495,15 +6495,15 @@ class PVPSystem {
                 return;
             }
             
-            // 60초 후에도 매칭이 안되면 봇 매칭
-            if (waitTime >= 60000) {
+            // 10초 후에도 매칭이 안되면 봇 매칭 (테스트용)
+            if (waitTime >= 10000) {
                 // 봇 매칭 시작 알림
                 if (channel) {
                     try {
                         const botMatchEmbed = new EmbedBuilder()
                             .setColor('#FFA500')
                             .setTitle('🤖 봇 매칭 시작')
-                            .setDescription(`60초 대기 후 적절한 실력의 봇과 매칭됩니다!`)
+                            .setDescription(`10초 대기 후 적절한 실력의 봇과 매칭됩니다!`)
                             .addFields(
                                 { name: '⏱️ 대기 시간', value: `${waitSeconds}초`, inline: true },
                                 { name: '🎯 최종 매칭 범위', value: `±${expandedRange}점`, inline: true }
@@ -6530,7 +6530,7 @@ class PVPSystem {
                             .addFields(
                                 { name: '⏱️ 대기 시간', value: `${waitSeconds}초`, inline: true },
                                 { name: '🎯 현재 매칭 범위', value: `±${expandedRange}점`, inline: true },
-                                { name: '⏳ 봇 매칭까지', value: `${60 - waitSeconds}초`, inline: true }
+                                { name: '⏳ 봇 매칭까지', value: `${10 - waitSeconds}초`, inline: true }
                             );
                         
                         await channel.send({ embeds: [progressEmbed] });
@@ -6549,7 +6549,7 @@ class PVPSystem {
 
         return {
             success: true,
-            message: '매치메이킹을 시작합니다! 15초마다 매칭 범위가 확대되며, 60초 후엔 봇과 매칭됩니다.',
+            message: '매치메이킹을 시작합니다! 15초마다 매칭 범위가 확대되며, 10초 후엔 봇과 매칭됩니다.',
             tickets: user.pvp.duelTickets
         };
     }
@@ -6645,7 +6645,7 @@ class PVPSystem {
                     .addFields(
                         { name: '🤖 상대 봇', value: `${botOpponent.nickname} (${botOpponent.rating}점)`, inline: true },
                         { name: '📊 레이팅 차이', value: `±${ratingDiff}점`, inline: true },
-                        { name: '⚔️ 전투 시작', value: '곧 결과가 나타납니다!', inline: true }
+                        { name: '⚔️ 전투 시작', value: '곧 배틀이 시작합니다!', inline: true }
                     );
                 
                 await player.channel.send({ embeds: [matchFoundEmbed] });
@@ -6671,6 +6671,10 @@ class PVPSystem {
             await player2.user.save();
         }
 
+        // 플레이어 스탯 계산
+        const p1Stats = this.calculateCombatStats(player1);
+        const p2Stats = this.calculateCombatStats(player2);
+        
         const match = {
             matchId: matchId,
             player1,
@@ -6680,8 +6684,8 @@ class PVPSystem {
             round: 0,
             battleLog: [],
             pendingActions: new Map(),
-            player1HP: 100,
-            player2HP: 100
+            player1HP: p1Stats.maxHp,
+            player2HP: p2Stats.maxHp
         };
 
         this.activeMatches.set(matchId, match);
@@ -6984,6 +6988,200 @@ class PVPSystem {
             highestRating: user.pvp.highestRating,
             matchHistory: user.pvp.matchHistory || []
         };
+    }
+    
+    // 펜들럼 배틀 시스템
+    async startPendulumBattle(match) {
+        match.round = 1;
+        match.battleLog = [];
+        match.pendingActions = new Map();
+        await this.showBattleRound(match);
+    }
+    
+    async showBattleRound(match) {
+        const { player1, player2 } = match;
+        const p1Stats = this.calculateCombatStats(player1);
+        const p2Stats = this.calculateCombatStats(player2);
+        
+        // HP 바 생성
+        const createHPBar = (current, max) => {
+            const percentage = Math.max(0, Math.floor((current / max) * 10));
+            const filled = '🟩'.repeat(percentage);
+            const empty = '⬜'.repeat(10 - percentage);
+            return `${filled}${empty} ${current}/${max}`;
+        };
+        
+        const battleEmbed = new EmbedBuilder()
+            .setColor('#ff6b6b')
+            .setTitle(`⚔️ 펜들럼 배틀 - 라운드 ${match.round}`)
+            .setDescription('10초 안에 공격/방어 위치를 선택하세요!')
+            .addFields(
+                { 
+                    name: `${player1.user.nickname || '플레이어1'} (${player1.user.pvp.rating}점)`,
+                    value: createHPBar(match.player1HP, p1Stats.maxHp),
+                    inline: true
+                },
+                { 
+                    name: 'VS', 
+                    value: '⚔️', 
+                    inline: true 
+                },
+                { 
+                    name: `${player2.user.nickname || '플레이어2'} (${player2.user.pvp.rating}점)`,
+                    value: createHPBar(match.player2HP, p2Stats.maxHp),
+                    inline: true
+                }
+            )
+            .setFooter({ text: '같은 위치 = 방어 성공 (데미지 감소), 다른 위치 = 공격 성공!' });
+        
+        const actionRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`pvp_pendulum_${match.matchId}_high`)
+                    .setLabel('상단')
+                    .setEmoji('🔺')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId(`pvp_pendulum_${match.matchId}_middle`)
+                    .setLabel('중단')
+                    .setEmoji('⏺️')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`pvp_pendulum_${match.matchId}_low`)
+                    .setLabel('하단')
+                    .setEmoji('🔻')
+                    .setStyle(ButtonStyle.Danger)
+            );
+        
+        // 두 플레이어 모두에게 메시지 전송
+        const channels = [];
+        if (!player1.isBot && player1.channel) channels.push(player1.channel);
+        if (!player2.isBot && player2.channel) channels.push(player2.channel);
+        
+        for (const channel of channels) {
+            try {
+                await channel.send({ 
+                    embeds: [battleEmbed], 
+                    components: [actionRow] 
+                });
+            } catch (error) {
+                console.error('배틀 메시지 전송 실패:', error);
+            }
+        }
+        
+        // 봇인 경우 자동 선택
+        if (player1.isBot) {
+            setTimeout(() => this.makeBotChoice(match, 'player1'), Math.random() * 5000 + 2000);
+        }
+        if (player2.isBot) {
+            setTimeout(() => this.makeBotChoice(match, 'player2'), Math.random() * 5000 + 2000);
+        }
+        
+        // 10초 타이머
+        setTimeout(() => this.resolveRound(match), 10000);
+    }
+    
+    makeBotChoice(match, playerKey) {
+        const positions = ['high', 'middle', 'low'];
+        const choice = positions[Math.floor(Math.random() * positions.length)];
+        match.pendingActions.set(playerKey, choice);
+    }
+    
+    async handlePendulumChoice(interaction, matchId, position) {
+        const match = this.activeMatches.get(matchId);
+        if (!match) {
+            await interaction.reply({ content: '매치를 찾을 수 없습니다!', ephemeral: true });
+            return;
+        }
+        
+        const userId = interaction.user.id;
+        let playerKey;
+        
+        if (!match.player1.isBot && match.player1.userId === userId) {
+            playerKey = 'player1';
+        } else if (!match.player2.isBot && match.player2.userId === userId) {
+            playerKey = 'player2';
+        } else {
+            await interaction.reply({ content: '이 매치의 참가자가 아닙니다!', ephemeral: true });
+            return;
+        }
+        
+        if (match.pendingActions.has(playerKey)) {
+            await interaction.reply({ content: '이미 선택하셨습니다!', ephemeral: true });
+            return;
+        }
+        
+        match.pendingActions.set(playerKey, position);
+        await interaction.reply({ 
+            content: `${position === 'high' ? '상단' : position === 'middle' ? '중단' : '하단'}을 선택했습니다!`, 
+            ephemeral: true 
+        });
+        
+        // 두 플레이어 모두 선택했으면 즉시 라운드 종료
+        if (match.pendingActions.size === 2) {
+            clearTimeout(match.roundTimer);
+            await this.resolveRound(match);
+        }
+    }
+    
+    async resolveRound(match) {
+        const { player1, player2 } = match;
+        const p1Stats = this.calculateCombatStats(player1);
+        const p2Stats = this.calculateCombatStats(player2);
+        
+        const p1Choice = match.pendingActions.get('player1') || 'middle';
+        const p2Choice = match.pendingActions.get('player2') || 'middle';
+        
+        let p1Damage = 0;
+        let p2Damage = 0;
+        let roundResult = '';
+        
+        if (p1Choice === p2Choice) {
+            // 같은 위치 - 방어 성공 (칩 데미지)
+            p1Damage = Math.floor(p1Stats.attack * 0.3);
+            p2Damage = Math.floor(p2Stats.attack * 0.3);
+            roundResult = `🛡️ 두 플레이어 모두 ${p1Choice === 'high' ? '상단' : p1Choice === 'middle' ? '중단' : '하단'}을 선택! 방어 성공!`;
+        } else {
+            // 다른 위치 - 풀 데미지
+            p1Damage = p1Stats.attack;
+            p2Damage = p2Stats.attack;
+            roundResult = `⚔️ 공격 성공! P1: ${p1Choice === 'high' ? '상단' : p1Choice === 'middle' ? '중단' : '하단'}, P2: ${p2Choice === 'high' ? '상단' : p2Choice === 'middle' ? '중단' : '하단'}`;
+        }
+        
+        // 데미지 적용
+        match.player2HP = Math.max(0, match.player2HP - Math.max(1, p1Damage - p2Stats.defense));
+        match.player1HP = Math.max(0, match.player1HP - Math.max(1, p2Damage - p1Stats.defense));
+        
+        match.battleLog.push({
+            round: match.round,
+            p1Choice,
+            p2Choice,
+            p1Damage: Math.max(1, p1Damage - p2Stats.defense),
+            p2Damage: Math.max(1, p2Damage - p1Stats.defense),
+            result: roundResult
+        });
+        
+        // 전투 종료 체크
+        if (match.player1HP <= 0 || match.player2HP <= 0 || match.round >= 10) {
+            await this.endPendulumBattle(match);
+        } else {
+            // 다음 라운드
+            match.round++;
+            match.pendingActions.clear();
+            await this.showBattleRound(match);
+        }
+    }
+    
+    async endPendulumBattle(match) {
+        const winner = match.player1HP > match.player2HP ? 'player1' : 'player2';
+        const battleResult = {
+            winner,
+            battles: match.battleLog,
+            finalHp: { p1: match.player1HP, p2: match.player2HP },
+            totalTurns: match.round
+        };
+        
+        await this.processMatchResult(match, battleResult);
     }
 }
 
@@ -18186,6 +18384,15 @@ client.on('interactionCreate', async (interaction) => {
                 console.error('PVP 랭킹 조회 오류:', error);
                 await interaction.editReply({ content: '❌ 랭킹 조회 중 오류가 발생했습니다!' });
             }
+        }
+        
+        // PVP 펜들럼 배틀 버튼 처리
+        else if (interaction.customId.startsWith('pvp_pendulum_')) {
+            const parts = interaction.customId.split('_');
+            const matchId = parts[2];
+            const position = parts[3]; // high, middle, low
+            
+            await pvpSystem.handlePendulumChoice(interaction, matchId, position);
         }
         
         // PVP 정보
