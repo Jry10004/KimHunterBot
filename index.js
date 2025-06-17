@@ -6298,6 +6298,18 @@ const oddEvenGame = monsterBattle;
 // 독버섯 게임 시스템 인스턴스
 const mushroomGame = new MushroomGameSystem();
 
+// 장비 아이템 조회 함수 (PVP에서 사용)
+function getEquippedItem(user, equipmentType) {
+    const slotIndex = user.equipment[equipmentType];
+    
+    // ObjectId나 잘못된 데이터 타입인 경우 null 반환
+    if (slotIndex === -1 || slotIndex === null || slotIndex === undefined || typeof slotIndex === 'object') {
+        return null;
+    }
+    
+    return user.inventory.find(item => item.inventorySlot === slotIndex);
+}
+
 // PVP 시스템 클래스
 class PVPSystem {
     constructor() {
@@ -7011,13 +7023,28 @@ class PVPSystem {
             return `${filled}${empty} ${current}/${max}`;
         };
         
+        // 플레이어 정보 가져오기 (봇 대응)
+        const getPlayerName = (player) => {
+            if (player.isBot) {
+                return player.user.nickname || '봇';
+            }
+            return player.user.nickname || '플레이어';
+        };
+        
+        const getPlayerRating = (player) => {
+            if (player.isBot) {
+                return player.rating || player.user.rating || 1000;
+            }
+            return player.user.pvp?.rating || 1000;
+        };
+        
         const battleEmbed = new EmbedBuilder()
             .setColor('#ff6b6b')
             .setTitle(`⚔️ 펜들럼 배틀 - 라운드 ${match.round}`)
             .setDescription('10초 안에 공격/방어 위치를 선택하세요!')
             .addFields(
                 { 
-                    name: `${player1.user.nickname || '플레이어1'} (${player1.user.pvp.rating}점)`,
+                    name: `${getPlayerName(player1)} (${getPlayerRating(player1)}점)`,
                     value: createHPBar(match.player1HP, p1Stats.maxHp),
                     inline: true
                 },
@@ -7027,7 +7054,7 @@ class PVPSystem {
                     inline: true 
                 },
                 { 
-                    name: `${player2.user.nickname || '플레이어2'} (${player2.user.pvp.rating}점)`,
+                    name: `${getPlayerName(player2)} (${getPlayerRating(player2)}점)`,
                     value: createHPBar(match.player2HP, p2Stats.maxHp),
                     inline: true
                 }
@@ -7619,17 +7646,6 @@ function addItemToInventory(user, itemData) {
     
     user.inventory.push(newItem);
     return { success: true, slot: slot };
-}
-
-function getEquippedItem(user, equipmentType) {
-    const slotIndex = user.equipment[equipmentType];
-    
-    // ObjectId나 잘못된 데이터 타입인 경우 null 반환
-    if (slotIndex === -1 || slotIndex === null || slotIndex === undefined || typeof slotIndex === 'object') {
-        return null;
-    }
-    
-    return user.inventory.find(item => item.inventorySlot === slotIndex);
 }
 
 function equipItem(user, inventorySlot, equipmentType) {
