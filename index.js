@@ -6425,7 +6425,8 @@ class PVPSystem {
             rating: user.pvp.rating,
             tier: this.getTierByRating(user.pvp.rating),
             timestamp: Date.now(),
-            channel
+            channel,
+            isBot: false
         };
 
         this.matchmakingQueue.set(userId, playerData);
@@ -7040,42 +7041,41 @@ class PVPSystem {
         
         const battleEmbed = new EmbedBuilder()
             .setColor('#ff6b6b')
-            .setTitle(`⚔️ 펜들럼 배틀 - 라운드 ${match.round}`)
-            .setDescription('10초 안에 공격/방어 위치를 선택하세요!')
+            .setTitle(`⚔️ 전투 레이드 - Round ${match.round}`)
+            .setDescription('🎯 **공격 타이밍을 선택하세요!** (10초 제한)\n• 상대와 같은 위치 → 방어 성공! (대미지 70% 감소)\n• 상대와 다른 위치 → 공격 성공! (풀 데미지)')
             .addFields(
                 { 
-                    name: `${getPlayerName(player1)} (${getPlayerRating(player1)}점)`,
-                    value: createHPBar(match.player1HP, p1Stats.maxHp),
+                    name: `⚔️ ${getPlayerName(player1)}`,
+                    value: `${createHPBar(match.player1HP, p1Stats.maxHp)}\n🔥 전투력: ${p1Stats.attack}\n🛡️ 방어력: ${p1Stats.defense}\n🏆 레이팅: ${getPlayerRating(player1)}`,
                     inline: true
                 },
                 { 
-                    name: 'VS', 
-                    value: '⚔️', 
+                    name: '​', 
+                    value: '​', 
                     inline: true 
                 },
                 { 
-                    name: `${getPlayerName(player2)} (${getPlayerRating(player2)}점)`,
-                    value: createHPBar(match.player2HP, p2Stats.maxHp),
+                    name: `⚔️ ${getPlayerName(player2)}`,
+                    value: `${createHPBar(match.player2HP, p2Stats.maxHp)}\n🔥 전투력: ${p2Stats.attack}\n🛡️ 방어력: ${p2Stats.defense}\n🏆 레이팅: ${getPlayerRating(player2)}`,
                     inline: true
                 }
-            )
-            .setFooter({ text: '같은 위치 = 방어 성공 (데미지 감소), 다른 위치 = 공격 성공!' });
+            );
         
         const actionRow = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_high`)
-                    .setLabel('상단')
+                    .setLabel('하이킥 찌르기')
                     .setEmoji('🔺')
                     .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_middle`)
-                    .setLabel('중단')
-                    .setEmoji('⏺️')
+                    .setLabel('정면 슬래시')
+                    .setEmoji('⚔️')
                     .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_low`)
-                    .setLabel('하단')
+                    .setLabel('로우킥 슬라이드')
                     .setEmoji('🔻')
                     .setStyle(ButtonStyle.Danger)
             );
@@ -7124,23 +7124,31 @@ class PVPSystem {
         const userId = interaction.user.id;
         let playerKey;
         
+        // 디버깅용 로그
+        console.log(`펜들럼 선택 - User ID: ${userId}`);
+        console.log(`Player1 ID: ${match.player1.userId}, isBot: ${match.player1.isBot}`);
+        console.log(`Player2 ID: ${match.player2.userId}, isBot: ${match.player2.isBot}`);
+        
+        // userId로 비교
         if (!match.player1.isBot && match.player1.userId === userId) {
             playerKey = 'player1';
         } else if (!match.player2.isBot && match.player2.userId === userId) {
             playerKey = 'player2';
         } else {
-            await interaction.reply({ content: '이 매치의 참가자가 아닙니다!', ephemeral: true });
+            await interaction.reply({ content: '이 대결의 참가자가 아닙니다!', ephemeral: true });
             return;
         }
         
         if (match.pendingActions.has(playerKey)) {
-            await interaction.reply({ content: '이미 선택하셨습니다!', ephemeral: true });
+            await interaction.reply({ content: '이미 공격 타이밍을 선택했습니다!', ephemeral: true });
             return;
         }
         
         match.pendingActions.set(playerKey, position);
+        
+        const positionText = position === 'high' ? '하이킥 찌르기' : position === 'middle' ? '정면 슬래시' : '로우킥 슬라이드';
         await interaction.reply({ 
-            content: `${position === 'high' ? '상단' : position === 'middle' ? '중단' : '하단'}을 선택했습니다!`, 
+            content: `⚔️ **${positionText}** 공격 준비 완료!`, 
             ephemeral: true 
         });
         
@@ -7159,43 +7167,116 @@ class PVPSystem {
         const p1Choice = match.pendingActions.get('player1') || 'middle';
         const p2Choice = match.pendingActions.get('player2') || 'middle';
         
-        let p1Damage = 0;
-        let p2Damage = 0;
-        let roundResult = '';
+        // 플레이어 정보 가져오기
+        const getPlayerName = (player) => {
+            if (player.isBot) return player.user.nickname || '봇';
+            return player.user.nickname || '플레이어';
+        };
+        
+        // 공격 이름 변환
+        const getAttackName = (choice) => {
+            switch(choice) {
+                case 'high': return '하이킥 찌르기';
+                case 'middle': return '정면 슬래시';
+                case 'low': return '로우킥 슬라이드';
+                default: return '기본 공격';
+            }
+        };
+        
+        let p1ActualDamage = 0;
+        let p2ActualDamage = 0;
+        let battleDescription = '';
         
         if (p1Choice === p2Choice) {
-            // 같은 위치 - 방어 성공 (칩 데미지)
-            p1Damage = Math.floor(p1Stats.attack * 0.3);
-            p2Damage = Math.floor(p2Stats.attack * 0.3);
-            roundResult = `🛡️ 두 플레이어 모두 ${p1Choice === 'high' ? '상단' : p1Choice === 'middle' ? '중단' : '하단'}을 선택! 방어 성공!`;
+            // 같은 위치 - 방어 성공 (30% 데미지)
+            const p1RawDamage = Math.floor(p1Stats.attack * 0.3);
+            const p2RawDamage = Math.floor(p2Stats.attack * 0.3);
+            p1ActualDamage = Math.max(1, p1RawDamage - p2Stats.defense);
+            p2ActualDamage = Math.max(1, p2RawDamage - p1Stats.defense);
+            
+            battleDescription = `🛡️ **동시 공격!** 두 전사 모두 ${getAttackName(p1Choice)}를 시전!\n\n`;
+            battleDescription += `⚔️ **${getPlayerName(player1)}**의 공격!\n`;
+            battleDescription += `• 기본 데미지: ${p1RawDamage} → 방어 성공! (70% 차단)\n`;
+            battleDescription += `• **${getPlayerName(player2)}**가 ${p1ActualDamage} 데미지 받음!\n\n`;
+            battleDescription += `⚔️ **${getPlayerName(player2)}**의 반격!\n`;
+            battleDescription += `• 기본 데미지: ${p2RawDamage} → 방어 성공! (70% 차단)\n`;
+            battleDescription += `• **${getPlayerName(player1)}**가 ${p2ActualDamage} 데미지 받음!`;
         } else {
             // 다른 위치 - 풀 데미지
-            p1Damage = p1Stats.attack;
-            p2Damage = p2Stats.attack;
-            roundResult = `⚔️ 공격 성공! P1: ${p1Choice === 'high' ? '상단' : p1Choice === 'middle' ? '중단' : '하단'}, P2: ${p2Choice === 'high' ? '상단' : p2Choice === 'middle' ? '중단' : '하단'}`;
+            p1ActualDamage = Math.max(1, p1Stats.attack - p2Stats.defense);
+            p2ActualDamage = Math.max(1, p2Stats.attack - p1Stats.defense);
+            
+            battleDescription = `💥 **크로스 카운터!** 서로 다른 공격 패턴!\n\n`;
+            battleDescription += `⚔️ **${getPlayerName(player1)}**의 ${getAttackName(p1Choice)}!\n`;
+            battleDescription += `• 공격력: ${p1Stats.attack} - 방어력: ${p2Stats.defense}\n`;
+            battleDescription += `• 💢 **${getPlayerName(player2)}**에게 ${p1ActualDamage} 데미지!\n\n`;
+            battleDescription += `⚔️ **${getPlayerName(player2)}**의 ${getAttackName(p2Choice)}!\n`;
+            battleDescription += `• 공격력: ${p2Stats.attack} - 방어력: ${p1Stats.defense}\n`;
+            battleDescription += `• 💢 **${getPlayerName(player1)}**에게 ${p2ActualDamage} 데미지!`;
         }
         
         // 데미지 적용
-        match.player2HP = Math.max(0, match.player2HP - Math.max(1, p1Damage - p2Stats.defense));
-        match.player1HP = Math.max(0, match.player1HP - Math.max(1, p2Damage - p1Stats.defense));
+        match.player2HP = Math.max(0, match.player2HP - p1ActualDamage);
+        match.player1HP = Math.max(0, match.player1HP - p2ActualDamage);
+        
+        // HP 바 생성
+        const createHPBar = (current, max) => {
+            const percentage = Math.max(0, Math.floor((current / max) * 10));
+            const filled = '🟩'.repeat(percentage);
+            const empty = '⬜'.repeat(10 - percentage);
+            return `${filled}${empty} ${current}/${max}`;
+        };
+        
+        // 전투 결과 임베드
+        const resultEmbed = new EmbedBuilder()
+            .setColor(p1Choice === p2Choice ? '#FFA500' : '#FF0000')
+            .setTitle(`⚔️ Round ${match.round} 결과`)
+            .setDescription(battleDescription)
+            .addFields(
+                {
+                    name: `${getPlayerName(player1)} 상태`,
+                    value: createHPBar(match.player1HP, p1Stats.maxHp),
+                    inline: true
+                },
+                {
+                    name: `${getPlayerName(player2)} 상태`,
+                    value: createHPBar(match.player2HP, p2Stats.maxHp),
+                    inline: true
+                }
+            )
+            .setTimestamp();
+        
+        // 모든 채널에 결과 전송
+        const channels = [];
+        if (!player1.isBot && player1.channel) channels.push(player1.channel);
+        if (!player2.isBot && player2.channel) channels.push(player2.channel);
+        
+        for (const channel of channels) {
+            try {
+                await channel.send({ embeds: [resultEmbed] });
+            } catch (error) {
+                console.error('전투 결과 전송 실패:', error);
+            }
+        }
         
         match.battleLog.push({
             round: match.round,
             p1Choice,
             p2Choice,
-            p1Damage: Math.max(1, p1Damage - p2Stats.defense),
-            p2Damage: Math.max(1, p2Damage - p1Stats.defense),
-            result: roundResult
+            p1Damage: p1ActualDamage,
+            p2Damage: p2ActualDamage,
+            result: battleDescription
         });
         
         // 전투 종료 체크
         if (match.player1HP <= 0 || match.player2HP <= 0 || match.round >= 10) {
-            await this.endPendulumBattle(match);
+            // 2초 후 최종 결과 표시
+            setTimeout(() => this.endPendulumBattle(match), 2000);
         } else {
-            // 다음 라운드
+            // 다음 라운드 (3초 대기)
             match.round++;
             match.pendingActions.clear();
-            await this.showBattleRound(match);
+            setTimeout(() => this.showBattleRound(match), 3000);
         }
     }
     
