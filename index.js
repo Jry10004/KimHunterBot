@@ -9667,6 +9667,10 @@ client.on('interactionCreate', async (interaction) => {
                                 .setLabel('⚔️ 대전 시작')
                                 .setStyle(ButtonStyle.Danger),
                             new ButtonBuilder()
+                                .setCustomId('pvp_enhance')
+                                .setLabel('💎 공격 강화')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
                                 .setCustomId('pvp_ranking')
                                 .setLabel('🏆 PVP 랭킹')
                                 .setStyle(ButtonStyle.Secondary),
@@ -18525,6 +18529,310 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             await interaction.reply({ embeds: [infoEmbed], flags: 64 });
+        }
+        
+        // PVP 공격 강화
+        else if (interaction.customId === 'pvp_enhance') {
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.reply({ content: '유저 데이터를 불러올 수 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const enhanceLevels = user.pvp?.attackEnhancement || { high: 0, middle: 0, low: 0 };
+            
+            // 강화 비용 계산 (레벨이 높아질수록 비용 증가)
+            const getEnhanceCost = (level) => {
+                if (level < 10) return 1000 * (level + 1);
+                else if (level < 20) return 5000 * (level - 9) + 10000;
+                else return 10000 * (level - 19) + 60000;
+            };
+            
+            // 강화 확률 계산 (장비 강화와 동일)
+            const getSuccessRate = (level) => {
+                if (level < 10) return 90 - level * 5;
+                else if (level < 15) return 50 - (level - 10) * 5;
+                else if (level < 20) return 30 - (level - 15) * 2;
+                else if (level < 25) return 20 - (level - 20);
+                else return 15 - (level - 25);
+            };
+            
+            const enhanceEmbed = new EmbedBuilder()
+                .setColor('#ff69b4')
+                .setTitle('💎 PVP 공격 강화')
+                .setDescription('공격 스킬을 강화하여 더 강력한 데미지를 입히세요!\n강화 시 **데미지 +1**씩 증가합니다.')
+                .addFields(
+                    { 
+                        name: '🌟 별똥베기 (상단)', 
+                        value: `레벨: **+${enhanceLevels.high}**\n성공률: ${getSuccessRate(enhanceLevels.high)}%\n비용: ${getEnhanceCost(enhanceLevels.high).toLocaleString()}G`, 
+                        inline: true 
+                    },
+                    { 
+                        name: '🍬 슈가스팅 (중단)', 
+                        value: `레벨: **+${enhanceLevels.middle}**\n성공률: ${getSuccessRate(enhanceLevels.middle)}%\n비용: ${getEnhanceCost(enhanceLevels.middle).toLocaleString()}G`, 
+                        inline: true 
+                    },
+                    { 
+                        name: '🍄 버섯팡 (하단)', 
+                        value: `레벨: **+${enhanceLevels.low}**\n성공률: ${getSuccessRate(enhanceLevels.low)}%\n비용: ${getEnhanceCost(enhanceLevels.low).toLocaleString()}G`, 
+                        inline: true 
+                    },
+                    { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                    { name: '📊 강화 통계', value: `시도: ${user.pvp?.pvpEnhanceHistory?.totalAttempts || 0}회\n파괴: ${user.pvp?.pvpEnhanceHistory?.destroyCount || 0}회`, inline: true }
+                )
+                .setFooter({ text: '⚠️ 실패 시 강화 레벨이 하락하거나 0으로 초기화될 수 있습니다!' });
+            
+            const enhanceButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('pvp_enhance_high')
+                        .setLabel('🌟 별똥베기 강화')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.gold < getEnhanceCost(enhanceLevels.high)),
+                    new ButtonBuilder()
+                        .setCustomId('pvp_enhance_middle')
+                        .setLabel('🍬 슈가스팅 강화')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.gold < getEnhanceCost(enhanceLevels.middle)),
+                    new ButtonBuilder()
+                        .setCustomId('pvp_enhance_low')
+                        .setLabel('🍄 버섯팡 강화')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.gold < getEnhanceCost(enhanceLevels.low))
+                );
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('back_to_pvp')
+                        .setLabel('🔙 PVP 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.reply({ 
+                embeds: [enhanceEmbed], 
+                components: [enhanceButtons, backButton],
+                flags: 64 
+            });
+        }
+        
+        // PVP 공격 강화 실행
+        else if (interaction.customId.startsWith('pvp_enhance_')) {
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.reply({ content: '유저 데이터를 불러올 수 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const position = interaction.customId.replace('pvp_enhance_', '');
+            const currentLevel = user.pvp?.attackEnhancement?.[position] || 0;
+            
+            if (currentLevel >= 30) {
+                await interaction.reply({ content: '이미 최대 강화 레벨(30강)입니다!', flags: 64 });
+                return;
+            }
+            
+            // 강화 비용 계산
+            const getEnhanceCost = (level) => {
+                if (level < 10) return 1000 * (level + 1);
+                else if (level < 20) return 5000 * (level - 9) + 10000;
+                else return 10000 * (level - 19) + 60000;
+            };
+            
+            const cost = getEnhanceCost(currentLevel);
+            
+            if (user.gold < cost) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 강화 확률 계산
+            const getSuccessRate = (level) => {
+                if (level < 10) return 90 - level * 5;
+                else if (level < 15) return 50 - (level - 10) * 5;
+                else if (level < 20) return 30 - (level - 15) * 2;
+                else if (level < 25) return 20 - (level - 20);
+                else return 15 - (level - 25);
+            };
+            
+            const successRate = getSuccessRate(currentLevel);
+            const isSuccess = Math.random() * 100 < successRate;
+            
+            // 골드 차감
+            user.gold -= cost;
+            
+            // pvp 객체 초기화
+            if (!user.pvp) user.pvp = {};
+            if (!user.pvp.attackEnhancement) user.pvp.attackEnhancement = { high: 0, middle: 0, low: 0 };
+            if (!user.pvp.pvpEnhanceHistory) user.pvp.pvpEnhanceHistory = { totalAttempts: 0, totalGoldUsed: 0, destroyCount: 0, maxLevel: 0 };
+            
+            // 통계 업데이트
+            user.pvp.pvpEnhanceHistory.totalAttempts++;
+            user.pvp.pvpEnhanceHistory.totalGoldUsed += cost;
+            
+            const attackNames = {
+                'high': '🌟 별똥베기',
+                'middle': '🍬 슈가스팅',
+                'low': '🍄 버섯팡'
+            };
+            
+            let resultEmbed;
+            
+            if (isSuccess) {
+                // 강화 성공
+                user.pvp.attackEnhancement[position]++;
+                if (user.pvp.attackEnhancement[position] > user.pvp.pvpEnhanceHistory.maxLevel) {
+                    user.pvp.pvpEnhanceHistory.maxLevel = user.pvp.attackEnhancement[position];
+                }
+                
+                resultEmbed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('✨ 강화 성공!')
+                    .setDescription(`${attackNames[position]} 강화에 성공했습니다!`)
+                    .addFields(
+                        { name: '강화 결과', value: `+${currentLevel} → **+${user.pvp.attackEnhancement[position]}**`, inline: true },
+                        { name: '사용 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                        { name: '남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                    );
+            } else {
+                // 강화 실패
+                if (currentLevel >= 15 && Math.random() < 0.3) {
+                    // 파괴 (30% 확률)
+                    user.pvp.attackEnhancement[position] = 0;
+                    user.pvp.pvpEnhanceHistory.destroyCount++;
+                    
+                    resultEmbed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('💥 강화 파괴!')
+                        .setDescription(`${attackNames[position]} 강화가 파괴되어 0강으로 초기화되었습니다!`)
+                        .addFields(
+                            { name: '강화 결과', value: `+${currentLevel} → **+0** 💀`, inline: true },
+                            { name: '사용 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                            { name: '남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                        );
+                } else {
+                    // 하락
+                    const dropLevel = Math.floor(Math.random() * 3) + 1; // 1~3 하락
+                    user.pvp.attackEnhancement[position] = Math.max(0, currentLevel - dropLevel);
+                    
+                    resultEmbed = new EmbedBuilder()
+                        .setColor('#ff6600')
+                        .setTitle('📉 강화 실패!')
+                        .setDescription(`${attackNames[position]} 강화가 실패하여 레벨이 하락했습니다!`)
+                        .addFields(
+                            { name: '강화 결과', value: `+${currentLevel} → **+${user.pvp.attackEnhancement[position]}** (-${dropLevel})`, inline: true },
+                            { name: '사용 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                            { name: '남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                        );
+                }
+            }
+            
+            await user.save();
+            
+            await interaction.reply({ embeds: [resultEmbed], flags: 64 });
+            
+            // 3초 후 강화 메뉴로 돌아가기
+            setTimeout(async () => {
+                const enhanceLevels = user.pvp.attackEnhancement;
+                
+                const enhanceEmbed = new EmbedBuilder()
+                    .setColor('#ff69b4')
+                    .setTitle('💎 PVP 공격 강화')
+                    .setDescription('공격 스킬을 강화하여 더 강력한 데미지를 입히세요!\n강화 시 **데미지 +1**씩 증가합니다.')
+                    .addFields(
+                        { 
+                            name: '🌟 별똥베기 (상단)', 
+                            value: `레벨: **+${enhanceLevels.high}**\n성공률: ${getSuccessRate(enhanceLevels.high)}%\n비용: ${getEnhanceCost(enhanceLevels.high).toLocaleString()}G`, 
+                            inline: true 
+                        },
+                        { 
+                            name: '🍬 슈가스팅 (중단)', 
+                            value: `레벨: **+${enhanceLevels.middle}**\n성공률: ${getSuccessRate(enhanceLevels.middle)}%\n비용: ${getEnhanceCost(enhanceLevels.middle).toLocaleString()}G`, 
+                            inline: true 
+                        },
+                        { 
+                            name: '🍄 버섯팡 (하단)', 
+                            value: `레벨: **+${enhanceLevels.low}**\n성공률: ${getSuccessRate(enhanceLevels.low)}%\n비용: ${getEnhanceCost(enhanceLevels.low).toLocaleString()}G`, 
+                            inline: true 
+                        },
+                        { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                        { name: '📊 강화 통계', value: `시도: ${user.pvp.pvpEnhanceHistory.totalAttempts}회\n파괴: ${user.pvp.pvpEnhanceHistory.destroyCount}회`, inline: true }
+                    )
+                    .setFooter({ text: '⚠️ 실패 시 강화 레벨이 하락하거나 0으로 초기화될 수 있습니다!' });
+                
+                const enhanceButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('pvp_enhance_high')
+                            .setLabel('🌟 별똥베기 강화')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(user.gold < getEnhanceCost(enhanceLevels.high)),
+                        new ButtonBuilder()
+                            .setCustomId('pvp_enhance_middle')
+                            .setLabel('🍬 슈가스팅 강화')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(user.gold < getEnhanceCost(enhanceLevels.middle)),
+                        new ButtonBuilder()
+                            .setCustomId('pvp_enhance_low')
+                            .setLabel('🍄 버섯팡 강화')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(user.gold < getEnhanceCost(enhanceLevels.low))
+                    );
+                
+                const backButton = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('back_to_pvp')
+                            .setLabel('🔙 PVP 메뉴')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+                
+                await interaction.editReply({ 
+                    embeds: [enhanceEmbed], 
+                    components: [enhanceButtons, backButton]
+                });
+            }, 3000);
+        }
+        
+        // PVP 메뉴로 돌아가기
+        else if (interaction.customId === 'back_to_pvp') {
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.reply({ content: '유저 데이터를 불러올 수 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const pvpEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('⚔️ PVP 대전장')
+                .setDescription('다른 플레이어와 실력을 겨뤄보세요!')
+                .addFields(
+                    { name: '🎖️ 나의 레이팅', value: `${user.pvp?.rating || 1000}점`, inline: true },
+                    { name: '🏅 티어', value: user.pvp?.tier || 'Bronze', inline: true },
+                    { name: '🎫 결투권', value: `${user.pvp?.duelTickets || 20}개`, inline: true }
+                );
+            
+            const pvpButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('pvp_matchmaking')
+                        .setLabel('⚔️ 대전 시작')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('pvp_enhance')
+                        .setLabel('💎 공격 강화')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('pvp_ranking')
+                        .setLabel('🏆 PVP 랭킹')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('pvp_info')
+                        .setLabel('📖 PVP 정보')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({ embeds: [pvpEmbed], components: [pvpButtons] });
         }
         
         else if (interaction.customId === 'stock_portfolio') {
