@@ -6912,28 +6912,38 @@ class PVPSystem {
         const winnerName = winner === match.player1 ? p1Name : p2Name;
         const loserName = loser === match.player1 ? p1Name : p2Name;
 
-        // 전투 과정 텍스트 생성
+        // 전투 과정 텍스트 생성 (펜들럼 배틀 형식)
         let battleLog = '';
-        battleResult.battles.forEach((round, index) => {
-            battleLog += `**${index + 1}턴**\n`;
-            
-            if (round.p1Action.miss) {
-                battleLog += `${p1Name}: 공격 실패!\n`;
-            } else {
-                const critText = round.p1Action.isCrit ? ' **크리티컬!**' : '';
-                battleLog += `${p1Name}: ${round.p1Action.damage} 피해${critText}\n`;
-            }
-            
-            if (round.p2Action) {
-                if (round.p2Action.miss) {
-                    battleLog += `${p2Name}: 공격 실패!\n`;
-                } else {
-                    const critText = round.p2Action.isCrit ? ' **크리티컬!**' : '';
-                    battleLog += `${p2Name}: ${round.p2Action.damage} 피해${critText}\n`;
+        if (battleResult.battles && battleResult.battles.length > 0) {
+            battleResult.battles.forEach((round, index) => {
+                battleLog += `**Round ${round.round || index + 1}**\n`;
+                
+                // 펜들럼 배틀 형식
+                if (round.p1Damage !== undefined && round.p2Damage !== undefined) {
+                    battleLog += `${p1Name}: ${round.p1Damage} 피해 입힘\n`;
+                    battleLog += `${p2Name}: ${round.p2Damage} 피해 입힘\n`;
                 }
-            }
-            battleLog += '\n';
-        });
+                // 기존 시뮬레이션 형식 (호환성)
+                else if (round.p1Action) {
+                    if (round.p1Action.miss) {
+                        battleLog += `${p1Name}: 공격 실패!\n`;
+                    } else {
+                        const critText = round.p1Action.isCrit ? ' **크리티컬!**' : '';
+                        battleLog += `${p1Name}: ${round.p1Action.damage} 피해${critText}\n`;
+                    }
+                    
+                    if (round.p2Action) {
+                        if (round.p2Action.miss) {
+                            battleLog += `${p2Name}: 공격 실패!\n`;
+                        } else {
+                            const critText = round.p2Action.isCrit ? ' **크리티컬!**' : '';
+                            battleLog += `${p2Name}: ${round.p2Action.damage} 피해${critText}\n`;
+                        }
+                    }
+                }
+                battleLog += '\n';
+            });
+        }
 
         const resultEmbed = new EmbedBuilder()
             .setTitle('⚔️ PVP 결투 결과')
@@ -7065,18 +7075,18 @@ class PVPSystem {
             .addComponents(
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_high`)
-                    .setLabel('하이킥 찌르기')
-                    .setEmoji('🔺')
+                    .setLabel('별똥베기')
+                    .setEmoji('🌟')
                     .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_middle`)
-                    .setLabel('정면 슬래시')
-                    .setEmoji('⚔️')
+                    .setLabel('슈가스팅')
+                    .setEmoji('🍬')
                     .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_low`)
-                    .setLabel('로우킥 슬라이드')
-                    .setEmoji('🔻')
+                    .setLabel('버섯팡')
+                    .setEmoji('🍄')
                     .setStyle(ButtonStyle.Danger)
             );
         
@@ -7104,8 +7114,11 @@ class PVPSystem {
             setTimeout(() => this.makeBotChoice(match, 'player2'), Math.random() * 5000 + 2000);
         }
         
-        // 10초 타이머
-        setTimeout(() => this.resolveRound(match), 10000);
+        // 10초 타이머 설정 (중복 방지를 위해 기존 타이머 취소)
+        if (match.roundTimer) {
+            clearTimeout(match.roundTimer);
+        }
+        match.roundTimer = setTimeout(() => this.resolveRound(match), 10000);
     }
     
     makeBotChoice(match, playerKey) {
@@ -7117,7 +7130,7 @@ class PVPSystem {
     async handlePendulumChoice(interaction, matchId, position) {
         const match = this.activeMatches.get(matchId);
         if (!match) {
-            await interaction.reply({ content: '매치를 찾을 수 없습니다!', ephemeral: true });
+            await interaction.reply({ content: '매치를 찾을 수 없습니다!', flags: 64 });
             return;
         }
         
@@ -7146,21 +7159,26 @@ class PVPSystem {
             playerKey = 'player2';
         } else {
             console.log(`매치 참가자 확인 실패 - 요청 userId: ${userId}`);
-            await interaction.reply({ content: '이 대결의 참가자가 아닙니다!', ephemeral: true });
+            await interaction.reply({ content: '이 대결의 참가자가 아닙니다!', flags: 64 });
             return;
         }
         
         if (match.pendingActions.has(playerKey)) {
-            await interaction.reply({ content: '이미 공격 타이밍을 선택했습니다!', ephemeral: true });
+            await interaction.reply({ content: '이미 공격 타이밍을 선택했습니다!', flags: 64 });
             return;
         }
         
         match.pendingActions.set(playerKey, position);
         
-        const positionText = position === 'high' ? '하이킥 찌르기' : position === 'middle' ? '정면 슬래시' : '로우킥 슬라이드';
+        const attackNames = {
+            'high': '🌟 별똥베기',
+            'middle': '🍬 슈가스팅',
+            'low': '🍄 버섯팡'
+        };
+        
         await interaction.reply({ 
-            content: `⚔️ **${positionText}** 공격 준비 완료!`, 
-            ephemeral: true 
+            content: `⚔️ **${attackNames[position]}** 준비 완료! 반짝~✨`, 
+            flags: 64 
         });
         
         // 두 플레이어 모두 선택했으면 즉시 라운드 종료
@@ -7187,12 +7205,22 @@ class PVPSystem {
         // 공격 이름 변환
         const getAttackName = (choice) => {
             switch(choice) {
-                case 'high': return '하이킥 찌르기';
-                case 'middle': return '정면 슬래시';
-                case 'low': return '로우킥 슬라이드';
+                case 'high': return '별똥베기 ✨';
+                case 'middle': return '슈가스팅 🍭';
+                case 'low': return '버섯팡 🍄';
                 default: return '기본 공격';
             }
         };
+        
+        // PVP 강화 보너스 적용
+        const getEnhancementBonus = (player, position) => {
+            if (player.isBot) return 0;
+            const enhancement = player.user.pvp?.attackEnhancement?.[position] || 0;
+            return enhancement; // 강화당 +1 데미지
+        };
+        
+        const p1Enhancement = getEnhancementBonus(player1, p1Choice);
+        const p2Enhancement = getEnhancementBonus(player2, p2Choice);
         
         let p1ActualDamage = 0;
         let p2ActualDamage = 0;
@@ -7200,8 +7228,8 @@ class PVPSystem {
         
         if (p1Choice === p2Choice) {
             // 같은 위치 - 방어 성공 (30% 데미지)
-            const p1RawDamage = Math.floor(p1Stats.attack * 0.3);
-            const p2RawDamage = Math.floor(p2Stats.attack * 0.3);
+            const p1RawDamage = Math.floor((p1Stats.attack + p1Enhancement) * 0.3);
+            const p2RawDamage = Math.floor((p2Stats.attack + p2Enhancement) * 0.3);
             p1ActualDamage = Math.max(1, p1RawDamage - p2Stats.defense);
             p2ActualDamage = Math.max(1, p2RawDamage - p1Stats.defense);
             
@@ -7214,15 +7242,15 @@ class PVPSystem {
             battleDescription += `• **${getPlayerName(player1)}**가 ${p2ActualDamage} 데미지 받음!`;
         } else {
             // 다른 위치 - 풀 데미지
-            p1ActualDamage = Math.max(1, p1Stats.attack - p2Stats.defense);
-            p2ActualDamage = Math.max(1, p2Stats.attack - p1Stats.defense);
+            p1ActualDamage = Math.max(1, (p1Stats.attack + p1Enhancement) - p2Stats.defense);
+            p2ActualDamage = Math.max(1, (p2Stats.attack + p2Enhancement) - p1Stats.defense);
             
             battleDescription = `💥 **크로스 카운터!** 서로 다른 공격 패턴!\n\n`;
             battleDescription += `⚔️ **${getPlayerName(player1)}**의 ${getAttackName(p1Choice)}!\n`;
-            battleDescription += `• 공격력: ${p1Stats.attack} - 방어력: ${p2Stats.defense}\n`;
+            battleDescription += `• 공격력: ${p1Stats.attack}${p1Enhancement > 0 ? ` (+${p1Enhancement}강)` : ''} - 방어력: ${p2Stats.defense}\n`;
             battleDescription += `• 💢 **${getPlayerName(player2)}**에게 ${p1ActualDamage} 데미지!\n\n`;
             battleDescription += `⚔️ **${getPlayerName(player2)}**의 ${getAttackName(p2Choice)}!\n`;
-            battleDescription += `• 공격력: ${p2Stats.attack} - 방어력: ${p1Stats.defense}\n`;
+            battleDescription += `• 공격력: ${p2Stats.attack}${p2Enhancement > 0 ? ` (+${p2Enhancement}강)` : ''} - 방어력: ${p1Stats.defense}\n`;
             battleDescription += `• 💢 **${getPlayerName(player1)}**에게 ${p2ActualDamage} 데미지!`;
         }
         

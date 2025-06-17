@@ -232,7 +232,19 @@ const userSchema = new mongoose.Schema({
             result: String, // 'win' or 'lose'
             ratingChange: Number, // 레이팅 변화량
             date: { type: Date, default: Date.now }
-        }]
+        }],
+        // PVP 전용 강화 시스템
+        attackEnhancement: {
+            high: { type: Number, default: 0 }, // 별똥베기 강화 (0~30)
+            middle: { type: Number, default: 0 }, // 슈가스팅 강화 (0~30)
+            low: { type: Number, default: 0 } // 버섯팡 강화 (0~30)
+        },
+        pvpEnhanceHistory: {
+            totalAttempts: { type: Number, default: 0 }, // 총 강화 시도
+            totalGoldUsed: { type: Number, default: 0 }, // 사용한 골드
+            destroyCount: { type: Number, default: 0 }, // 파괴 횟수
+            maxLevel: { type: Number, default: 0 } // 최고 달성 레벨
+        }
     },
     // 홀짝 게임 통계
     oddEvenStats: {
@@ -368,12 +380,12 @@ const userSchema = new mongoose.Schema({
         // 운동 통계
         totalExerciseTime: { type: Number, default: 0 }, // 총 운동 시간
         exerciseHistory: [{
-            type: String,                                // 운동 종류
-            duration: Number,                            // 운동 시간
+            exerciseType: { type: String },              // 운동 종류
+            duration: { type: Number },                  // 운동 시간
             rewards: {
-                gold: Number,
-                exp: Number,
-                fitnessExp: Number
+                gold: { type: Number },
+                exp: { type: Number },
+                fitnessExp: { type: Number }
             },
             date: { type: Date, default: Date.now }
         }],
