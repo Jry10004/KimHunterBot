@@ -8229,78 +8229,90 @@ async function updateEnhanceKingRole(guild) {
     }
 }
 
-// 전투력 계산 함수
+// 통합 전투력 계산 함수
 function calculateCombatPower(user) {
     let basePower = 0;
     
-    // 엠블럼에 따른 스탯 계산
+    // 1. 기본 스탯 전투력
+    basePower = user.stats.strength * 2 + 
+                user.stats.agility * 1.5 + 
+                user.stats.intelligence * 1.5 + 
+                user.stats.vitality * 2 + 
+                user.stats.luck * 1;
+    
+    // 2. 엠블럼 보너스
     if (user.emblem) {
-        // 엠블럼 단계 확인
         const emblemLevel = getEmblemLevel(user.emblem);
-        const emblemMultiplier = 1 + (emblemLevel * 0.25); // 1단계: 1.25, 2단계: 1.5, ...
-        
-        // 엠블럼 계열에 따른 주스탯만 적용
-        const emblemType = getEmblemType(user.emblem);
-        
-        switch(emblemType) {
-            case 'warrior':
-                basePower = user.stats.strength * emblemMultiplier * 3; // 전사는 힘만, 높은 배율
-                break;
-            case 'archer':
-                basePower = user.stats.agility * emblemMultiplier * 3; // 궁수는 민첩만
-                break;
-            case 'spellsword':
-                basePower = user.stats.intelligence * emblemMultiplier * 3; // 마검사는 지능만
-                break;
-            case 'rogue':
-                basePower = user.stats.luck * emblemMultiplier * 3; // 도적은 행운만
-                break;
-        }
-        
-        // 체력은 생존력으로 모든 직업에 적용 (낮은 배율)
-        basePower += user.stats.vitality * 0.5;
-    } else {
-        // 엠블럼이 없으면 기존 방식 (모든 스탯 반영)
-        basePower = user.stats.strength * 2 + user.stats.agility + user.stats.intelligence * 0.5 + user.stats.vitality * 1.5 + user.stats.luck;
+        const emblemBonus = emblemLevel * 50; // 엠블럼 단계당 50 전투력
+        basePower += emblemBonus;
     }
     
-    // 장비 보너스 및 강화 보너스
-    let equipmentBonus = 0;
-    let enhancementBonus = 0;
+    // 3. 장비 전투력
+    let equipmentPower = 0;
+    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
     
-    // 각 장비슬롯별 계산 (신식 시스템 - 슬롯 번호 참조)
-    Object.keys(user.equipment).forEach(slot => {
-        const slotIndex = user.equipment[slot];
-        
-        if (slotIndex >= 0) {
-            // 인벤토리에서 직접 찾기
-            const equipment = user.inventory.find(item => item.inventorySlot === slotIndex);
+    equipmentSlots.forEach(slot => {
+        const item = getEquippedItem(user, slot);
+        if (item) {
+            // 장비 기본 스탯
+            if (item.stats) {
+                const attack = Array.isArray(item.stats.attack) ? 
+                    (item.stats.attack[0] + item.stats.attack[1]) / 2 : 
+                    (item.stats.attack || 0);
+                const defense = Array.isArray(item.stats.defense) ? 
+                    (item.stats.defense[0] + item.stats.defense[1]) / 2 : 
+                    (item.stats.defense || 0);
+                const dodge = item.stats.dodge || 0;
+                const luck = item.stats.luck || 0;
+                
+                equipmentPower += attack + defense + dodge + luck;
+            }
             
-            if (equipment && equipment.stats) {
-                // 스탯 값 추출 (숫자 형태만 처리)
-                let attack = Number(equipment.stats.attack) || 0;
-                let defense = Number(equipment.stats.defense) || 0;
-                let dodge = Number(equipment.stats.dodge) || 0;
-                let luck = Number(equipment.stats.luck) || 0;
-                
-                const itemBonus = attack + defense + dodge + luck;
-                equipmentBonus += itemBonus;
-                
-                // 강화 보너스 계산
-                if (equipment.enhanceLevel > 0) {
-                    const itemLevel = equipment.level || 1;
-                    const bonus = calculateEnhancementBonus(itemLevel, equipment.enhanceLevel);
-                    const enhanceBonus = (bonus.attack || 0) + (bonus.defense || 0);
-                    enhancementBonus += enhanceBonus;
-                }
+            // 강화 보너스
+            if (item.enhanceLevel > 0) {
+                equipmentPower += item.enhanceLevel * 10; // 강화당 10 전투력
             }
         }
     });
     
-    // 레벨 보너스
-    let levelBonus = user.level * 5;
+    // 4. PVP 강화 전투력
+    let pvpPower = 0;
+    if (user.pvp?.attackEnhancement) {
+        pvpPower = (user.pvp.attackEnhancement.high || 0) * 5 +
+                   (user.pvp.attackEnhancement.middle || 0) * 5 +
+                   (user.pvp.attackEnhancement.low || 0) * 5;
+    }
     
-    return Math.floor(basePower + equipmentBonus + enhancementBonus + levelBonus);
+    // 5. 에너지 조각 전투력
+    let fragmentPower = 0;
+    if (user.energyFragments?.highestLevel) {
+        fragmentPower = calculateCombatPowerFromFragment(user.energyFragments.highestLevel);
+    }
+    
+    // 6. 레벨 보너스
+    const levelBonus = user.level * 10;
+    
+    // 7. 운동 시스템 보너스
+    let fitnessPower = 0;
+    if (user.fitness?.stats) {
+        fitnessPower = (user.fitness.stats.strength || 0) * 2 +
+                       (user.fitness.stats.stamina || 0) * 2 +
+                       (user.fitness.stats.flexibility || 0) * 1 +
+                       (user.fitness.stats.agility || 0) * 1 +
+                       (user.fitness.stats.mental || 0) * 1;
+    }
+    
+    // 총 전투력 계산
+    const totalPower = Math.floor(
+        basePower + 
+        equipmentPower + 
+        pvpPower + 
+        fragmentPower + 
+        levelBonus + 
+        fitnessPower
+    );
+    
+    return totalPower;
 }
 
 // 엠블럼 단계 확인 함수
@@ -8366,7 +8378,62 @@ async function getUser(discordId) {
             console.log(`새 유저 생성: ${discordId}`);
         }
         
-        // 일괄 정리 완료로 개별 마이그레이션 불필요
+        // 장비 데이터 무결성 확인 및 복구
+        if (user.equipment) {
+            let needsSave = false;
+            const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+            
+            equipmentSlots.forEach(slot => {
+                // ObjectId나 이상한 값이면 -1로 초기화
+                if (user.equipment[slot] && typeof user.equipment[slot] !== 'number') {
+                    console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯 복구: ${user.equipment[slot]} -> -1`);
+                    user.equipment[slot] = -1;
+                    needsSave = true;
+                }
+                
+                // 장착된 슬롯 번호가 있다면 해당 아이템의 equipped 상태 확인
+                if (user.equipment[slot] !== -1) {
+                    const equippedItem = user.inventory.find(item => item.inventorySlot === user.equipment[slot]);
+                    if (equippedItem && !equippedItem.equipped) {
+                        equippedItem.equipped = true;
+                        needsSave = true;
+                        console.log(`[장비 복구] ${user.nickname}의 ${equippedItem.name} equipped 상태 복구`);
+                    }
+                }
+            });
+            
+            // 인벤토리의 equipped 상태와 equipment 슬롯 동기화
+            user.inventory.forEach(item => {
+                if (item.equipped) {
+                    const slot = item.type;
+                    if (user.equipment[slot] !== item.inventorySlot) {
+                        console.log(`[장비 동기화] ${user.nickname}의 ${item.name} 장착 상태 동기화`);
+                        user.equipment[slot] = item.inventorySlot;
+                        needsSave = true;
+                    }
+                }
+            });
+            
+            if (needsSave) {
+                await user.save();
+                console.log(`[장비 복구] ${user.nickname}의 장비 데이터 복구 완료`);
+            }
+        }
+        
+        // 출석 데이터 무결성 확인
+        if (user.lastDaily === null || user.lastDaily === undefined) {
+            user.lastDaily = null;
+        }
+        if (!Array.isArray(user.weeklyAttendance)) {
+            user.weeklyAttendance = [false, false, false, false, false, false, false];
+        }
+        if (!user.weekStart) {
+            const now = new Date();
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - now.getDay());
+            weekStart.setHours(0, 0, 0, 0);
+            user.weekStart = weekStart;
+        }
         
         return user;
     } catch (error) {
@@ -13263,7 +13330,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '돈지급') {
             // 관리자 권한 체크
-            const ADMIN_IDS = ['302737668842086401', '1123609568397836309']; // 관리자 ID 리스트
+            const ADMIN_IDS = ['302737668842086401', '1123609568397836309', '424480594542592009']; // 관리자 ID 리스트
             
             if (!ADMIN_IDS.includes(interaction.user.id)) {
                 await interaction.reply({ 
