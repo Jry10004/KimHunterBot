@@ -28,6 +28,124 @@ const AUCTION_HOUSE = {
 let currentMarketEvent = null;
 let lastMarketUpdate = 0;
 
+// 게임 메뉴 표시 함수
+async function showGameMenu(interaction) {
+    const gameCommand = client.application.commands.cache.find(cmd => cmd.name === '게임');
+    if (!gameCommand) {
+        await interaction.reply({ content: '게임 명령어를 찾을 수 없습니다.', flags: 64 });
+        return;
+    }
+    
+    // /게임 명령어 실행
+    await interaction.deferUpdate();
+    await interaction.editReply({
+        content: '게임 메뉴로 돌아갑니다...',
+        embeds: [],
+        components: []
+    });
+    
+    // 메인 메뉴 표시
+    const categoryEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setTitle('🎮 김헌터 RPG 게임')
+        .setDescription('원하시는 카테고리를 선택해주세요!')
+        .setFooter({ text: '아래 메뉴에서 카테고리를 선택하세요' });
+    
+    const categoryOptions = Object.entries(MENU_CATEGORIES).map(([key, category]) => ({
+        label: category.name,
+        description: category.description,
+        value: key,
+        emoji: category.emoji
+    }));
+    
+    const categoryMenu = new StringSelectMenuBuilder()
+        .setCustomId('category_menu')
+        .setPlaceholder('📁 카테고리를 선택하세요')
+        .addOptions(categoryOptions);
+    
+    const categoryRow = new ActionRowBuilder().addComponents(categoryMenu);
+    
+    await interaction.editReply({
+        content: null,
+        embeds: [categoryEmbed],
+        components: [categoryRow]
+    });
+}
+
+// 에너지 융합 메뉴 표시 함수
+async function showEnergyFusionMenu(interaction) {
+    const user = await getUser(interaction.user.id);
+    if (!user || !user.registered) {
+        await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+        return;
+    }
+    
+    // 에너지 조각 현황
+    const fragments = user.energyFragments?.fragments || new Map();
+    let fragmentText = '';
+    let totalFragments = 0;
+    
+    const sortedLevels = Array.from(fragments.keys()).sort((a, b) => a - b);
+    
+    if (sortedLevels.length === 0) {
+        fragmentText = '보유한 조각이 없습니다.\n채굴을 통해 조각을 획득하세요!';
+    } else {
+        sortedLevels.slice(0, 10).forEach(level => {
+            const count = fragments.get(level);
+            totalFragments += count;
+            fragmentText += `Lv.${level}: ${count}개 | `;
+            if ((sortedLevels.indexOf(level) + 1) % 3 === 0) {
+                fragmentText = fragmentText.slice(0, -3) + '\n';
+            }
+        });
+        if (sortedLevels.length > 10) {
+            fragmentText += `\n... 외 ${sortedLevels.length - 10}종류`;
+        }
+    }
+    
+    const fusionEmbed = new EmbedBuilder()
+        .setColor('#ff00ff')
+        .setTitle('⚡ 에너지 융합 시스템')
+        .setDescription('3개의 같은 레벨 조각을 융합하여 다음 레벨 조각을 만드세요!')
+        .addFields(
+            { name: '📊 보유 조각', value: fragmentText.trim() || '없음', inline: false },
+            { name: '💎 총 조각', value: `${totalFragments}개`, inline: true },
+            { name: '🎯 최고 레벨', value: `Lv.${user.energyFragments?.highestLevel || 0}`, inline: true },
+            { name: '🔄 일일 융합', value: `${user.energyFragments?.dailyFusions || 0}/20회`, inline: true },
+            { name: '📈 실패 스택', value: `${user.energyFragments?.failureStack || 0}/10`, inline: true },
+            { name: '🎫 융합권', value: `${user.energyFragments?.fusionTickets || 0}개`, inline: true }
+        )
+        .setFooter({ text: '실패 시 스택이 쌓이며, 10스택 시 100% 성공!' });
+    
+    const fusionButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('fragment_auto_fusion')
+                .setLabel('🔄 자동 융합')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(totalFragments < 3),
+            new ButtonBuilder()
+                .setCustomId('fragment_manual_fusion')
+                .setLabel('🎯 수동 융합')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(totalFragments < 3),
+            new ButtonBuilder()
+                .setCustomId('fusion_info')
+                .setLabel('📖 융합 정보')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('fusion_back')
+                .setLabel('🔙 돌아가기')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ embeds: [fusionEmbed], components: [fusionButtons] });
+    } else {
+        await interaction.reply({ embeds: [fusionEmbed], components: [fusionButtons], flags: 64 });
+    }
+}
+
 
 // 현재 활성 이벤트들
 let dailyFortune = null;
@@ -171,7 +289,7 @@ async function processNextRound(interaction, session, gameId) {
             )
             .setImage('attachment://kim_hunting_win.gif');
         
-        const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
+        const winGif = new AttachmentBuilder(path.join(__dirname, 'resource', MUSHROOM_GAME.effects.victory));
         
         await interaction.followUp({ 
             embeds: [completeEmbed],
@@ -199,7 +317,7 @@ async function processNextRound(interaction, session, gameId) {
         )
         .setImage('attachment://kim_hunting_main.png');
     
-    const backgroundImage = new AttachmentBuilder(`./img/${MUSHROOM_GAME.backgrounds.mushroomSelect}`);
+    const backgroundImage = new AttachmentBuilder(path.join(__dirname, 'resource', MUSHROOM_GAME.backgrounds.mushroomSelect));
     const mushroomButtons = createMushroomGameButtons(gameId, session.mushrooms, 'player');
     
     await interaction.followUp({ 
@@ -237,7 +355,7 @@ async function processNextRound(interaction, session, gameId) {
             )
             .setImage('attachment://kim_hunting_win.gif');
         
-        const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
+        const winGif = new AttachmentBuilder(path.join(__dirname, 'resource', MUSHROOM_GAME.effects.victory));
         
         await interaction.followUp({ 
             embeds: [completeEmbed], 
@@ -261,7 +379,7 @@ async function processNextRound(interaction, session, gameId) {
             )
             .setImage('attachment://kim_hunting2.gif');
         
-        const nextGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.thinking}`);
+        const nextGif = new AttachmentBuilder(path.join(__dirname, 'resource', MUSHROOM_GAME.effects.thinking));
         
         await interaction.followUp({ 
             embeds: [nextRoundEmbed], 
@@ -425,6 +543,12 @@ const MENU_DEFINITIONS = {
         label: '💎 장비강화',
         description: '장비를 강화하여 전투력 상승',
         emoji: '💎',
+        category: 'character'
+    },
+    fusion: {
+        label: '⚡ 조각융합',
+        description: '에너지 조각을 융합하여 상위 조각 획득',
+        emoji: '⚡',
         category: 'character'
     },
     settings: {
@@ -666,7 +790,7 @@ async function createCustomizedMenu(userId) {
             // 경제
             'shop', 'stocks', 'artifacts', 'auction',
             // 기타
-            'enhancement'
+            'enhancement', 'fusion'
         ];
         const hiddenMenus = user?.menuSettings?.hiddenMenus || [];
         const favoriteMenus = user?.menuSettings?.favoriteMenus || [];
@@ -3103,7 +3227,10 @@ async function completeExercise(user) {
     if (!exerciseType) return;
     
     const exercise = EXERCISE_SYSTEM.exercises[exerciseType];
-    const duration = Date.now() - user.fitness.currentExercise.startTime;
+    const actualElapsed = Date.now() - user.fitness.currentExercise.startTime;
+    const intendedDuration = user.fitness.currentExercise.duration;
+    // Use the minimum of actual elapsed time and intended duration
+    const duration = Math.min(actualElapsed, intendedDuration);
     const minutes = Math.floor(duration / 60000);
     
     // 장비 보너스 계산
@@ -6152,7 +6279,28 @@ class MushroomGameSystem {
         if (session.isAlive && session.currentRound > MUSHROOM_GAME.gameSettings.maxRounds) {
             await this.completeGame(interaction, userId, true);
         } else if (!session.isAlive) {
+            // 패배 시에도 버튼 표시
             await this.saveGameResult(userId);
+            
+            // 게임 종료 후 버튼 추가
+            const endButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('mushroom_play_again')
+                        .setLabel('🍄 한판 더하기')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('game_main_menu')
+                        .setLabel('🏠 메인 메뉴로')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            // 잠시 후 버튼 표시
+            setTimeout(async () => {
+                await interaction.editReply({
+                    components: [endButtons]
+                });
+            }, 1000);
         }
     }
 
@@ -6236,9 +6384,22 @@ class MushroomGameSystem {
         const backgroundAttachment = new AttachmentBuilder(`resource/${MUSHROOM_GAME.backgrounds.victory}`);
         const effectAttachment = new AttachmentBuilder(`resource/${MUSHROOM_GAME.effects.victory}`);
 
+        // 게임 종료 후 버튼 추가
+        const endButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('mushroom_play_again')
+                    .setLabel('🍄 한판 더하기')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('game_main_menu')
+                    .setLabel('🏠 메인 메뉴로')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
         await interaction.editReply({
             embeds: [victoryEmbed],
-            components: [],
+            components: [endButtons],
             files: [backgroundAttachment, effectAttachment]
         });
 
@@ -6277,15 +6438,28 @@ class MushroomGameSystem {
                 { name: '🏆 최종 성과', value: `생존 라운드: ${session.survivedRounds}\n획득 골드: ${session.totalReward}G`, inline: false }
             );
 
+        // 게임 종료 후 버튼 추가
+        const endButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('mushroom_play_again')
+                    .setLabel('🍄 한판 더하기')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('game_main_menu')
+                    .setLabel('🏠 메인 메뉴로')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
         if (interaction.replied || interaction.deferred) {
             await interaction.editReply({
                 embeds: [endEmbed],
-                components: []
+                components: [endButtons]
             });
         } else {
             await interaction.update({
                 embeds: [endEmbed],
-                components: []
+                components: [endButtons]
             });
         }
     }
@@ -6307,7 +6481,18 @@ function getEquippedItem(user, equipmentType) {
         return null;
     }
     
-    return user.inventory.find(item => item.inventorySlot === slotIndex);
+    // inventorySlot으로 아이템 찾기
+    const item = user.inventory.find(item => item.inventorySlot === slotIndex);
+    
+    // 아이템을 찾았지만 타입이 맞지 않는 경우 데이터 정리
+    if (item && item.type !== equipmentType) {
+        console.log(`[장비 오류] ${user.nickname}의 ${equipmentType} 슬롯에 잘못된 타입의 아이템: ${item.type}`);
+        user.equipment[equipmentType] = -1;
+        item.equipped = false;
+        return null;
+    }
+    
+    return item;
 }
 
 // PVP 시스템 클래스
@@ -7743,13 +7928,91 @@ function getActiveEffects() {
 
 // 📦 새로운 인벤토리 시스템 함수들
 function getAvailableInventorySlot(user) {
-    const usedSlots = user.inventory.map(item => item.inventorySlot);
+    const usedSlots = user.inventory.map(item => item.inventorySlot).filter(slot => slot !== null && slot !== undefined);
     for (let i = 0; i < user.maxInventorySlots; i++) {
         if (!usedSlots.includes(i)) {
             return i;
         }
     }
     return -1; // 슬롯 부족
+}
+
+// 인벤토리 데이터 무결성 검사 및 복구
+function validateAndFixInventory(user) {
+    let needsFix = false;
+    
+    // 1. inventorySlot 중복 제거 및 재할당
+    const slotMap = new Map();
+    const itemsToReassign = [];
+    
+    user.inventory.forEach((item, index) => {
+        if (item.inventorySlot === null || item.inventorySlot === undefined) {
+            itemsToReassign.push(item);
+            needsFix = true;
+        } else if (slotMap.has(item.inventorySlot)) {
+            // 중복된 슬롯 발견
+            itemsToReassign.push(item);
+            needsFix = true;
+        } else {
+            slotMap.set(item.inventorySlot, item);
+        }
+    });
+    
+    // 중복되거나 없는 슬롯을 가진 아이템들에 새 슬롯 할당
+    itemsToReassign.forEach(item => {
+        const newSlot = getAvailableInventorySlot(user);
+        if (newSlot !== -1) {
+            item.inventorySlot = newSlot;
+            console.log(`[인벤토리 복구] ${item.name}에 새 슬롯 ${newSlot} 할당`);
+        }
+    });
+    
+    // 2. equipment 슬롯 검증
+    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+    equipmentSlots.forEach(slot => {
+        const slotIndex = user.equipment[slot];
+        
+        if (slotIndex !== -1 && slotIndex !== null && slotIndex !== undefined) {
+            const item = user.inventory.find(i => i.inventorySlot === slotIndex);
+            
+            if (!item) {
+                // 장착된 슬롯에 아이템이 없음
+                console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯 초기화: ${slotIndex} -> -1`);
+                user.equipment[slot] = -1;
+                needsFix = true;
+            } else if (item.type !== slot) {
+                // 잘못된 타입의 아이템이 장착됨
+                console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯에 잘못된 타입: ${item.type}`);
+                user.equipment[slot] = -1;
+                item.equipped = false;
+                needsFix = true;
+            } else if (!item.equipped) {
+                // equipped 상태 동기화
+                item.equipped = true;
+                needsFix = true;
+            }
+        }
+    });
+    
+    // 3. equipped 상태와 equipment 슬롯 동기화
+    user.inventory.forEach(item => {
+        if (item.equipped) {
+            const slot = item.type;
+            if (equipmentSlots.includes(slot)) {
+                if (user.equipment[slot] !== item.inventorySlot) {
+                    console.log(`[장비 동기화] ${item.name}의 장착 상태 동기화`);
+                    user.equipment[slot] = item.inventorySlot;
+                    needsFix = true;
+                }
+            } else {
+                // 장착 불가능한 아이템이 equipped 상태
+                item.equipped = false;
+                needsFix = true;
+            }
+        }
+    });
+    
+    return needsFix;
 }
 
 function addItemToInventory(user, itemData) {
@@ -7769,8 +8032,19 @@ function addItemToInventory(user, itemData) {
 }
 
 function equipItem(user, inventorySlot, equipmentType) {
-    const item = user.inventory.find(item => item.inventorySlot === inventorySlot);
-    if (!item) return { success: false, message: '아이템을 찾을 수 없습니다!' };
+    // inventorySlot을 숫자로 변환
+    const slotNumber = typeof inventorySlot === 'string' ? parseInt(inventorySlot) : inventorySlot;
+    
+    const item = user.inventory.find(item => item.inventorySlot === slotNumber);
+    if (!item) {
+        console.log(`[장비 오류] inventorySlot ${slotNumber}에 아이템을 찾을 수 없음`);
+        return { success: false, message: '아이템을 찾을 수 없습니다!' };
+    }
+    
+    // 아이템 타입 확인
+    if (item.type !== equipmentType) {
+        return { success: false, message: `이 아이템은 ${equipmentType} 슬롯에 장착할 수 없습니다!` };
+    }
     
     // 레벨 체크
     if (user.level < item.level) {
@@ -7779,7 +8053,7 @@ function equipItem(user, inventorySlot, equipmentType) {
     
     // 이전 장비 해제
     const previousSlot = user.equipment[equipmentType];
-    if (previousSlot !== -1) {
+    if (previousSlot !== -1 && previousSlot !== null && previousSlot !== undefined) {
         const previousItem = user.inventory.find(item => item.inventorySlot === previousSlot);
         if (previousItem) {
             previousItem.equipped = false;
@@ -7787,19 +8061,26 @@ function equipItem(user, inventorySlot, equipmentType) {
     }
     
     // 새 장비 장착
-    user.equipment[equipmentType] = inventorySlot;
+    user.equipment[equipmentType] = slotNumber;
     item.equipped = true;
+    
+    console.log(`[장비 장착] ${user.nickname}가 ${item.name}을(를) ${equipmentType} 슬롯에 장착`);
     
     return { success: true, message: '장비를 착용했습니다!' };
 }
 
 function unequipItem(user, equipmentType) {
     const slotIndex = user.equipment[equipmentType];
-    if (slotIndex === -1) return { success: false, message: '착용된 장비가 없습니다!' };
+    if (slotIndex === -1 || slotIndex === null || slotIndex === undefined) {
+        return { success: false, message: '착용된 장비가 없습니다!' };
+    }
     
     const item = user.inventory.find(item => item.inventorySlot === slotIndex);
     if (item) {
         item.equipped = false;
+        console.log(`[장비 해제] ${user.nickname}가 ${item.name}을(를) 해제`);
+    } else {
+        console.log(`[장비 오류] ${user.nickname}의 ${equipmentType} 슬롯 ${slotIndex}에 아이템이 없음`);
     }
     
     user.equipment[equipmentType] = -1;
@@ -7977,6 +8258,60 @@ function generateRandomStats(statRanges) {
     return randomStats;
 }
 
+// 랜덤 추가 옵션 생성 함수
+function generateRandomOptions(rarity) {
+    const options = [];
+    const optionChances = {
+        '일반': { chance: 20, maxOptions: 1 },
+        '고급': { chance: 40, maxOptions: 2 },
+        '희귀': { chance: 60, maxOptions: 2 },
+        '영웅': { chance: 80, maxOptions: 3 },
+        '전설': { chance: 100, maxOptions: 3 }
+    };
+    
+    const optionPool = [
+        { name: '추가 공격력', type: 'attack', value: [1, 5] },
+        { name: '추가 방어력', type: 'defense', value: [1, 5] },
+        { name: '추가 회피율', type: 'dodge', value: [1, 3] },
+        { name: '추가 행운', type: 'luck', value: [1, 3] },
+        { name: '골드 획득량', type: 'goldBonus', value: [5, 15] },
+        { name: '경험치 획득량', type: 'expBonus', value: [5, 15] },
+        { name: '체력 회복', type: 'hpRegen', value: [1, 3] },
+        { name: '치명타 확률', type: 'critChance', value: [1, 5] },
+        { name: '치명타 피해', type: 'critDamage', value: [10, 30] }
+    ];
+    
+    const rarityConfig = optionChances[rarity] || optionChances['일반'];
+    
+    // 추가 옵션이 붙을지 확률 계산
+    if (Math.random() * 100 > rarityConfig.chance) {
+        return options;
+    }
+    
+    // 옵션 개수 결정
+    const numOptions = Math.floor(Math.random() * rarityConfig.maxOptions) + 1;
+    const selectedOptions = new Set();
+    
+    for (let i = 0; i < numOptions && i < optionPool.length; i++) {
+        let option;
+        do {
+            option = optionPool[Math.floor(Math.random() * optionPool.length)];
+        } while (selectedOptions.has(option.type));
+        
+        selectedOptions.add(option.type);
+        
+        const value = Math.floor(Math.random() * (option.value[1] - option.value[0] + 1)) + option.value[0];
+        options.push({
+            name: option.name,
+            type: option.type,
+            value: value,
+            displayValue: option.type.includes('Bonus') || option.type.includes('Damage') ? `+${value}%` : `+${value}`
+        });
+    }
+    
+    return options;
+}
+
 // 강화 확률표 (0-30강)
 const ENHANCEMENT_RATES = {
     0: { success: 95, fail: 5, destroy: 0 },
@@ -8049,6 +8384,18 @@ function calculateEnhanceCost(itemLevel, currentStar) {
     // 최소 비용 보장 및 십의 자리 반올림
     const finalCost = Math.max(100, adjustedCost);
     return Math.round(finalCost / 10) * 10;
+}
+
+// 강화 성공률 계산 함수
+function calculateSuccessRate(itemLevel, currentStar) {
+    // 기본 성공률: 0-5강까지는 높은 성공률
+    if (currentStar < 5) return 0.95 - (currentStar * 0.05);
+    if (currentStar < 10) return 0.70 - ((currentStar - 5) * 0.08);
+    if (currentStar < 15) return 0.30 - ((currentStar - 10) * 0.04);
+    if (currentStar < 20) return 0.10 - ((currentStar - 15) * 0.01);
+    if (currentStar < 25) return 0.05;
+    if (currentStar < 30) return 0.03;
+    return 0.01; // 30강 이상
 }
 
 // 강화 스탯 보너스 계산 함수
@@ -8378,12 +8725,21 @@ async function getUser(discordId) {
             console.log(`새 유저 생성: ${discordId}`);
         }
         
+        // 인벤토리 데이터 무결성 검사 및 복구
+        const needsInventoryFix = validateAndFixInventory(user);
+        
         // 장비 데이터 무결성 확인 및 복구
         if (user.equipment) {
-            let needsSave = false;
+            let needsSave = needsInventoryFix;
             const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
             
+            // 장비 슬롯 초기화 확인
             equipmentSlots.forEach(slot => {
+                if (user.equipment[slot] === undefined) {
+                    user.equipment[slot] = -1;
+                    needsSave = true;
+                }
+                
                 // ObjectId나 이상한 값이면 -1로 초기화
                 if (user.equipment[slot] && typeof user.equipment[slot] !== 'number') {
                     console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯 복구: ${user.equipment[slot]} -> -1`);
@@ -8398,12 +8754,27 @@ async function getUser(discordId) {
                         equippedItem.equipped = true;
                         needsSave = true;
                         console.log(`[장비 복구] ${user.nickname}의 ${equippedItem.name} equipped 상태 복구`);
+                    } else if (!equippedItem && user.equipment[slot] !== -1) {
+                        // 장착된 아이템을 찾을 수 없으면 슬롯 초기화
+                        console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯에 해당하는 아이템이 없음: ${user.equipment[slot]} -> -1`);
+                        user.equipment[slot] = -1;
+                        needsSave = true;
                     }
                 }
             });
             
             // 인벤토리의 equipped 상태와 equipment 슬롯 동기화
             user.inventory.forEach(item => {
+                // inventorySlot이 없는 아이템에 자동 할당
+                if (item.inventorySlot === undefined || item.inventorySlot === null) {
+                    const availableSlot = getAvailableInventorySlot(user);
+                    if (availableSlot !== -1) {
+                        item.inventorySlot = availableSlot;
+                        needsSave = true;
+                        console.log(`[인벤토리 복구] ${item.name}에 inventorySlot ${availableSlot} 할당`);
+                    }
+                }
+                
                 if (item.equipped) {
                     const slot = item.type;
                     if (user.equipment[slot] !== item.inventorySlot) {
@@ -8411,6 +8782,18 @@ async function getUser(discordId) {
                         user.equipment[slot] = item.inventorySlot;
                         needsSave = true;
                     }
+                }
+            });
+            
+            // 강화 데이터 무결성 확인
+            user.inventory.forEach(item => {
+                if (item.enhanceLevel === undefined) {
+                    item.enhanceLevel = 0;
+                    needsSave = true;
+                }
+                if (!item.stats) {
+                    item.stats = { attack: 0, defense: 0, dodge: 0, luck: 0 };
+                    needsSave = true;
                 }
             });
             
@@ -9529,12 +9912,25 @@ client.on('interactionCreate', async (interaction) => {
                             { name: '레벨', value: `Lv.${profileUser.level}`, inline: true },
                             { name: '경험치', value: `${profileUser.exp}/${maxExp} EXP`, inline: true },
                             { name: '골드', value: `${profileUser.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                            { name: '⚔️ 공격력', value: `${profileUser.stats?.strength || 10}`, inline: true },
+                            { name: '🛡️ 방어력', value: `${profileUser.stats?.vitality || 10}`, inline: true },
+                            { name: '💨 회피력', value: `${profileUser.stats?.agility || 10}`, inline: true },
+                            { name: '🍀 행운', value: `${profileUser.stats?.luck || 10}`, inline: true },
+                            { name: '📊 남은 포인트', value: `${profileUser.statPoints}`, inline: true },
                             { name: '인기도', value: `${profileUser.popularity} ${profileUser.popularity > 0 ? '❤️' : profileUser.popularity < 0 ? '💔' : ''}`, inline: true },
                             { name: '출석 연속일', value: `${profileUser.attendanceStreak}일`, inline: true },
                             { name: '해제된 사냥터', value: `${profileUser.unlockedAreas.length}개`, inline: true }
                         );
                     
-                    return await interaction.editReply({ embeds: [profileEmbed] });
+                    const profileButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [profileEmbed], components: [profileButtons] });
                     
                 case 'work':
                     // 운동하기 시스템
@@ -9837,37 +10233,94 @@ client.on('interactionCreate', async (interaction) => {
                             { name: '📊 잔여 포인트', value: `${statsUser.statPoints}`, inline: true }
                         );
                     
-                    const statButtons = new ActionRowBuilder();
+                    const components = [];
+                    
+                    // 각 스탯별 +1, +10 버튼
                     if (statsUser.statPoints > 0) {
-                        statButtons.addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('add_strength')
-                                .setLabel('💪 힘 +1')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('add_agility')
-                                .setLabel('🏃 민첩 +1')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('add_intelligence')
-                                .setLabel('🧠 지능 +1')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('add_vitality')
-                                .setLabel('❤️ 체력 +1')
-                                .setStyle(ButtonStyle.Primary)
-                        );
-                    } else {
-                        statButtons.addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('stats_info')
-                                .setLabel('스탯포인트가 없습니다')
-                                .setStyle(ButtonStyle.Secondary)
-                                .setDisabled(true)
-                        );
+                        // 힘 버튼
+                        const strengthButtons = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('add_strength_1')
+                                    .setLabel('💪 힘 +1')
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setDisabled(statsUser.statPoints < 1),
+                                new ButtonBuilder()
+                                    .setCustomId('add_strength_10')
+                                    .setLabel('💪 힘 +10')
+                                    .setStyle(ButtonStyle.Success)
+                                    .setDisabled(statsUser.statPoints < 10)
+                            );
+                        
+                        // 민첩/지능 버튼
+                        const agilityIntButtons = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('add_agility_1')
+                                    .setLabel('🏃 민첩 +1')
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setDisabled(statsUser.statPoints < 1),
+                                new ButtonBuilder()
+                                    .setCustomId('add_agility_10')
+                                    .setLabel('🏃 민첩 +10')
+                                    .setStyle(ButtonStyle.Success)
+                                    .setDisabled(statsUser.statPoints < 10),
+                                new ButtonBuilder()
+                                    .setCustomId('add_intelligence_1')
+                                    .setLabel('🧠 지능 +1')
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setDisabled(statsUser.statPoints < 1),
+                                new ButtonBuilder()
+                                    .setCustomId('add_intelligence_10')
+                                    .setLabel('🧠 지능 +10')
+                                    .setStyle(ButtonStyle.Success)
+                                    .setDisabled(statsUser.statPoints < 10)
+                            );
+                        
+                        // 체력/행운 버튼
+                        const vitalityLuckButtons = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('add_vitality_1')
+                                    .setLabel('❤️ 체력 +1')
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setDisabled(statsUser.statPoints < 1),
+                                new ButtonBuilder()
+                                    .setCustomId('add_vitality_10')
+                                    .setLabel('❤️ 체력 +10')
+                                    .setStyle(ButtonStyle.Success)
+                                    .setDisabled(statsUser.statPoints < 10),
+                                new ButtonBuilder()
+                                    .setCustomId('add_luck_1')
+                                    .setLabel('🍀 행운 +1')
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setDisabled(statsUser.statPoints < 1),
+                                new ButtonBuilder()
+                                    .setCustomId('add_luck_10')
+                                    .setLabel('🍀 행운 +10')
+                                    .setStyle(ButtonStyle.Success)
+                                    .setDisabled(statsUser.statPoints < 10)
+                            );
+                        
+                        components.push(strengthButtons, agilityIntButtons, vitalityLuckButtons);
                     }
                     
-                    return await interaction.editReply({ embeds: [statsEmbed], components: [statButtons] });
+                    // 기타 버튼
+                    const otherButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('stat_reset')
+                                .setLabel('🔄 스탯 초기화')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    components.push(otherButtons);
+                    
+                    return await interaction.editReply({ embeds: [statsEmbed], components });
                     
                 case 'skills':
                     // 스킬
@@ -10014,16 +10467,48 @@ client.on('interactionCreate', async (interaction) => {
                         return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
                     
-                    if (enhanceUser.level < 10) {
-                        return await interaction.editReply({ content: '⚠️ 장비 강화는 레벨 10부터 가능합니다!' });
+                    const enhanceMenuEmbed = new EmbedBuilder()
+                        .setColor('#ffd700')
+                        .setTitle('💎 장비 강화소')
+                        .setDescription('장비를 강화하여 더욱 강력해지세요!')
+                        .addFields(
+                            { name: '⚔️ 장비 강화', value: '장비의 능력치를 향상시킵니다', inline: true },
+                            { name: '🔄 보호권 변환', value: '파괴 방지를 위한 보호권', inline: true }
+                        );
+                    
+                    const enhanceMenuButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('enhance')
+                                .setLabel('⚔️ 장비 강화')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('protection_scroll')
+                                .setLabel('🔄 보호권 변환')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [enhanceMenuEmbed], components: [enhanceMenuButtons] });
+                    
+                case 'fusion':
+                    // 조각 융합
+                    await interaction.deferReply({ flags: 64 });
+                    
+                    const fusionUser = await getUser(interaction.user.id);
+                    if (!fusionUser || !fusionUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
                     
-                    const enhanceEmbed = new EmbedBuilder()
+                    if (fusionUser.level < 10) {
+                        return await interaction.editReply({ content: '⚠️ 조각 융합은 레벨 10부터 가능합니다!' });
+                    }
+                    
+                    const fusionEmbed = new EmbedBuilder()
                         .setColor('#ff1493')
-                        .setTitle('💎 에너지 융합 시스템')
+                        .setTitle('⚡ 에너지 융합 시스템')
                         .setDescription('에너지 조각을 융합하여 더 높은 등급의 조각을 만들어보세요!');
                     
-                    const enhanceButtons = new ActionRowBuilder()
+                    const fusionButtons = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
                                 .setCustomId('energy_mine')
@@ -10039,7 +10524,7 @@ client.on('interactionCreate', async (interaction) => {
                                 .setStyle(ButtonStyle.Secondary)
                         );
                     
-                    return await interaction.editReply({ embeds: [enhanceEmbed], components: [enhanceButtons] });
+                    return await interaction.editReply({ embeds: [fusionEmbed], components: [fusionButtons] });
                     
                 case 'racing':
                     // 레이싱 게임
@@ -10360,7 +10845,22 @@ client.on('interactionCreate', async (interaction) => {
             // 아이템 옵션 생성 (최대 25개까지만)
             const itemOptions = availableItems.slice(0, 25).map((item, index) => {
                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel})` : '';
-                const statsText = `공격: ${item.stats.attack[0]}-${item.stats.attack[1]}, 방어: ${item.stats.defense[0]}-${item.stats.defense[1]}`;
+                // stats가 객체 형태일 경우 처리
+                let statsText = '';
+                if (item.stats) {
+                    const attack = item.stats.attack || 0;
+                    const defense = item.stats.defense || 0;
+                    const dodge = item.stats.dodge || 0;
+                    const luck = item.stats.luck || 0;
+                    
+                    const statParts = [];
+                    if (attack > 0) statParts.push(`공격력: +${attack}`);
+                    if (defense > 0) statParts.push(`방어력: +${defense}`);
+                    if (dodge > 0) statParts.push(`회피력: +${dodge}`);
+                    if (luck > 0) statParts.push(`행운: +${luck}`);
+                    
+                    statsText = statParts.join(', ') || '기본 스탯';
+                }
                 
                 return {
                     label: `${item.name}${enhanceText}`,
@@ -10406,55 +10906,154 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
+        // 강화할 장비 선택 처리
+        else if (customId === 'enhance_select') {
+            const value = values[0];
+            const parts = value.split('_');
+            const inventorySlot = parseInt(parts[2]); // enhance_item_inventorySlot_timestamp_index에서 inventorySlot 추출
+            
+            await interaction.deferReply({ flags: 64 });
+            
+            const user = await getUser(interaction.user.id);
+            const item = user.inventory.find(inv => inv.inventorySlot === inventorySlot && inv.equipped);
+            
+            if (!item) {
+                return await interaction.editReply({ content: '해당 장비를 찾을 수 없습니다!' });
+            }
+            
+            const itemLevel = ITEM_LEVELS[item.setName] || ITEM_LEVELS[item.name] || 1;
+            const currentStar = item.enhanceLevel || 0;
+            const cost = calculateEnhanceCost(itemLevel, currentStar);
+            
+            if (user.gold < cost) {
+                return await interaction.editReply({ content: `❌ 골드가 부족합니다! 필요 골드: ${cost.toLocaleString()}G` });
+            }
+            
+            // 강화 실행
+            user.gold -= cost;
+            const success = Math.random() < calculateSuccessRate(itemLevel, currentStar);
+            
+            if (success) {
+                item.enhanceLevel = (item.enhanceLevel || 0) + 1;
+                user.enhanceStats = user.enhanceStats || { successCount: 0, failCount: 0 };
+                user.enhanceStats.successCount++;
+                
+                await user.save();
+                
+                const successEmbed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('✨ 강화 성공!')
+                    .setDescription(`${item.name}이(가) **+${item.enhanceLevel}강**으로 강화되었습니다!`)
+                    .addFields(
+                        { name: '💰 소모 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                        { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                    );
+                
+                await interaction.editReply({ embeds: [successEmbed] });
+            } else {
+                // 강화 실패 처리
+                user.enhanceStats = user.enhanceStats || { successCount: 0, failCount: 0 };
+                user.enhanceStats.failCount++;
+                
+                if (currentStar >= 10) {
+                    // 10강 이상은 파괴 확률
+                    const destroyChance = (currentStar - 9) * 0.05;
+                    if (Math.random() < destroyChance) {
+                        // 아이템 파괴
+                        const itemIndex = user.inventory.findIndex(inv => inv.id === itemId);
+                        user.inventory.splice(itemIndex, 1);
+                        user.equipment[item.type] = -1;
+                        
+                        await user.save();
+                        
+                        const destroyEmbed = new EmbedBuilder()
+                            .setColor('#ff0000')
+                            .setTitle('💥 아이템 파괴!')
+                            .setDescription(`강화에 실패하여 ${item.name}이(가) 파괴되었습니다...`)
+                            .addFields(
+                                { name: '💰 소모 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                                { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                            );
+                        
+                        return await interaction.editReply({ embeds: [destroyEmbed] });
+                    }
+                }
+                
+                // 강화 레벨 하락
+                if (item.enhanceLevel > 0) {
+                    item.enhanceLevel--;
+                }
+                
+                await user.save();
+                
+                const failEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ 강화 실패!')
+                    .setDescription(`강화에 실패했습니다. ${item.name}이(가) **+${item.enhanceLevel}강**으로 하락했습니다.`)
+                    .addFields(
+                        { name: '💰 소모 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                        { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                    );
+                
+                await interaction.editReply({ embeds: [failEmbed] });
+            }
+        }
+        
         // 아이템 장착 처리
         else if (customId === 'equip_item_select') {
             const value = values[0];
+            console.log('=== 장착 핸들러 진입 ===');
+            console.log('선택된 value:', value);
+            
+            await interaction.deferReply({ flags: 64 });
             const user = await getUser(interaction.user.id);
+            
+            // 데이터 무결성 검사
+            await validateAndFixInventory(user);
             
             if (value.startsWith('unequip_')) {
                 // 장비 해제
                 const slotType = value.replace('unequip_', '');
-                const currentSlotIndex = user.equipment[slotType];
+                console.log('장비 해제 시도:', slotType);
                 
-                if (currentSlotIndex !== -1) {
-                    const item = user.inventory.find(i => i.inventorySlot === currentSlotIndex);
-                    if (item) {
-                        item.equipped = false;
-                        user.equipment[slotType] = -1;
-                        await user.save();
-                        
-                        await interaction.reply({
-                            content: `✅ **${item.name}**을(를) 해제했습니다!`,
-                            flags: 64
-                        });
-                    }
+                const result = await unequipItem(user, slotType);
+                
+                if (result.success) {
+                    await interaction.editReply({
+                        content: `✅ **${result.itemName}**을(를) 해제했습니다!`
+                    });
+                } else {
+                    await interaction.editReply({
+                        content: `❌ 장비 해제 실패: ${result.error}`
+                    });
                 }
-            } else {
+            } else if (value.startsWith('equip_item_')) {
                 // 아이템 장착
                 const parts = value.split('_');
-                const slotType = parts[2];
-                const index = parseInt(parts[3]);
-                const inventorySlot = parseInt(parts[4]);
+                console.log('value parts:', parts);
                 
-                // 기존 장착 아이템 해제
-                const currentSlotIndex = user.equipment[slotType];
-                if (currentSlotIndex !== -1) {
-                    const currentItem = user.inventory.find(i => i.inventorySlot === currentSlotIndex);
-                    if (currentItem) {
-                        currentItem.equipped = false;
-                    }
-                }
-                
-                // 새 아이템 장착
-                const newItem = user.inventory.find(i => i.inventorySlot === inventorySlot);
-                if (newItem) {
-                    newItem.equipped = true;
-                    user.equipment[slotType] = inventorySlot;
-                    await user.save();
+                if (parts.length >= 5) {
+                    const slotType = parts[2];
+                    const index = parseInt(parts[3]);
+                    const inventorySlot = parseInt(parts[4]);
                     
-                    await interaction.reply({
-                        content: `✅ **${newItem.name}**을(를) 장착했습니다!`,
-                        flags: 64
+                    console.log(`장착 시도 - slotType: ${slotType}, index: ${index}, inventorySlot: ${inventorySlot}`);
+                    
+                    const result = await equipItem(user, slotType, inventorySlot);
+                    
+                    if (result.success) {
+                        await interaction.editReply({
+                            content: `✅ **${result.itemName}**을(를) 장착했습니다!`
+                        });
+                    } else {
+                        await interaction.editReply({
+                            content: `❌ 장착 실패: ${result.error}`
+                        });
+                    }
+                } else {
+                    console.error('잘못된 value 형식:', value);
+                    await interaction.editReply({
+                        content: '❌ 잘못된 선택입니다.'
                     });
                 }
             }
@@ -11089,112 +11688,112 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
-        // 장비 선택 드롭다운 처리
-        else if (customId === 'equipment_select') {
-            const selectedSlot = values[0].replace('equip_', '');
-            
-            await interaction.deferReply({ flags: 64 });
-            
-            const user = await getUser(interaction.user.id);
-            if (!user) {
-                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
-            }
-            
-            // 해당 슬롯에 장착 가능한 아이템 찾기
-            const equipableItems = user.inventory.filter(item => item.type === selectedSlot);
-            
-            if (equipableItems.length === 0) {
-                return await interaction.editReply({ content: `❌ 장착 가능한 ${getSlotDisplayName(selectedSlot)}이(가) 없습니다!` });
-            }
-            
-            // 현재 장착 중인 아이템
-            const currentEquipIndex = user.equipment[selectedSlot];
-            
-            // 장착 가능한 아이템 목록 생성
-            const itemOptions = equipableItems.map((item, index) => {
-                const isEquipped = item.inventorySlot === currentEquipIndex;
-                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
-                const statsText = `공격력: ${item.stats.attack[0]}-${item.stats.attack[1]}, 방어력: ${item.stats.defense[0]}-${item.stats.defense[1]}`;
-                
-                return {
-                    label: `${item.name}${enhanceText} ${isEquipped ? '(장착중)' : ''}`,
-                    description: statsText.substring(0, 100),
-                    value: `equip_item_${selectedSlot}_${index}_${item.inventorySlot}`,
-                    emoji: getRarityEmoji(item.rarity)
-                };
-            });
-            
-            // 장착 해제 옵션 추가
-            if (currentEquipIndex !== -1) {
-                itemOptions.unshift({
-                    label: '🚫 장착 해제',
-                    description: '현재 장착된 아이템을 해제합니다',
-                    value: `unequip_${selectedSlot}`,
-                    emoji: '🚫'
-                });
-            }
-            
-            const itemSelectMenu = new StringSelectMenuBuilder()
-                .setCustomId('equipment_item_select')
-                .setPlaceholder(`🎮 장착할 ${getSlotDisplayName(selectedSlot)}을(를) 선택하세요`)
-                .addOptions(itemOptions.slice(0, 25)); // Discord 제한
-            
-            const selectRow = new ActionRowBuilder().addComponents(itemSelectMenu);
-            
-            const equipEmbed = new EmbedBuilder()
-                .setColor('#ffaa00')
-                .setTitle(`${getSlotDisplayName(selectedSlot)} 장착`)
-                .setDescription('장착할 아이템을 선택하세요');
-            
-            await interaction.editReply({ 
-                embeds: [equipEmbed], 
-                components: [selectRow] 
-            });
-        }
+        // 장비 선택 드롭다운 처리 (중복되어 주석 처리)
+//         else if (customId === 'equipment_select') {
+//             const selectedSlot = values[0].replace('equip_', '');
+//             
+//             await interaction.deferReply({ flags: 64 });
+//             
+//             const user = await getUser(interaction.user.id);
+//             if (!user) {
+//                 return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+//             }
+//             
+//             // 해당 슬롯에 장착 가능한 아이템 찾기
+//             const equipableItems = user.inventory.filter(item => item.type === selectedSlot);
+//             
+//             if (equipableItems.length === 0) {
+//                 return await interaction.editReply({ content: `❌ 장착 가능한 ${getSlotDisplayName(selectedSlot)}이(가) 없습니다!` });
+//             }
+//             
+//             // 현재 장착 중인 아이템
+//             const currentEquipIndex = user.equipment[selectedSlot];
+//             
+//             // 장착 가능한 아이템 목록 생성
+//             const itemOptions = equipableItems.map((item, index) => {
+//                 const isEquipped = item.inventorySlot === currentEquipIndex;
+//                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+//                 const statsText = `공격력: ${item.stats.attack[0]}-${item.stats.attack[1]}, 방어력: ${item.stats.defense[0]}-${item.stats.defense[1]}`;
+//                 
+//                 return {
+//                     label: `${item.name}${enhanceText} ${isEquipped ? '(장착중)' : ''}`,
+//                     description: statsText.substring(0, 100),
+//                     value: `equip_item_${selectedSlot}_${index}_${item.inventorySlot}`,
+//                     emoji: getRarityEmoji(item.rarity)
+//                 };
+//             });
+//             
+//             // 장착 해제 옵션 추가
+//             if (currentEquipIndex !== -1) {
+//                 itemOptions.unshift({
+//                     label: '🚫 장착 해제',
+//                     description: '현재 장착된 아이템을 해제합니다',
+//                     value: `unequip_${selectedSlot}`,
+//                     emoji: '🚫'
+//                 });
+//             }
+//             
+//             const itemSelectMenu = new StringSelectMenuBuilder()
+//                 .setCustomId('equipment_item_select')
+//                 .setPlaceholder(`🎮 장착할 ${getSlotDisplayName(selectedSlot)}을(를) 선택하세요`)
+//                 .addOptions(itemOptions.slice(0, 25)); // Discord 제한
+//             
+//             const selectRow = new ActionRowBuilder().addComponents(itemSelectMenu);
+//             
+//             const equipEmbed = new EmbedBuilder()
+//                 .setColor('#ffaa00')
+//                 .setTitle(`${getSlotDisplayName(selectedSlot)} 장착`)
+//                 .setDescription('장착할 아이템을 선택하세요');
+//             
+//             await interaction.editReply({ 
+//                 embeds: [equipEmbed], 
+//                 components: [selectRow] 
+//             });
+//         }
         
-        // 장비 아이템 선택 처리
-        else if (customId === 'equipment_item_select') {
-            const value = values[0];
-            
-            await interaction.deferReply({ flags: 64 });
-            
-            const user = await getUser(interaction.user.id);
-            if (!user) {
-                return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
-            }
-            
-            if (value.startsWith('unequip_')) {
-                // 장착 해제
-                const slot = value.replace('unequip_', '');
-                user.equipment[slot] = -1;
-                await user.save();
-                
-                return await interaction.editReply({ 
-                    content: `✅ ${getSlotDisplayName(slot)} 장착을 해제했습니다!`,
-                    components: [] 
-                });
-            } else if (value.startsWith('equip_item_')) {
-                // 아이템 장착
-                const [, , slot, index, inventorySlot] = value.split('_');
-                const itemIndex = parseInt(inventorySlot);
-                
-                // 아이템 확인
-                const item = user.inventory.find(i => i.inventorySlot === itemIndex);
-                if (!item || item.type !== slot) {
-                    return await interaction.editReply({ content: '❌ 잘못된 아이템입니다!' });
-                }
-                
-                // 장착
-                user.equipment[slot] = itemIndex;
-                await user.save();
-                
-                const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
-                return await interaction.editReply({ 
-                    content: `✅ ${item.name}${enhanceText}을(를) 장착했습니다!`,
-                    components: [] 
-                });
-            }
-        }
+        // 장비 아이템 선택 처리 (중복되어 주석 처리)
+//         else if (customId === 'equipment_item_select') {
+//             const value = values[0];
+//             
+//             await interaction.deferReply({ flags: 64 });
+//             
+//             const user = await getUser(interaction.user.id);
+//             if (!user) {
+//                 return await interaction.editReply({ content: '유저 데이터를 불러올 수 없습니다!' });
+//             }
+//             
+//             if (value.startsWith('unequip_')) {
+//                 // 장착 해제
+//                 const slot = value.replace('unequip_', '');
+//                 user.equipment[slot] = -1;
+//                 await user.save();
+//                 
+//                 return await interaction.editReply({ 
+//                     content: `✅ ${getSlotDisplayName(slot)} 장착을 해제했습니다!`,
+//                     components: [] 
+//                 });
+//             } else if (value.startsWith('equip_item_')) {
+//                 // 아이템 장착
+//                 const [, , slot, index, inventorySlot] = value.split('_');
+//                 const itemIndex = parseInt(inventorySlot);
+//                 
+//                 // 아이템 확인
+//                 const item = user.inventory.find(i => i.inventorySlot === itemIndex);
+//                 if (!item || item.type !== slot) {
+//                     return await interaction.editReply({ content: '❌ 잘못된 아이템입니다!' });
+//                 }
+//                 
+//                 // 장착
+//                 user.equipment[slot] = itemIndex;
+//                 await user.save();
+//                 
+//                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+//                 return await interaction.editReply({ 
+//                     content: `✅ ${item.name}${enhanceText}을(를) 장착했습니다!`,
+//                     components: [] 
+//                 });
+//             }
+//         }
         
         // 운동 선택 드롭다운 처리
         else if (customId === 'select_exercise_type') {
@@ -13538,6 +14137,7 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ embeds: [supportEmbed], flags: 64 });
         }
         
+        
         else if (interaction.customId === 'hunting') {
             // 개발자는 모든 사냥터 접근 가능, 일반 유저는 언락된 사냥터만
             const availableAreas = isDeveloper(interaction.user.id) ? 
@@ -13920,7 +14520,28 @@ client.on('interactionCreate', async (interaction) => {
                 weeklyBonus = `\\n🏆 **주간 미션 완료**: +${weeklyGold}G`;
             }
             
-            await user.save();
+            // 출석 데이터 변경 사항을 MongoDB가 인식하도록 markModified 호출
+            user.markModified('lastDaily');
+            user.markModified('attendanceStreak');
+            user.markModified('weeklyAttendance');
+            user.markModified('weekStart');
+            
+            // 저장 전 로그
+            console.log(`[출석] ${user.nickname} 저장 전 - 연속: ${user.attendanceStreak}, 주간: ${user.weeklyAttendance}`);
+            
+            try {
+                await user.save();
+                console.log(`[출석] ${user.nickname} 저장 성공!`);
+            } catch (saveError) {
+                console.error(`[출석] ${user.nickname} 저장 실패:`, saveError);
+                // 재시도
+                try {
+                    await user.save();
+                    console.log(`[출석] ${user.nickname} 재시도 저장 성공!`);
+                } catch (retryError) {
+                    console.error(`[출석] ${user.nickname} 재시도도 실패:`, retryError);
+                }
+            }
 
             // 3단계: 보상 강도에 따른 감정 멘트와 결과 표시
             const resultAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_turntable2.gif'), { name: 'kim_turntable2.gif' });
@@ -15912,6 +16533,9 @@ client.on('interactionCreate', async (interaction) => {
                 console.log(`GIF 파일을 찾을 수 없습니다: ${purchaseGif}`);
             }
             
+            // 랜덤 추가 옵션 생성
+            const randomOptions = generateRandomOptions(item.rarity);
+            
             // 인벤토리 공간 확인
             const uniqueItemId = `${category}_${itemIndex}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const itemData = {
@@ -15925,7 +16549,8 @@ client.on('interactionCreate', async (interaction) => {
                 enhanceLevel: 0,
                 stats: randomStats,
                 price: item.price,
-                description: item.description || ''
+                description: item.description || '',
+                randomOptions: randomOptions // 추가 옵션 저장
             };
             
             const inventoryResult = addItemToInventory(user, itemData);
@@ -16015,6 +16640,14 @@ client.on('interactionCreate', async (interaction) => {
             
             // 0.5초 후 실제 구매 정보로 업데이트
             setTimeout(async () => {
+                // 추가 옵션 텍스트 생성
+                let optionsText = '';
+                if (randomOptions.length > 0) {
+                    randomOptions.forEach(option => {
+                        optionsText += `${option.name}: ${option.displayValue}\n`;
+                    });
+                }
+                
                 const purchaseEmbed = new EmbedBuilder()
                     .setColor(embedColor)
                     .setTitle('🛍️ 구매 성공!')
@@ -16022,10 +16655,20 @@ client.on('interactionCreate', async (interaction) => {
                     .addFields(
                         { name: '💎 아이템 정보', value: `${item.setName}\n${item.rarity} 등급`, inline: true },
                         { name: '📊 옵션 평가', value: `${qualityMessage}\n(상위 ${Math.round(100 - averageQuality)}%)`, inline: true },
-                        { name: '📈 랜덤 능력치', value: statsText.trim() || '없음', inline: false },
-                        { name: '💰 결제 정보', value: `구매가: ${item.price.toLocaleString()}<:currency_emoji:1377404064316522778>\n잔액: ${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
-                    )
-                    .setFooter({ text: '인벤토리에서 장착할 수 있습니다!' });
+                        { name: '📈 랜덤 능력치', value: statsText.trim() || '없음', inline: false }
+                    );
+                
+                // 추가 옵션이 있는 경우에만 필드 추가
+                if (optionsText) {
+                    purchaseEmbed.addFields(
+                        { name: '✨ 추가 옵션', value: optionsText.trim(), inline: false }
+                    );
+                }
+                
+                purchaseEmbed.addFields(
+                    { name: '💰 결제 정보', value: `구매가: ${item.price.toLocaleString()}<:currency_emoji:1377404064316522778>\n잔액: ${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
+                )
+                .setFooter({ text: '인벤토리에서 장착할 수 있습니다!' });
 
                 if (purchaseAttachment) {
                     purchaseEmbed.setImage(`attachment://${purchaseGif}`);
@@ -16351,6 +16994,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 인벤토리 아이템 사용/장착 처리
         else if (interaction.customId.startsWith('inv_use_')) {
+            await interaction.deferReply({ flags: 64 });
             
             // customId 파싱: inv_use_{itemId}_{category}_{currentPage}
             // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
@@ -16360,66 +17004,64 @@ client.on('interactionCreate', async (interaction) => {
             const category = parts[parts.length - 2]; // 마지막에서 두 번째 부분
             const itemId = parts.slice(2, parts.length - 2).join('_'); // 나머지 부분들을 합쳐서 itemId
             
+            // 인벤토리 데이터 무결성 검사
+            const needsFix = validateAndFixInventory(user);
+            if (needsFix) {
+                await user.save();
+                console.log(`[인벤토리 복구] ${user.nickname}의 인벤토리 데이터 복구 완료`);
+            }
             
             const inventoryItem = user.inventory.find(inv => inv.id === itemId);
             
-            if (inventoryItem) {
-                // inventorySlot이 없는 경우 자동 할당
-                if (inventoryItem.inventorySlot === undefined || inventoryItem.inventorySlot === null) {
-                    const availableSlot = getAvailableInventorySlot(user);
-                    if (availableSlot !== -1) {
-                        inventoryItem.inventorySlot = availableSlot;
-                    } else {
-                        await interaction.reply({ content: '인벤토리가 가득 찼습니다!', flags: 64 });
-                        return;
-                    }
-                }
+            if (!inventoryItem) {
+                await interaction.editReply({ content: `해당 아이템을 찾을 수 없습니다! (ID: ${itemId})` });
+                return;
             }
             
-            if (!inventoryItem) {
-                await interaction.reply({ content: `해당 아이템을 찾을 수 없습니다! (ID: ${itemId})`, flags: 64 });
-                return;
+            // inventorySlot이 없는 경우 자동 할당
+            if (inventoryItem.inventorySlot === undefined || inventoryItem.inventorySlot === null) {
+                const availableSlot = getAvailableInventorySlot(user);
+                if (availableSlot !== -1) {
+                    inventoryItem.inventorySlot = availableSlot;
+                    console.log(`[인벤토리] ${inventoryItem.name}에 슬롯 ${availableSlot} 자동 할당`);
+                } else {
+                    await interaction.editReply({ content: '인벤토리가 가득 찼습니다!' });
+                    return;
+                }
             }
             
             // 장비 아이템인 경우 장착 처리
             if (['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(inventoryItem.type)) {
-                // 이미 착용 중인지 확인 (신식 시스템 - 슬롯 번호 비교)
-                if (user.equipment[inventoryItem.type] === inventoryItem.inventorySlot) {
-                    await interaction.reply({ content: '이미 착용 중인 아이템입니다!', flags: 64 });
+                // 이미 착용 중인지 확인
+                if (inventoryItem.equipped) {
+                    // 장착 해제
+                    const result = unequipItem(user, inventoryItem.type);
+                    await user.save();
+                    
+                    await interaction.editReply({ 
+                        content: `🚫 **${inventoryItem.name}**을(를) 해제했습니다!` 
+                    });
+                    
+                    // 인벤토리 페이지 새로고침을 위해 inventory 버튼 클릭 시뮬레이션
+                    setTimeout(async () => {
+                        await interaction.followUp({ 
+                            content: '🔄 인벤토리를 새로고침하려면 다시 인벤토리 버튼을 눌러주세요.', 
+                            flags: 64 
+                        });
+                    }, 500);
                     return;
                 }
 
-                // 레벨 확인
-                if (user.level < inventoryItem.level) {
-                    await interaction.reply({ 
-                        content: `레벨이 부족합니다! (필요: Lv.${inventoryItem.level}, 현재: Lv.${user.level})`, 
-                        flags: 64 
-                    });
+                // 장착 처리
+                const result = equipItem(user, inventoryItem.inventorySlot, inventoryItem.type);
+                
+                if (!result.success) {
+                    await interaction.editReply({ content: `❌ ${result.message}` });
                     return;
                 }
 
                 // 장착 전 전투력 계산
                 const prevCombatPower = calculateCombatPower(user);
-                
-                // 이전에 장착된 아이템이 있다면 해제
-                const prevSlotIndex = user.equipment[inventoryItem.type];
-                
-                // ObjectId인 경우 강제로 -1로 설정 (구식 데이터 처리)
-                if (prevSlotIndex && typeof prevSlotIndex === 'object') {
-                    console.log(`⚠️ 구식 ObjectId 데이터 감지: ${prevSlotIndex} → -1로 변경`);
-                    user.equipment[inventoryItem.type] = -1;
-                } else if (typeof prevSlotIndex === 'number' && prevSlotIndex !== -1) {
-                    // 이전 장착 아이템의 equipped 상태 해제
-                    const prevItem = user.inventory.find(item => item.inventorySlot === prevSlotIndex);
-                    if (prevItem) {
-                        prevItem.equipped = false;
-                    }
-                }
-                
-                // 장착 처리 - 신식 시스템 (슬롯 번호 참조)
-                user.equipment[inventoryItem.type] = inventoryItem.inventorySlot;
-                inventoryItem.equipped = true;
-                
                 await user.save();
                 
                 // 장착 후 전투력 계산
@@ -17105,8 +17747,24 @@ client.on('interactionCreate', async (interaction) => {
             
             console.log(`💾 저장 전 freshUser.equipment.weapon: ${freshUser.equipment.weapon}`);
             console.log(`💾 저장 전 inventoryItem.inventorySlot: ${inventoryItem.inventorySlot}`);
-            await freshUser.save();
-            console.log(`💾 저장 완료`);
+            
+            // 강제로 markModified 호출하여 MongoDB가 변경사항을 인식하도록 함
+            freshUser.markModified('equipment');
+            freshUser.markModified('inventory');
+            
+            try {
+                await freshUser.save();
+                console.log(`💾 저장 완료`);
+                
+                // 저장 후 다시 한번 확인
+                const verifyUser = await User.findOne({ discordId: interaction.user.id });
+                console.log(`✅ 저장 확인 - weapon 슬롯: ${verifyUser.equipment.weapon}`);
+                console.log(`✅ 저장 확인 - 장착된 아이템:`, verifyUser.inventory.find(item => item.inventorySlot === verifyUser.equipment[inventoryItem.type]));
+            } catch (saveError) {
+                console.error('❌ 저장 오류:', saveError);
+                await interaction.update({ content: '장비 저장 중 오류가 발생했습니다. 다시 시도해주세요.', embeds: [], components: [] });
+                return;
+            }
             
             // 장착 후 전투력 계산 (새로 저장된 데이터 사용)
             const updatedUser = await User.findOne({ discordId: interaction.user.id });
@@ -17556,6 +18214,11 @@ client.on('interactionCreate', async (interaction) => {
                     
                 triggerEnhancementEvent(equipment.enhanceLevel, false);
             }
+            
+            // 강제로 markModified 호출하여 MongoDB가 변경사항을 인식하도록 함
+            user.markModified('inventory');
+            user.markModified('equipment');
+            user.markModified('enhanceStats');
             
             await user.save();
             
@@ -18793,6 +19456,11 @@ client.on('interactionCreate', async (interaction) => {
                         );
                 }
             }
+            
+            // PVP 강화 데이터 변경 사항을 MongoDB가 인식하도록 markModified 호출
+            user.markModified('pvp');
+            user.markModified('pvp.attackEnhancement');
+            user.markModified('pvp.pvpEnhanceHistory');
             
             await user.save();
             
@@ -20145,9 +20813,17 @@ client.on('interactionCreate', async (interaction) => {
             pageArtifacts.forEach((artifact, index) => {
                 const date = new Date(artifact.foundDate).toLocaleDateString('ko-KR');
                 const currentValue = calculateArtifactValue(artifact);
-                const originalValue = artifact.value;
-                const changePercent = ((currentValue - originalValue) / originalValue * 100).toFixed(1);
-                const changeIcon = currentValue > originalValue ? '📈' : currentValue < originalValue ? '📉' : '➡️';
+                const originalValue = artifact.value || 0;
+                
+                // NaN 방지를 위한 안전한 계산
+                let changePercent = '0';
+                let changeIcon = '➡️';
+                
+                if (originalValue > 0) {
+                    const percentValue = ((currentValue - originalValue) / originalValue * 100);
+                    changePercent = isNaN(percentValue) ? '0' : percentValue.toFixed(1);
+                    changeIcon = currentValue > originalValue ? '📈' : currentValue < originalValue ? '📉' : '➡️';
+                }
                 
                 artifactList += `${artifact.emoji} **${artifact.name}** (${getRarityText(artifact.rarity)})\n`;
                 artifactList += `   💰 시장가: ${currentValue.toLocaleString()}G ${changeIcon} ${changePercent > 0 ? '+' : ''}${changePercent}%\n`;
@@ -20159,8 +20835,14 @@ client.on('interactionCreate', async (interaction) => {
             
             // 통계 계산 (현재 시장 가치 기준)
             const totalValue = artifacts.reduce((sum, artifact) => sum + calculateArtifactValue(artifact), 0);
-            const originalTotalValue = artifacts.reduce((sum, artifact) => sum + artifact.value, 0);
-            const totalChangePercent = ((totalValue - originalTotalValue) / originalTotalValue * 100).toFixed(1);
+            const originalTotalValue = artifacts.reduce((sum, artifact) => sum + (artifact.value || 0), 0);
+            
+            // NaN 방지를 위한 안전한 계산
+            let totalChangePercent = '0';
+            if (originalTotalValue > 0) {
+                const percentValue = ((totalValue - originalTotalValue) / originalTotalValue * 100);
+                totalChangePercent = isNaN(percentValue) ? '0' : percentValue.toFixed(1);
+            }
             const rarityCount = {
                 common: artifacts.filter(a => a.rarity === 'common').length,
                 rare: artifacts.filter(a => a.rarity === 'rare').length,
@@ -20196,6 +20878,10 @@ client.on('interactionCreate', async (interaction) => {
                         .setCustomId('artifact_market_chart')
                         .setLabel('📈 시장 차트')
                         .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('artifact_my_charts')
+                        .setLabel('📊 내 유물 차트')
+                        .setStyle(ButtonStyle.Info),
                     new ButtonBuilder()
                         .setCustomId('artifact_shop')
                         .setLabel('🏪 상점에서 판매')
@@ -20238,9 +20924,17 @@ client.on('interactionCreate', async (interaction) => {
             let sellList = '';
             artifacts.forEach((artifact, index) => {
                 const currentPrice = calculateArtifactValue(artifact);
-                const basePrice = artifact.value;
-                const changePercent = ((currentPrice - basePrice) / basePrice * 100).toFixed(1);
-                const changeIcon = currentPrice > basePrice ? '📈' : currentPrice < basePrice ? '📉' : '➡️';
+                const basePrice = artifact.value || 0;
+                
+                // NaN 방지를 위한 안전한 계산
+                let changePercent = '0';
+                let changeIcon = '➡️';
+                
+                if (basePrice > 0) {
+                    const percentValue = ((currentPrice - basePrice) / basePrice * 100);
+                    changePercent = isNaN(percentValue) ? '0' : percentValue.toFixed(1);
+                    changeIcon = currentPrice > basePrice ? '📈' : currentPrice < basePrice ? '📉' : '➡️';
+                }
                 
                 sellList += `${index + 1}. ${artifact.emoji} **${artifact.name}** (${getRarityText(artifact.rarity)})\n`;
                 sellList += `   💰 판매가: ${currentPrice.toLocaleString()}G ${changeIcon} ${changePercent > 0 ? '+' : ''}${changePercent}%\n\n`;
@@ -20342,9 +21036,17 @@ client.on('interactionCreate', async (interaction) => {
                 if (priceData) {
                     const currentPrice = priceData.currentPrice;
                     // artifactData.value가 배열이 아닐 수 있으므로 baseValue를 사용
-                    const basePrice = artifactData.baseValue || artifactData.value || priceData.basePrice;
-                    const changePercent = ((currentPrice - basePrice) / basePrice * 100).toFixed(1);
-                    const trend = currentPrice > basePrice ? '📈' : currentPrice < basePrice ? '📉' : '➡️';
+                    const basePrice = artifactData.baseValue || artifactData.value || priceData.basePrice || 0;
+                    
+                    // NaN 방지를 위한 안전한 계산
+                    let changePercent = '0';
+                    let trend = '➡️';
+                    
+                    if (basePrice > 0) {
+                        const percentValue = ((currentPrice - basePrice) / basePrice * 100);
+                        changePercent = isNaN(percentValue) ? '0' : percentValue.toFixed(1);
+                        trend = currentPrice > basePrice ? '📈' : currentPrice < basePrice ? '📉' : '➡️';
+                    }
                     
                     marketInfo += `${artifactData.emoji} **${name}** (x${artifactData.count})\n`;
                     marketInfo += `   현재가: ${currentPrice.toLocaleString()}G ${trend} ${changePercent > 0 ? '+' : ''}${changePercent}%\n`;
@@ -20355,7 +21057,12 @@ client.on('interactionCreate', async (interaction) => {
                 }
             });
             
-            const totalChangePercent = ((totalCurrentValue - totalOriginalValue) / totalOriginalValue * 100).toFixed(1);
+            // NaN 방지를 위한 안전한 총 변동률 계산
+            let totalChangePercent = '0';
+            if (totalOriginalValue > 0) {
+                const percentValue = ((totalCurrentValue - totalOriginalValue) / totalOriginalValue * 100);
+                totalChangePercent = isNaN(percentValue) ? '0' : percentValue.toFixed(1);
+            }
             const marketEvent = artifactMarket.currentEvent;
             
             const embed = new EmbedBuilder()
@@ -20603,6 +21310,83 @@ client.on('interactionCreate', async (interaction) => {
                     components: []
                 });
             }
+        }
+        
+        else if (interaction.customId === 'artifact_my_charts') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const artifacts = user.artifacts || [];
+            
+            if (artifacts.length === 0) {
+                await interaction.update({
+                    content: '보유한 유물이 없습니다! 먼저 탐사를 통해 유물을 발견해보세요.',
+                    embeds: [],
+                    components: []
+                });
+                return;
+            }
+            
+            // 유물별 가격 변동 차트 생성
+            let chartText = '```\n';
+            chartText += '유물별 가격 변동 차트\n';
+            chartText += '═══════════════════════════════════════════\n\n';
+            
+            artifacts.forEach((artifact, index) => {
+                chartText += `${index + 1}. ${artifact.emoji} ${artifact.name}\n`;
+                chartText += `   등급: ${artifact.rarity} | 발견일: ${new Date(artifact.foundDate).toLocaleDateString()}\n`;
+                
+                // 최근 5개 가격 기록만 표시
+                const recentPrices = artifact.priceHistory.slice(-5);
+                if (recentPrices.length > 0) {
+                    chartText += '   가격 추이: ';
+                    const maxPrice = Math.max(...recentPrices.map(p => p.price));
+                    const minPrice = Math.min(...recentPrices.map(p => p.price));
+                    const range = maxPrice - minPrice || 1;
+                    
+                    recentPrices.forEach((priceData, i) => {
+                        const normalized = ((priceData.price - minPrice) / range) * 5;
+                        const bar = '▁▂▃▄▅'[Math.floor(normalized)];
+                        chartText += bar;
+                    });
+                    
+                    const currentPrice = calculateArtifactValue(artifact);
+                    const lastPrice = recentPrices[recentPrices.length - 1].price;
+                    const change = ((currentPrice - lastPrice) / lastPrice * 100).toFixed(1);
+                    chartText += ` ${currentPrice}G (${change > 0 ? '+' : ''}${change}%)\n`;
+                } else {
+                    chartText += '   가격 기록 없음\n';
+                }
+                chartText += '\n';
+            });
+            
+            chartText += '```';
+            
+            const chartEmbed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle('📊 내 유물 가격 차트')
+                .setDescription(chartText)
+                .addFields(
+                    { name: '📈 총 보유 유물', value: `${artifacts.length}개`, inline: true },
+                    { name: '💰 총 가치', value: `${artifacts.reduce((sum, a) => sum + calculateArtifactValue(a), 0).toLocaleString()}G`, inline: true }
+                )
+                .setFooter({ text: '가격은 실시간으로 변동됩니다' });
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('artifact_inventory')
+                        .setLabel('🔙 보관함으로')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [chartEmbed],
+                components: [backButton]
+            });
         }
         
         else if (interaction.customId === 'artifact_chart_individual') {
@@ -21143,7 +21927,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
     
     // 첫 번째 handler에서 처리하는 상호작용들은 건너뛰기
-    const excludedIds = ['equipment', 'game_page_', 'enhance', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'inv_use_', 'inv_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'explore_', 'daily', 'work', 'exercise_select', 'select_exercise_type', 'main_menu'];
+    const excludedIds = ['equipment', 'game_page_', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'artifact_my_charts', 'artifact_inv_', 'explore_', 'daily', 'work', 'exercise_select', 'select_exercise_type', 'main_menu', 'racing', 'join_race_', 'leave_race', 'racing_stats', 'racing_ranking'];  // 'inv_' 제거하여 inv_use_ 버튼이 작동하도록 함
     
     if (excludedIds.some(id => interaction.customId.includes(id))) {
         console.log(`🟡 두 번째 핸들러에서 제외됨: ${interaction.customId}`);
@@ -21170,6 +21954,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 독버섯 게임 버튼 처리
         else if (interaction.customId === 'mushroom_solo') {
+            console.log('🍄 독버섯 게임 버튼 클릭됨!');
             await interaction.deferReply({ flags: 64 });
             
             const user = await getUser(interaction.user.id);
@@ -21195,7 +21980,44 @@ client.on('interactionCreate', async (interaction) => {
             
             const selectRow = new ActionRowBuilder().addComponents(botSelectMenu);
             
-            const mainGif = new AttachmentBuilder(`./img/kim_hunting_main.png`);
+            const mainGif = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_hunting_main.png'));
+            
+            await interaction.editReply({ 
+                embeds: [botSelectEmbed], 
+                components: [selectRow],
+                files: [mainGif]
+            });
+        }
+        
+        // 독버섯 게임 다시하기
+        else if (interaction.customId === 'mushroom_play_again') {
+            console.log('🍄 독버섯 게임 다시하기 버튼 클릭됨!');
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            
+            // 봇 선택 메뉴 표시
+            const botSelectEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🍄 김헌터의 신비한 숲 탐험')
+                .setDescription('어떤 봇과 대결하시겠습니까?')
+                .setImage('attachment://kim_hunting_main.png');
+            
+            const botOptions = Object.entries(MUSHROOM_GAME.botCharacters).map(([id, bot]) => ({
+                label: bot.name,
+                description: bot.description,
+                value: `start_mushroom_${id}`,
+                emoji: bot.emoji
+            }));
+            
+            const botSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('select_mushroom_bot')
+                .setPlaceholder('대결할 봇을 선택하세요')
+                .addOptions(botOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(botSelectMenu);
+            
+            const mainGif = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_hunting_main.png'));
             
             await interaction.editReply({ 
                 embeds: [botSelectEmbed], 
@@ -21255,7 +22077,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setImage('attachment://kim_hunting.gif');
             
             const buttons = createMushroomGameButtons(gameId, mushrooms, 'player');
-            const huntingGif = new AttachmentBuilder(`./img/kim_hunting.gif`);
+            const huntingGif = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_hunting.gif'));
             
             await interaction.editReply({ 
                 embeds: [gameEmbed], 
@@ -21318,7 +22140,7 @@ client.on('interactionCreate', async (interaction) => {
                     )
                     .setImage('attachment://kim_hunting_lose.gif');
                 
-                const loseGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.poisonDeath}`);
+                const loseGif = new AttachmentBuilder(path.join(__dirname, 'resource', MUSHROOM_GAME.effects.poisonDeath));
                 
                 await interaction.editReply({ 
                     embeds: [loseEmbed], 
@@ -21335,7 +22157,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`${mushroomInfo.safeDesc}\n\n이제 ${session.bot.emoji} ${session.bot.name}의 차례입니다...`)
                 .setImage('attachment://kim_hunting3.gif');
             
-            const safeGif = new AttachmentBuilder(`./img/${mushroomInfo.safeGif}`);
+            const safeGif = new AttachmentBuilder(path.join(__dirname, 'resource', mushroomInfo.safeGif));
             
             await interaction.editReply({ 
                 embeds: [safeEmbed], 
@@ -21386,7 +22208,7 @@ client.on('interactionCreate', async (interaction) => {
                         )
                         .setImage('attachment://kim_hunting_win.gif');
                     
-                    const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
+                    const winGif = new AttachmentBuilder(path.join(__dirname, 'resource', MUSHROOM_GAME.effects.victory));
                     
                     await interaction.followUp({ 
                         embeds: [perfectWinEmbed], 
@@ -21410,7 +22232,7 @@ client.on('interactionCreate', async (interaction) => {
                         )
                         .setImage('attachment://kim_hunting_win.gif');
                     
-                    const winGif = new AttachmentBuilder(`./img/${MUSHROOM_GAME.effects.victory}`);
+                    const winGif = new AttachmentBuilder(path.join(__dirname, 'resource', MUSHROOM_GAME.effects.victory));
                     
                     await interaction.followUp({ 
                         embeds: [winEmbed], 
@@ -21903,6 +22725,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 주식 매수
         else if (interaction.customId.startsWith('buy_stock_')) {
+            console.log('💰 주식 매수 버튼 클릭됨:', interaction.customId);
             const companyId = interaction.customId.replace('buy_stock_', '');
             const company = findCompany(companyId);
             
@@ -21940,6 +22763,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 주식 매도
         else if (interaction.customId.startsWith('sell_stock_')) {
+            console.log('💸 주식 매도 버튼 클릭됨:', interaction.customId);
             const companyId = interaction.customId.replace('sell_stock_', '');
             const company = findCompany(companyId);
             
@@ -22050,6 +22874,7 @@ client.on('interactionCreate', async (interaction) => {
 
         // 몬스터 배틀 참가 버튼
         else if (interaction.customId === 'monster_battle') {
+            console.log('⚔️ 몬스터 배틀(홀짝) 버튼 클릭됨!');
             try {
                 await oddEvenGame.showBettingMenu(interaction);
             } catch (error) {
@@ -22063,6 +22888,12 @@ client.on('interactionCreate', async (interaction) => {
         // 홀짝 게임 베팅 메뉴
         else if (interaction.customId === 'oddeven_bet') {
             await oddEvenGame.showBettingMenu(interaction);
+        }
+        
+        // 홀짝 게임 시작 버튼 (게임 메뉴에서)
+        else if (interaction.customId === 'oddeven_play') {
+            console.log('🎲 홀짝 게임 시작 버튼 클릭됨!');
+            await oddEvenGame.showMonsterBattleMenu(interaction);
         }
 
         // 몬스터 배틀 통계
@@ -22184,6 +23015,173 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({ content: '오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
                 }
             }
+        }
+        
+        // 게임 메인 메뉴로 돌아가기
+        else if (interaction.customId === 'game_main_menu') {
+            console.log('🏠 게임 메인 메뉴로 돌아가기 버튼 클릭됨!');
+            await showGameMenu(interaction);
+        }
+        
+        // 에너지 채굴
+        else if (interaction.customId === 'energy_mine') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 채굴 쿨다운 체크
+            const lastMine = user.energyFragments?.lastMine;
+            if (lastMine) {
+                const cooldown = 2 * 60 * 1000; // 2분
+                const timeLeft = cooldown - (Date.now() - new Date(lastMine).getTime());
+                
+                if (timeLeft > 0) {
+                    const minutes = Math.floor(timeLeft / 60000);
+                    const seconds = Math.floor((timeLeft % 60000) / 1000);
+                    await interaction.reply({ 
+                        content: `⏳ 채굴 쿨타임이 ${minutes}분 ${seconds}초 남았습니다!`, 
+                        flags: 64 
+                    });
+                    return;
+                }
+            }
+            
+            // 골드 체크
+            const mineCost = 500;
+            if (user.gold < mineCost) {
+                await interaction.reply({ 
+                    content: `💰 채굴하려면 ${mineCost} 골드가 필요합니다! (현재: ${user.gold} 골드)`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 채굴 실행
+            user.gold -= mineCost;
+            
+            // 랜덤 조각 획득 (1-3레벨)
+            const fragmentLevel = Math.floor(Math.random() * 3) + 1;
+            const fragmentCount = Math.floor(Math.random() * 3) + 1;
+            
+            if (!user.energyFragments) {
+                user.energyFragments = {
+                    fragments: new Map(),
+                    lastMine: new Date(),
+                    dailyFusions: 0,
+                    dailyFusionDate: null,
+                    totalFusions: 0,
+                    successfulFusions: 0,
+                    failureStack: 0,
+                    highestLevel: 0,
+                    fusionTickets: 0,
+                    permanentSuccessBonus: 0,
+                    weeklyRankingBonus: 0,
+                    consecutiveSuccess: 0,
+                    totalInvested: 0,
+                    godBlessingUsed: null
+                };
+            }
+            
+            const currentCount = user.energyFragments.fragments.get(String(fragmentLevel)) || 0;
+            user.energyFragments.fragments.set(String(fragmentLevel), currentCount + fragmentCount);
+            user.energyFragments.lastMine = new Date();
+            
+            user.markModified('energyFragments');
+            await user.save();
+            
+            const mineEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('⛏️ 에너지 채굴 성공!')
+                .setDescription(`Lv.${fragmentLevel} 에너지 조각 ${fragmentCount}개를 획득했습니다!`)
+                .addFields(
+                    { name: '💰 사용 골드', value: `${mineCost} 골드`, inline: true },
+                    { name: '💎 획득 조각', value: `Lv.${fragmentLevel} x${fragmentCount}개`, inline: true },
+                    { name: '💵 남은 골드', value: `${user.gold.toLocaleString()} 골드`, inline: true }
+                )
+                .setFooter({ text: '2분 후 다시 채굴할 수 있습니다.' });
+                
+            await interaction.reply({ embeds: [mineEmbed], flags: 64 });
+        }
+        
+        // 에너지 융합
+        else if (interaction.customId === 'energy_fusion') {
+            await showEnergyFusionMenu(interaction);
+        }
+        
+        // 조각 자동 융합
+        else if (interaction.customId === 'fragment_auto_fusion') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 자동 융합 실행 (슬래시 커맨드와 동일한 로직)
+            const autoFusionCommand = client.application.commands.cache.find(cmd => cmd.name === '조각융합');
+            if (autoFusionCommand) {
+                // 자동 융합 로직 실행
+                await interaction.deferReply({ flags: 64 });
+                
+                // 기존 조각융합 명령어의 execute 로직을 여기서 실행
+                // 간단히 메시지만 표시
+                await interaction.editReply({ content: '🔄 자동 융합을 시작합니다...\n/조각융합 명령어를 사용해주세요!' });
+            }
+        }
+        
+        // 조각 수동 융합
+        else if (interaction.customId === 'fragment_manual_fusion') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            await interaction.reply({ content: '🎯 수동 융합을 시작합니다...\n/융합수동 명령어를 사용해주세요!', flags: 64 });
+        }
+        
+        // 융합 정보
+        else if (interaction.customId === 'fusion_info') {
+            const infoEmbed = new EmbedBuilder()
+                .setColor('#00ffff')
+                .setTitle('⚡ 에너지 융합 시스템 가이드')
+                .setDescription('에너지 조각을 융합하여 더 높은 레벨의 조각을 만드는 시스템입니다.')
+                .addFields(
+                    { name: '⛏️ 조각 획득', value: '- 채굴: 500골드로 Lv.1~3 조각 획득\n- 쿨타임: 2분', inline: false },
+                    { name: '🔄 융합 방식', value: '- 같은 레벨 조각 3개 → 다음 레벨 1개\n- 성공률: 85%(1-10) → 70%(11-25) → 50%(26+)', inline: false },
+                    { name: '📈 실패 스택', value: '- 실패 시 50% 확률로 스택 획득\n- 10스택 = 100% 성공 보장', inline: false },
+                    { name: '🎯 보너스', value: '- 강화 +20/+25/+30: 성공률 +5%/+10%/+15%\n- 일일 제한: 20회 (융합권 사용 시 무제한)', inline: false }
+                );
+                
+            await interaction.reply({ embeds: [infoEmbed], flags: 64 });
+        }
+        
+        // 융합 돌아가기
+        else if (interaction.customId === 'fusion_back') {
+            const fusionMenu = MENU_ITEMS['fusion'];
+            const menuEmbed = new EmbedBuilder()
+                .setColor('#ff1493')
+                .setTitle('⚡ 에너지 융합 시스템')
+                .setDescription('에너지 조각을 융합하여 더 높은 등급의 조각을 만들어보세요!');
+            
+            const menuButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('energy_mine')
+                        .setLabel('⛏️ 에너지 채굴')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('energy_fusion')
+                        .setLabel('✨ 에너지 융합')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('fusion_ranking')
+                        .setLabel('🏆 융합 랭킹')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({ embeds: [menuEmbed], components: [menuButtons] });
         }
 
         // 홀짝 게임 시작
@@ -22457,6 +23455,12 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
+            // 랜덤 스탯 생성
+            const randomStats = generateRandomStats(item.stats);
+            
+            // 랜덤 추가 옵션 생성
+            const randomOptions = generateRandomOptions(item.rarity);
+            
             // 골드 차감 및 아이템 추가
             user.gold -= item.price;
             user.inventory.push({
@@ -22468,11 +23472,12 @@ client.on('interactionCreate', async (interaction) => {
                 level: item.level || 1,
                 quantity: 1,
                 enhanceLevel: 0,
-                stats: item.stats,
+                stats: randomStats,
                 price: item.price,
                 description: item.description,
                 equipped: false,
-                inventorySlot: emptySlot
+                inventorySlot: emptySlot,
+                randomOptions: randomOptions
             });
             
             await user.save();
@@ -22563,6 +23568,684 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [shopEmbed], 
                 components: [selectRow, backButton] 
             });
+        }
+        
+        // 장비 강화 버튼 처리
+        else if (interaction.customId === 'enhance') {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.editReply({ content: '먼저 회원가입을 해주세요!', embeds: [], components: [] });
+                return;
+            }
+            
+            // 장착된 장비 정보 표시
+            const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+            const slotNames = {
+                weapon: '⚔️ 무기',
+                armor: '🛡️ 갑옷',
+                helmet: '⛑️ 헬멧',
+                gloves: '🧤 장갑',
+                boots: '👢 부츠',
+                accessory: '💎 액세서리'
+            };
+            
+            let equipmentInfo = '';
+            let hasEquipment = false;
+            
+            for (const slot of equipmentSlots) {
+                if (user.equipment[slot] !== -1 && user.equipment[slot] !== null) {
+                    const item = user.inventory.find(inv => inv.inventorySlot === user.equipment[slot]);
+                    if (item) {
+                        hasEquipment = true;
+                        const enhanceLevel = item.enhanceLevel || 0;
+                        const itemLevel = ITEM_LEVELS[item.setName] || ITEM_LEVELS[item.name] || 1;
+                        const cost = calculateEnhanceCost(itemLevel, enhanceLevel);
+                        const successRate = calculateSuccessRate(enhanceLevel);
+                        
+                        equipmentInfo += `${slotNames[slot]}: **${item.name}** (+${enhanceLevel}강)\n`;
+                        equipmentInfo += `├ 강화 비용: ${cost.toLocaleString()}G\n`;
+                        equipmentInfo += `├ 성공률: ${successRate}%\n`;
+                        equipmentInfo += `└ 보호권 필요: ${enhanceLevel >= 15 ? '필수' : '선택'}\n\n`;
+                    }
+                }
+            }
+            
+            if (!hasEquipment) {
+                await interaction.editReply({ 
+                    content: '❌ 강화할 장비가 없습니다! 먼저 장비를 장착해주세요.', 
+                    embeds: [], 
+                    components: [] 
+                });
+                return;
+            }
+            
+            const enhanceEmbed = new EmbedBuilder()
+                .setColor('#ffd700')
+                .setTitle('⚔️ 장비 강화')
+                .setDescription('현재 착용 중인 장비 목록입니다.\n강화할 부위를 선택하세요.')
+                .addFields(
+                    { name: '📋 착용 장비', value: equipmentInfo || '없음', inline: false },
+                    { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                    { name: '🛡️ 보호권', value: `${user.protectionScrolls || 0}개`, inline: true },
+                    { name: '📊 강화 통계', value: `성공: ${user.enhanceStats?.successCount || 0}회\n실패: ${(user.enhanceStats?.totalAttempts || 0) - (user.enhanceStats?.successCount || 0)}회`, inline: true }
+                );
+            
+            // 장착된 장비 부위별 버튼 생성
+            const enhanceButtons = [];
+            const row1 = new ActionRowBuilder();
+            const row2 = new ActionRowBuilder();
+            let buttonCount = 0;
+            
+            for (const slot of equipmentSlots) {
+                if (user.equipment[slot] !== -1 && user.equipment[slot] !== null) {
+                    const item = user.inventory.find(inv => inv.inventorySlot === user.equipment[slot]);
+                    if (item) {
+                        const button = new ButtonBuilder()
+                            .setCustomId(`enhance_slot_${slot}`)
+                            .setLabel(`${slotNames[slot]} (+${item.enhanceLevel || 0})`)
+                            .setStyle(ButtonStyle.Primary);
+                        
+                        if (buttonCount < 3) {
+                            row1.addComponents(button);
+                        } else {
+                            row2.addComponents(button);
+                        }
+                        buttonCount++;
+                    }
+                }
+            }
+            
+            const components = [];
+            if (row1.components.length > 0) components.push(row1);
+            if (row2.components.length > 0) components.push(row2);
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('enhancement')
+                        .setLabel('🔙 강화소 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            components.push(backButton);
+            
+            await interaction.editReply({
+                embeds: [enhanceEmbed],
+                components: components
+            });
+        }
+        
+        // 장비 부위별 강화 버튼 처리
+        else if (interaction.customId.startsWith('enhance_slot_')) {
+            // 먼저 defer 처리
+            await interaction.deferReply({ ephemeral: true });
+            
+            const slot = interaction.customId.replace('enhance_slot_', '');
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.editReply({ content: '먼저 회원가입을 해주세요!', embeds: [], components: [] });
+                return;
+            }
+            
+            // 해당 슬롯의 장비 찾기
+            const inventorySlot = user.equipment[slot];
+            if (inventorySlot === -1 || inventorySlot === null) {
+                await interaction.editReply({ content: '해당 부위에 장착된 장비가 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            const item = user.inventory.find(inv => inv.inventorySlot === inventorySlot);
+            if (!item) {
+                await interaction.editReply({ content: '장비를 찾을 수 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            const currentEnhance = item.enhanceLevel || 0;
+            const itemLevel = ITEM_LEVELS[item.setName] || ITEM_LEVELS[item.name] || 1;
+            const cost = calculateEnhanceCost(itemLevel, currentEnhance);
+            const successRate = calculateSuccessRate(currentEnhance);
+            
+            // 골드 확인
+            if (user.gold < cost) {
+                await interaction.editReply({ 
+                    content: `❌ 골드가 부족합니다! (필요: ${cost.toLocaleString()}G, 보유: ${user.gold.toLocaleString()}G)`, 
+                    embeds: [], 
+                    components: [] 
+                });
+                return;
+            }
+            
+            // 15강 이상은 보호권 필수
+            if (currentEnhance >= 15 && user.protectionScrolls < 1) {
+                await interaction.editReply({ 
+                    content: `❌ 15강 이상은 보호권이 필요합니다! (보유: ${user.protectionScrolls || 0}개)`, 
+                    embeds: [], 
+                    components: [] 
+                });
+                return;
+            }
+            
+            const enhanceEmbed = new EmbedBuilder()
+                .setColor('#ffd700')
+                .setTitle(`⚔️ ${item.name} 강화`)
+                .setDescription(`현재 강화: +${currentEnhance} → +${currentEnhance + 1}`)
+                .addFields(
+                    { name: '💰 강화 비용', value: `${cost.toLocaleString()}G`, inline: true },
+                    { name: '📊 성공률', value: `${successRate}%`, inline: true },
+                    { name: '🛡️ 보호권', value: `${user.protectionScrolls || 0}개`, inline: true },
+                    { name: '⚠️ 실패 시', value: currentEnhance >= 20 ? '파괴' : currentEnhance >= 15 ? '-1 강화' : currentEnhance >= 10 ? '-1 강화' : '변화 없음', inline: true }
+                );
+            
+            const confirmButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`confirm_enhance_${slot}`)
+                        .setLabel('✅ 강화 진행')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('enhance')
+                        .setLabel('❌ 취소')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            
+            if (currentEnhance >= 10 && currentEnhance < 15 && user.protectionScrolls > 0) {
+                confirmButtons.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`confirm_enhance_protect_${slot}`)
+                        .setLabel('🛡️ 보호권 사용 강화')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            }
+            
+            await interaction.editReply({
+                embeds: [enhanceEmbed],
+                components: [confirmButtons]
+            });
+        }
+        
+        // 강화 확인 버튼 처리
+        else if (interaction.customId.startsWith('confirm_enhance_')) {
+            const parts = interaction.customId.split('_');
+            const useProtection = parts[2] === 'protect';
+            const slot = useProtection ? parts[3] : parts[2];
+            
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            const inventorySlot = user.equipment[slot];
+            const item = user.inventory.find(inv => inv.inventorySlot === inventorySlot);
+            
+            if (!item) {
+                await interaction.editReply({ content: '장비를 찾을 수 없습니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            const currentEnhance = item.enhanceLevel || 0;
+            const itemLevel = ITEM_LEVELS[item.setName] || ITEM_LEVELS[item.name] || 1;
+            const cost = calculateEnhanceCost(itemLevel, currentEnhance);
+            const successRate = calculateSuccessRate(currentEnhance);
+            
+            // 골드 차감
+            user.gold -= cost;
+            
+            // 보호권 사용
+            if (useProtection || currentEnhance >= 15) {
+                user.protectionScrolls -= 1;
+            }
+            
+            // 강화 통계 업데이트
+            if (!user.enhanceStats) {
+                user.enhanceStats = { totalAttempts: 0, totalCost: 0, destroyCount: 0, successCount: 0, maxEnhanceLevel: 0 };
+            }
+            user.enhanceStats.totalAttempts += 1;
+            user.enhanceStats.totalCost += cost;
+            
+            // 강화 시도
+            const random = Math.random() * 100;
+            const success = random < successRate;
+            
+            let resultEmbed;
+            
+            if (success) {
+                // 강화 성공
+                item.enhanceLevel = currentEnhance + 1;
+                user.enhanceStats.successCount += 1;
+                if (item.enhanceLevel > user.enhanceStats.maxEnhanceLevel) {
+                    user.enhanceStats.maxEnhanceLevel = item.enhanceLevel;
+                }
+                
+                // 스탯 증가
+                const statIncrease = Math.floor(itemLevel * 2);
+                item.stats.attack += statIncrease;
+                item.stats.defense += statIncrease;
+                
+                resultEmbed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('✅ 강화 성공!')
+                    .setDescription(`**${item.name}**이(가) **+${currentEnhance}**에서 **+${item.enhanceLevel}**로 강화되었습니다!`)
+                    .addFields(
+                        { name: '📈 스탯 증가', value: `공격력 +${statIncrease}, 방어력 +${statIncrease}`, inline: true },
+                        { name: '💰 소모 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                        { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                    );
+            } else {
+                // 강화 실패
+                if (currentEnhance >= 20 && !useProtection && currentEnhance < 15) {
+                    // 파괴
+                    user.inventory = user.inventory.filter(inv => inv.inventorySlot !== inventorySlot);
+                    user.equipment[slot] = -1;
+                    user.enhanceStats.destroyCount += 1;
+                    
+                    resultEmbed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('💥 장비 파괴!')
+                        .setDescription(`**${item.name}**이(가) 파괴되었습니다...`)
+                        .addFields(
+                            { name: '💰 소모 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                            { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                        );
+                } else if (currentEnhance >= 10 && !useProtection) {
+                    // 강화 레벨 하락
+                    item.enhanceLevel = Math.max(0, currentEnhance - 1);
+                    const statDecrease = Math.floor(itemLevel * 2);
+                    item.stats.attack = Math.max(0, item.stats.attack - statDecrease);
+                    item.stats.defense = Math.max(0, item.stats.defense - statDecrease);
+                    
+                    resultEmbed = new EmbedBuilder()
+                        .setColor('#ff6600')
+                        .setTitle('❌ 강화 실패!')
+                        .setDescription(`**${item.name}**의 강화가 실패했습니다.\n강화 레벨: +${currentEnhance} → +${item.enhanceLevel}`)
+                        .addFields(
+                            { name: '📉 스탯 감소', value: `공격력 -${statDecrease}, 방어력 -${statDecrease}`, inline: true },
+                            { name: '💰 소모 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                            { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                        );
+                } else {
+                    // 변화 없음
+                    resultEmbed = new EmbedBuilder()
+                        .setColor('#ffff00')
+                        .setTitle('❌ 강화 실패!')
+                        .setDescription(`**${item.name}**의 강화가 실패했습니다.\n강화 레벨은 유지됩니다.`)
+                        .addFields(
+                            { name: '💰 소모 골드', value: `${cost.toLocaleString()}G`, inline: true },
+                            { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                        );
+                }
+            }
+            
+            await user.save();
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('enhance')
+                        .setLabel('🔄 계속 강화하기')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('enhancement')
+                        .setLabel('🔙 강화소 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({
+                embeds: [resultEmbed],
+                components: [backButton]
+            });
+        }
+        
+        // 인벤토리 아이템 사용 버튼 처리
+//         else if (interaction.customId.startsWith('inv_use_')) {
+//             const parts = interaction.customId.split('_');
+//             const itemId = parts[2];
+//             const timestamp = parts[3];
+//             const category = parts[5];
+//             const page = parseInt(parts[6]);
+//             
+//             const user = await getUser(interaction.user.id);
+//             const item = user.inventory.find(inv => inv.id === itemId);
+//             
+//             if (!item) {
+//                 await interaction.reply({ content: '해당 아이템을 찾을 수 없습니다!', flags: 64 });
+//                 return;
+//             }
+//             
+//             // 장비 아이템인 경우 장착
+//             if (['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(item.type)) {
+//                 // 현재 장착된 아이템 해제
+//                 const currentEquipped = user.equipment[item.type];
+//                 if (currentEquipped !== -1 && currentEquipped !== null) {
+//                     const oldItem = user.inventory.find(inv => inv.inventorySlot === currentEquipped);
+//                     if (oldItem) {
+//                         oldItem.equipped = false;
+//                     }
+//                 }
+//                 
+//                 // 새 아이템 장착
+//                 user.equipment[item.type] = item.inventorySlot;
+//                 item.equipped = true;
+//                 
+//                 await user.save();
+//                 
+//                 await interaction.reply({
+//                     content: `✅ **${item.name}**을(를) 장착했습니다!`,
+//                     flags: 64
+//                 });
+//                 
+//                 // 인벤토리 페이지 새로고침
+//                 setTimeout(async () => {
+//                     const categoryItems = user.inventory.filter(inv => {
+//                         if (category === 'all') return true;
+//                         if (category === 'equipment') return ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(inv.type);
+//                         if (category === 'consumable') return inv.type === 'consumable';
+//                         if (category === 'etc') return inv.type === 'etc';
+//                         return false;
+//                     });
+//                     
+//                     const itemsPerPage = 5;
+//                     const totalPages = Math.ceil(categoryItems.length / itemsPerPage);
+//                     const startIndex = page * itemsPerPage;
+//                     const currentItems = categoryItems.slice(startIndex, startIndex + itemsPerPage);
+//                     
+//                     const categoryEmbed = new EmbedBuilder()
+//                         .setColor('#ff69b4')
+//                         .setTitle(`🎒 인벤토리 - ${category === 'all' ? '전체' : category === 'equipment' ? '장비' : category === 'consumable' ? '소비' : '기타'}`)
+//                         .setDescription(`페이지 ${page + 1}/${totalPages}\n\n보유 아이템 목록:`);
+//                     
+//                     let itemList = '';
+//                     currentItems.forEach((item, index) => {
+//                         const globalIndex = startIndex + index;
+//                         const isEquipped = user.equipment[item.type] === item.inventorySlot;
+//                         itemList += `**${globalIndex + 1}.** ${getRarityEmoji(item.rarity)} ${item.name}`;
+//                         if (item.enhanceLevel > 0) itemList += ` (+${item.enhanceLevel}강)`;
+//                         if (isEquipped) itemList += ' 📌';
+//                         itemList += `\n`;
+//                         
+//                         if (item.stats) {
+//                             let statsText = '';
+//                             for (const [statName, value] of Object.entries(item.stats)) {
+//                                 if (value !== 0) {
+//                                     const statDisplay = statName === 'attack' ? '공격력' : 
+//                                                       statName === 'defense' ? '방어력' : 
+//                                                       statName === 'dodge' ? '회피력' : 
+//                                                       statName === 'luck' ? '행운' : statName;
+//                                     statsText += `${statDisplay}: ${value > 0 ? '+' : ''}${value} `;
+//                                 }
+//                             }
+//                             itemList += `${statsText}\n`;
+//                         }
+//                         
+//                         itemList += `💰 판매가: ${Math.floor(item.price * 0.7).toLocaleString()}<:currency_emoji:1377404064316522778>\n\n`;
+//                     });
+//                     
+//                     categoryEmbed.addFields({ name: '보유 아이템', value: itemList || '아이템이 없습니다.', inline: false });
+//                     
+//                     // 아이템 버튼 업데이트
+//                     const itemButtons = new ActionRowBuilder();
+//                     currentItems.forEach((item, index) => {
+//                         const globalIndex = startIndex + index;
+//                         const isEquipped = user.equipment[item.type] === item.inventorySlot;
+//                         const isEquipment = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(item.type);
+//                         
+//                         itemButtons.addComponents(
+//                             new ButtonBuilder()
+//                                 .setCustomId(`inv_use_${item.id}_${Date.now()}_r${Math.random().toString(36).substring(7)}_${category}_${page}`)
+//                                 .setLabel(`${globalIndex + 1}. ${isEquipment ? '장착' : '사용'}`)
+//                                 .setStyle(isEquipped ? ButtonStyle.Success : ButtonStyle.Primary)
+//                                 .setDisabled(isEquipped)
+//                         );
+//                     });
+//                     
+//                     const navButtons = new ActionRowBuilder()
+//                         .addComponents(
+//                             new ButtonBuilder()
+//                                 .setCustomId(`inv_${category}_prev_${page}`)
+//                                 .setLabel('◀ 이전')
+//                                 .setStyle(ButtonStyle.Secondary)
+//                                 .setDisabled(page === 0),
+//                             new ButtonBuilder()
+//                                 .setCustomId(`inv_${category}_page_${page}`)
+//                                 .setLabel(`${page + 1}/${totalPages}`)
+//                                 .setStyle(ButtonStyle.Secondary)
+//                                 .setDisabled(true),
+//                             new ButtonBuilder()
+//                                 .setCustomId(`inv_${category}_next_${page}`)
+//                                 .setLabel('다음 ▶')
+//                                 .setStyle(ButtonStyle.Secondary)
+//                                 .setDisabled(page >= totalPages - 1),
+//                             new ButtonBuilder()
+//                                 .setCustomId('inventory')
+//                                 .setLabel('🔙 인벤토리 메인')
+//                                 .setStyle(ButtonStyle.Primary)
+//                         );
+//                     
+//                     const components = [itemButtons];
+//                     if (totalPages > 1 || categoryItems.length > 0) {
+//                         components.push(navButtons);
+//                     }
+//                     
+//                     await interaction.editReply({
+//                         embeds: [categoryEmbed],
+//                         components: components
+//                     });
+//                 }, 1000);
+//             }
+//             // 소비 아이템인 경우 사용
+//             else if (item.type === 'consumable') {
+//                 // 소비 아이템 사용 로직
+//                 item.quantity -= 1;
+//                 if (item.quantity <= 0) {
+//                     user.inventory = user.inventory.filter(inv => inv.id !== itemId);
+//                 }
+//                 
+//                 await user.save();
+//                 await interaction.reply({
+//                     content: `✅ **${item.name}**을(를) 사용했습니다!`,
+//                     flags: 64
+//                 });
+//             }
+//         }
+        
+        // 각 능력치별 포인트 추가 버튼 처리
+        else if (interaction.customId.startsWith('add_strength_') || 
+                 interaction.customId.startsWith('add_agility_') ||
+                 interaction.customId.startsWith('add_intelligence_') ||
+                 interaction.customId.startsWith('add_vitality_') ||
+                 interaction.customId.startsWith('add_luck_')) {
+            
+            const parts = interaction.customId.split('_');
+            const stat = parts[1];
+            const amount = parseInt(parts[2]);
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            if (user.statPoints < amount) {
+                await interaction.reply({ content: `포인트가 부족합니다! (필요: ${amount}, 보유: ${user.statPoints})`, flags: 64 });
+                return;
+            }
+            
+            // 능력치 증가
+            user.stats[stat] += amount;
+            user.statPoints -= amount;
+            
+            await user.save();
+            
+            const statName = {
+                strength: '💪 힘',
+                agility: '🏃 민첩',
+                intelligence: '🧠 지능',
+                vitality: '❤️ 체력',
+                luck: '🍀 행운'
+            }[stat];
+            
+            await interaction.reply({
+                content: `✅ ${statName}이(가) ${amount} 증가했습니다! (현재: ${user.stats[stat]})`,
+                flags: 64
+            });
+        }
+        
+        // 능력치 포인트 버튼 처리 (구버전)
+        else if (interaction.customId.startsWith('stat_add_')) {
+            const amount = parseInt(interaction.customId.split('_')[2]);
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            if (user.statPoints < amount) {
+                await interaction.reply({ content: '포인트가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 능력치 선택 메뉴
+            const statOptions = [
+                { label: '⚔️ 공격력', description: `현재: ${user.baseStats.attack}`, value: `add_attack_${amount}`, emoji: '⚔️' },
+                { label: '🛡️ 방어력', description: `현재: ${user.baseStats.defense}`, value: `add_defense_${amount}`, emoji: '🛡️' },
+                { label: '💨 회피력', description: `현재: ${user.baseStats.dodge}`, value: `add_dodge_${amount}`, emoji: '💨' },
+                { label: '🍀 행운', description: `현재: ${user.baseStats.luck}`, value: `add_luck_${amount}`, emoji: '🍀' }
+            ];
+            
+            const statSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('stat_select')
+                .setPlaceholder(`${amount} 포인트를 투자할 능력치를 선택하세요`)
+                .addOptions(statOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(statSelectMenu);
+            
+            const statEmbed = new EmbedBuilder()
+                .setColor('#00b894')
+                .setTitle(`📊 능력치 포인트 ${amount} 투자`)
+                .setDescription('어떤 능력치를 올리시겠습니까?')
+                .addFields(
+                    { name: '💰 남은 포인트', value: `${user.statPoints} → ${user.statPoints - amount}`, inline: false }
+                );
+            
+            await interaction.reply({
+                embeds: [statEmbed],
+                components: [selectRow],
+                flags: 64
+            });
+        }
+        
+        // 능력치 선택 처리
+        else if (interaction.customId === 'stat_select') {
+            const [action, stat, amount] = interaction.values[0].split('_');
+            const points = parseInt(amount);
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || user.statPoints < points) {
+                await interaction.reply({ content: '포인트가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 포인트 차감 및 능력치 증가
+            user.statPoints -= points;
+            user.baseStats[stat] += points;
+            
+            await user.save();
+            
+            const statNames = {
+                'attack': '공격력',
+                'defense': '방어력',
+                'dodge': '회피력',
+                'luck': '행운'
+            };
+            
+            await interaction.update({
+                content: `✅ **${statNames[stat]}**이 ${points} 증가했습니다!\n현재 ${statNames[stat]}: ${user.baseStats[stat]}`,
+                embeds: [],
+                components: []
+            });
+        }
+        
+        // 스탯 초기화 버튼 처리
+        else if (interaction.customId === 'stat_reset') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const resetCost = user.level * 1000; // 레벨당 1000골드
+            
+            if (user.gold < resetCost) {
+                await interaction.reply({ content: `골드가 부족합니다! 필요 골드: ${resetCost.toLocaleString()}G`, flags: 64 });
+                return;
+            }
+            
+            // 확인 버튼
+            const confirmEmbed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('🔄 스탯 초기화')
+                .setDescription('정말로 모든 능력치를 초기화하시겠습니까?')
+                .addFields(
+                    { name: '💰 비용', value: `${resetCost.toLocaleString()}G`, inline: true },
+                    { name: '💵 현재 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                    { name: '⚠️ 경고', value: '모든 능력치가 기본값으로 초기화되고\n포인트가 환급됩니다!', inline: false }
+                );
+            
+            const confirmButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('confirm_stat_reset')
+                        .setLabel('✅ 확인')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('cancel_stat_reset')
+                        .setLabel('❌ 취소')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.reply({
+                embeds: [confirmEmbed],
+                components: [confirmButtons],
+                flags: 64
+            });
+        }
+        
+        // 스탯 초기화 확인
+        else if (interaction.customId === 'confirm_stat_reset') {
+            const user = await getUser(interaction.user.id);
+            const resetCost = user.level * 1000;
+            
+            if (user.gold < resetCost) {
+                await interaction.update({ content: '골드가 부족합니다!', embeds: [], components: [] });
+                return;
+            }
+            
+            // 투자한 포인트 계산
+            const totalInvested = (user.baseStats.attack - 10) + (user.baseStats.defense - 10) + 
+                                 (user.baseStats.dodge - 5) + (user.baseStats.luck - 5);
+            
+            // 초기화
+            user.gold -= resetCost;
+            user.baseStats = {
+                attack: 10,
+                defense: 10,
+                dodge: 5,
+                luck: 5
+            };
+            user.statPoints += totalInvested;
+            
+            await user.save();
+            
+            await interaction.update({
+                content: `✅ 스탯이 초기화되었습니다!\n환급된 포인트: ${totalInvested}`,
+                embeds: [],
+                components: []
+            });
+        }
+        
+        // 스탯 초기화 취소
+        else if (interaction.customId === 'cancel_stat_reset') {
+            await interaction.update({ content: '스탯 초기화를 취소했습니다.', embeds: [], components: [] });
         }
         
         // 상점 페이지 네비게이션
