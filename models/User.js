@@ -152,7 +152,13 @@ const userSchema = new mongoose.Schema({
         price: { type: Number, default: 0 },
         description: { type: String, default: '' },
         equipped: { type: Boolean, default: false }, // 장착 여부
-        inventorySlot: { type: Number, required: false } // 인벤토리 슬롯 번호
+        inventorySlot: { type: Number, required: false }, // 인벤토리 슬롯 번호
+        randomOptions: [{ // 랜덤 추가 옵션
+            name: { type: String },
+            type: { type: String },
+            value: { type: Number },
+            displayValue: { type: String }
+        }]
     }],
     maxInventorySlots: { type: Number, default: 50 }, // 인벤토리 최대 슬롯
     equipment: {
@@ -430,16 +436,114 @@ const userSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// ObjectId 장비 데이터를 자동으로 -1로 변환하는 pre-save 미들웨어
+// 장비 및 데이터 무결성 확인 pre-save 미들웨어
 userSchema.pre('save', function(next) {
     const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
     
+    // 장비 슬롯 데이터 타입 확인
     equipmentSlots.forEach(slot => {
-        if (this.equipment[slot] && typeof this.equipment[slot] === 'object') {
-            // ObjectId나 다른 객체 타입이면 -1로 변환
+        // undefined를 -1로 변환
+        if (this.equipment[slot] === undefined || this.equipment[slot] === null) {
             this.equipment[slot] = -1;
         }
+        // ObjectId나 다른 객체 타입이면 -1로 변환
+        else if (this.equipment[slot] && typeof this.equipment[slot] === 'object') {
+            console.log(`[Pre-save] ${this.discordId}의 ${slot} 슬롯 ObjectId 제거: ${this.equipment[slot]} -> -1`);
+            this.equipment[slot] = -1;
+        }
+        // 문자열인 경우 숫자로 변환 시도
+        else if (typeof this.equipment[slot] === 'string') {
+            const num = parseInt(this.equipment[slot]);
+            this.equipment[slot] = isNaN(num) ? -1 : num;
+        }
+        // 유효하지 않은 슬롯 번호 확인
+        else if (typeof this.equipment[slot] === 'number' && this.equipment[slot] !== -1) {
+            const item = this.inventory.find(i => i.inventorySlot === this.equipment[slot]);
+            if (!item) {
+                console.log(`[Pre-save] ${this.discordId}의 ${slot} 슬롯에 해당하는 아이템 없음: ${this.equipment[slot]} -> -1`);
+                this.equipment[slot] = -1;
+            }
+        }
     });
+    
+    // 인벤토리 아이템의 inventorySlot 확인
+    if (this.inventory && Array.isArray(this.inventory)) {
+        const usedSlots = new Set();
+        const itemsToReassign = [];
+        
+        // 1단계: 중복 슬롯 검사
+        this.inventory.forEach((item, index) => {
+            // inventorySlot이 없으면 재할당 필요
+            if (item.inventorySlot === undefined || item.inventorySlot === null) {
+                itemsToReassign.push(item);
+            }
+            // 중복된 슬롯이면 재할당 필요
+            else if (usedSlots.has(item.inventorySlot)) {
+                console.log(`[Pre-save] 중복 슬롯 발견: ${item.name} (슬롯 ${item.inventorySlot})`);
+                itemsToReassign.push(item);
+            } else {
+                usedSlots.add(item.inventorySlot);
+            }
+            
+            // 기본 필드 초기화
+            if (item.enhanceLevel === undefined) {
+                item.enhanceLevel = 0;
+            }
+            if (!item.stats) {
+                item.stats = { attack: 0, defense: 0, dodge: 0, luck: 0 };
+            }
+            if (item.equipped === undefined) {
+                item.equipped = false;
+            }
+        });
+        
+        // 2단계: 새 슬롯 할당
+        itemsToReassign.forEach(item => {
+            let newSlot = 0;
+            while (usedSlots.has(newSlot)) {
+                newSlot++;
+            }
+            item.inventorySlot = newSlot;
+            usedSlots.add(newSlot);
+            console.log(`[Pre-save] ${item.name}에 새 슬롯 ${newSlot} 할당`);
+        });
+        
+        // 3단계: equipment와 inventory의 equipped 상태 동기화
+        // 먼저 모든 아이템의 equipped를 false로 설정
+        this.inventory.forEach(item => {
+            item.equipped = false;
+        });
+        
+        // equipment 슬롯에 있는 아이템만 equipped = true
+        equipmentSlots.forEach(slot => {
+            const slotIndex = this.equipment[slot];
+            if (slotIndex !== -1 && slotIndex !== null && slotIndex !== undefined) {
+                const equippedItem = this.inventory.find(item => item.inventorySlot === slotIndex);
+                if (equippedItem) {
+                    if (equippedItem.type === slot) {
+                        equippedItem.equipped = true;
+                    } else {
+                        // 잘못된 타입의 아이템이 장착됨
+                        console.log(`[Pre-save] ${this.discordId}의 ${slot} 슬롯에 잘못된 타입: ${equippedItem.type}`);
+                        this.equipment[slot] = -1;
+                    }
+                } else {
+                    // 장착된 슬롯에 아이템이 없음
+                    this.equipment[slot] = -1;
+                }
+            }
+        });
+    }
+    
+    // 출석 데이터 타입 확인
+    if (this.lastDaily !== null && typeof this.lastDaily !== 'string') {
+        this.lastDaily = this.lastDaily ? this.lastDaily.toString() : null;
+    }
+    
+    // 주간 출석 배열 확인
+    if (!Array.isArray(this.weeklyAttendance) || this.weeklyAttendance.length !== 7) {
+        this.weeklyAttendance = [false, false, false, false, false, false, false];
+    }
     
     next();
 });
