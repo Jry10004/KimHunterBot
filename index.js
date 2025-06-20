@@ -8387,15 +8387,12 @@ function calculateEnhanceCost(itemLevel, currentStar) {
 }
 
 // 강화 성공률 계산 함수
-function calculateSuccessRate(itemLevel, currentStar) {
-    // 기본 성공률: 0-5강까지는 높은 성공률
-    if (currentStar < 5) return 0.95 - (currentStar * 0.05);
-    if (currentStar < 10) return 0.70 - ((currentStar - 5) * 0.08);
-    if (currentStar < 15) return 0.30 - ((currentStar - 10) * 0.04);
-    if (currentStar < 20) return 0.10 - ((currentStar - 15) * 0.01);
-    if (currentStar < 25) return 0.05;
-    if (currentStar < 30) return 0.03;
-    return 0.01; // 30강 이상
+function calculateSuccessRate(currentStar) {
+    // ENHANCEMENT_RATES 테이블에서 확률 가져오기
+    if (ENHANCEMENT_RATES[currentStar]) {
+        return ENHANCEMENT_RATES[currentStar].success / 100; // 백분율을 소수로 변환
+    }
+    return 0.01; // 기본값
 }
 
 // 강화 스탯 보너스 계산 함수
@@ -10931,7 +10928,7 @@ client.on('interactionCreate', async (interaction) => {
             
             // 강화 실행
             user.gold -= cost;
-            const success = Math.random() < calculateSuccessRate(itemLevel, currentStar);
+            const success = Math.random() < calculateSuccessRate(currentStar);
             
             if (success) {
                 item.enhanceLevel = (item.enhanceLevel || 0) + 1;
@@ -23621,7 +23618,7 @@ client.on('interactionCreate', async (interaction) => {
                         
                         equipmentInfo += `${slotNames[slot]}: **${item.name}** (+${enhanceLevel}강)\n`;
                         equipmentInfo += `├ 강화 비용: ${cost.toLocaleString()}G\n`;
-                        equipmentInfo += `├ 성공률: ${successRate}%\n`;
+                        equipmentInfo += `├ 성공률: ${(successRate * 100).toFixed(1)}%\n`;
                         equipmentInfo += `└ 보호권 필요: ${enhanceLevel >= 15 ? '필수' : '선택'}\n\n`;
                     }
                 }
@@ -23818,8 +23815,9 @@ client.on('interactionCreate', async (interaction) => {
             user.enhanceStats.totalCost += cost;
             
             // 강화 시도
+            const rates = ENHANCEMENT_RATES[currentEnhance];
             const random = Math.random() * 100;
-            const success = random < successRate;
+            const success = random < rates.success;
             
             let resultEmbed;
             
@@ -23846,8 +23844,10 @@ client.on('interactionCreate', async (interaction) => {
                         { name: '💰 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
                     );
             } else {
-                // 강화 실패
-                if (currentEnhance >= 20 && !useProtection && currentEnhance < 15) {
+                // 강화 실패 또는 파괴 확인
+                const isDestroy = random >= (100 - rates.destroy) && currentEnhance >= 15 && !useProtection;
+                
+                if (isDestroy) {
                     // 파괴
                     user.inventory = user.inventory.filter(inv => inv.inventorySlot !== inventorySlot);
                     user.equipment[slot] = -1;
