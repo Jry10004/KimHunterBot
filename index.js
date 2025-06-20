@@ -514,12 +514,13 @@ const MENU_DEFINITIONS = {
         category: 'minigame'
     },
     // 경제 (Economy)
-    shop: {
+    // shop은 빠른 접근 버튼으로만 제공 (경제 카테고리에서 제거)
+    /*shop: {
         label: '🛒 상점',
         description: '아이템 구매 및 판매',
         emoji: '🛒',
         category: 'economy'
-    },
+    },*/
     stocks: {
         label: '📈 주식거래소',
         description: '환상 지역 기업 주식 거래',
