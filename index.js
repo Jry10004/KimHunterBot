@@ -28,6 +28,32 @@ const AUCTION_HOUSE = {
 let currentMarketEvent = null;
 let lastMarketUpdate = 0;
 
+// 오픈 카운트다운 시스템
+let openCountdown = {
+    isActive: false,
+    launchTime: null,
+    channelId: null,
+    messageId: null,
+    interval: null
+};
+
+// 카운트다운 체크 함수
+function isCountdownActive() {
+    if (!openCountdown.isActive) return false;
+    return Date.now() < openCountdown.launchTime;
+}
+
+// 카운트다운 메시지 반환
+function getCountdownMessage() {
+    if (!openCountdown.isActive) return null;
+    
+    const remaining = openCountdown.launchTime - Date.now();
+    const hours = Math.floor(remaining / (1000 * 60 * 60));
+    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    
+    return `🚀 **게임이 아직 오픈되지 않았습니다!**\n\n⏰ 오픈까지 남은 시간: **${hours}시간 ${minutes}분**\n\n오픈 시간: <t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`;
+}
+
 // 게임 메뉴 표시 함수
 async function showGameMenu(interaction) {
     const gameCommand = client.application.commands.cache.find(cmd => cmd.name === '게임');
@@ -9209,6 +9235,27 @@ const commands = [
     
     // 관리자 전용 명령어
     new SlashCommandBuilder()
+        .setName('카운트다운')
+        .setDescription('🚀 [관리자] 게임 오픈 카운트다운 설정')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('시작')
+                .setDescription('카운트다운 시작')
+                .addIntegerOption(option =>
+                    option.setName('시간')
+                        .setDescription('카운트다운 시간 (시간 단위)')
+                        .setRequired(true)
+                        .setMinValue(1)
+                        .setMaxValue(168)) // 최대 7일
+                .addChannelOption(option =>
+                    option.setName('채널')
+                        .setDescription('카운트다운을 표시할 채널')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('중지')
+                .setDescription('카운트다운 중지')),
+    new SlashCommandBuilder()
         .setName('게임데이터초기화')
         .setDescription('🔧 [관리자 전용] 모든 게임 데이터를 초기화합니다'),
     
@@ -12209,6 +12256,15 @@ client.on('interactionCreate', async (interaction) => {
 
     const { commandName } = interaction;
 
+    // 카운트다운 중에도 허용되는 명령어들
+    const allowedDuringCountdown = ['핑', '회원가입', '카운트다운', '게임데이터초기화'];
+    
+    // 카운트다운 체크 (허용된 명령어 제외)
+    if (isCountdownActive() && !allowedDuringCountdown.includes(commandName)) {
+        await interaction.reply({ content: getCountdownMessage(), flags: 64 });
+        return;
+    }
+
     try {
         if (commandName === '핑') {
             const ping = Date.now() - interaction.createdTimestamp;
@@ -13033,6 +13089,88 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         // 🔧 관리자 전용 명령어들
+        else if (commandName === '카운트다운') {
+            // 관리자 권한 체크
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ content: '❌ 관리자만 사용할 수 있는 명령어입니다!', flags: 64 });
+                return;
+            }
+            
+            const subcommand = interaction.options.getSubcommand();
+            
+            if (subcommand === '시작') {
+                const hours = interaction.options.getInteger('시간');
+                const channel = interaction.options.getChannel('채널');
+                
+                // 기존 카운트다운 중지
+                if (openCountdown.interval) {
+                    clearInterval(openCountdown.interval);
+                }
+                
+                // 새 카운트다운 설정
+                openCountdown.isActive = true;
+                openCountdown.launchTime = new Date(Date.now() + hours * 60 * 60 * 1000);
+                openCountdown.channelId = channel.id;
+                
+                // 초기 카운트다운 메시지 생성
+                const countdownEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('🚀 김헌터 RPG 정식 오픈 카운트다운!')
+                    .setDescription('**모든 기능이 잠겨있습니다!**\n오픈 시간까지 기다려주세요!')
+                    .addFields(
+                        { name: '⏰ 오픈 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
+                        { name: '⏱️ 남은 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:R>`, inline: false }
+                    )
+                    .setFooter({ text: '오픈 후 모든 기능을 사용할 수 있습니다!' })
+                    .setTimestamp();
+                
+                const message = await channel.send({ embeds: [countdownEmbed] });
+                openCountdown.messageId = message.id;
+                
+                // 1분마다 업데이트
+                openCountdown.interval = setInterval(async () => {
+                    const remaining = openCountdown.launchTime - Date.now();
+                    
+                    if (remaining <= 0) {
+                        // 카운트다운 종료
+                        clearInterval(openCountdown.interval);
+                        openCountdown.isActive = false;
+                        
+                        const launchEmbed = new EmbedBuilder()
+                            .setColor('#00ff00')
+                            .setTitle('🎉 김헌터 RPG 정식 오픈!')
+                            .setDescription('**게임이 오픈되었습니다!**\n이제 모든 기능을 사용할 수 있습니다!')
+                            .setFooter({ text: '즐거운 게임 되세요!' })
+                            .setTimestamp();
+                        
+                        await message.edit({ embeds: [launchEmbed] });
+                        
+                        // 전체 공지
+                        await channel.send('@everyone 🎊 **김헌터 RPG가 정식 오픈되었습니다!**');
+                    } else {
+                        // 카운트다운 업데이트
+                        const hours = Math.floor(remaining / (1000 * 60 * 60));
+                        const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                        const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                        
+                        countdownEmbed.data.fields[1].value = `${hours}시간 ${minutes}분 ${seconds}초`;
+                        await message.edit({ embeds: [countdownEmbed] });
+                    }
+                }, 60000); // 1분마다 업데이트
+                
+                await interaction.reply({ content: `✅ ${hours}시간 카운트다운이 시작되었습니다!`, flags: 64 });
+                
+            } else if (subcommand === '중지') {
+                if (openCountdown.interval) {
+                    clearInterval(openCountdown.interval);
+                }
+                openCountdown.isActive = false;
+                openCountdown.interval = null;
+                
+                await interaction.reply({ content: '✅ 카운트다운이 중지되었습니다!', flags: 64 });
+            }
+        }
+        
         else if (commandName === '게임데이터초기화') {
             // 관리자 권한 체크
             const ADMIN_IDS = ['302737668842086401']; // 관리자 디스코드 ID 추가
