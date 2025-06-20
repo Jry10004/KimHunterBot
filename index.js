@@ -638,7 +638,8 @@ const ADMIN_MENUS = {
 
 // 관리자 ID 목록 (환경변수에서 읽어오거나 하드코딩)
 const ADMIN_IDS = [
-    process.env.ADMIN_ID || '1036681976354160670' // 기본 관리자 ID
+    '1036681976354160670', // 기본 관리자 ID
+    '424480594542592009'   // 추가 관리자
 ];
 
 // 데이터 저장/로드 시스템
@@ -13173,9 +13174,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '게임데이터초기화') {
             // 관리자 권한 체크
-            const ADMIN_IDS = ['302737668842086401']; // 관리자 디스코드 ID 추가
-            
-            if (!ADMIN_IDS.includes(interaction.user.id)) {
+            if (!isAdmin(interaction.user.id)) {
                 await interaction.reply({ content: '❌ 관리자만 사용할 수 있는 명령어입니다!', flags: 64 });
                 return;
             }
@@ -14071,9 +14070,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '돈지급') {
             // 관리자 권한 체크
-            const ADMIN_IDS = ['302737668842086401', '1123609568397836309', '424480594542592009']; // 관리자 ID 리스트
-            
-            if (!ADMIN_IDS.includes(interaction.user.id)) {
+            if (!isAdmin(interaction.user.id)) {
                 await interaction.reply({ 
                     content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
                     flags: 64 
