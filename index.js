@@ -11039,6 +11039,15 @@ client.on('interactionCreate', async (interaction) => {
                     
                     console.log(`장착 시도 - slotType: ${slotType}, index: ${index}, inventorySlot: ${inventorySlot}`);
                     
+                    // inventorySlot이 NaN이면 오류
+                    if (isNaN(inventorySlot)) {
+                        console.error('inventorySlot 파싱 실패:', parts[4]);
+                        await interaction.editReply({
+                            content: '❌ 아이템 정보를 확인할 수 없습니다.'
+                        });
+                        return;
+                    }
+                    
                     const result = await equipItem(user, slotType, inventorySlot);
                     
                     if (result.success) {
@@ -14015,6 +14024,12 @@ client.on('interactionCreate', async (interaction) => {
     }
     
     if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+    
+    // equip_item_select는 다른 핸들러에서 처리하므로 제외
+    if (interaction.customId === 'equip_item_select') {
+        console.log(`🟡 첫 번째 핸들러에서 equip_item_select 제외`);
+        return;
+    }
     
     if (interaction.customId && interaction.customId.includes('equip')) {
         console.log(`🟢 첫 번째 핸들러에서 equip 처리: ${interaction.customId}`);
@@ -18099,8 +18114,8 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId.startsWith('confirm_enhance_')) {
-            // Defer update to prevent timeout
-            await interaction.deferUpdate();
+            // 즉시 응답하여 시간 초과 방지
+            await interaction.deferReply({ flags: 64 });
             
             // 강화 실행
             const slotName = interaction.customId.replace('confirm_enhance_', '');
