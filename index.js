@@ -48,10 +48,19 @@ function getCountdownMessage() {
     if (!openCountdown.isActive) return null;
     
     const remaining = openCountdown.launchTime - Date.now();
-    const hours = Math.floor(remaining / (1000 * 60 * 60));
+    const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
     
-    return `🚀 **게임이 아직 오픈되지 않았습니다!**\n\n⏰ 오픈까지 남은 시간: **${hours}시간 ${minutes}분**\n\n오픈 시간: <t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`;
+    const timeDisplay = days > 0 
+        ? `${days}일 ${hours}시간 ${minutes}분 ${seconds}초`
+        : `${hours}시간 ${minutes}분 ${seconds}초`;
+    
+    return `🚀 **김헌터 RPG 오픈 준비중!**\n\n` +
+           `⏱️ **남은 시간:** \`${timeDisplay}\`\n` +
+           `📅 **오픈 시간:** <t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>\n\n` +
+           `💡 오픈 전까지 모든 게임 기능이 제한됩니다.`;
 }
 
 // 게임 메뉴 표시 함수
@@ -13113,51 +13122,102 @@ client.on('interactionCreate', async (interaction) => {
                 openCountdown.launchTime = new Date(Date.now() + hours * 60 * 60 * 1000);
                 openCountdown.channelId = channel.id;
                 
+                // 초기 카운트다운 계산
+                const remaining = openCountdown.launchTime - Date.now();
+                const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                
+                // 카운트다운 디스플레이 생성
+                const countdownDisplay = days > 0 
+                    ? `\`\`\`fix\n${String(days).padStart(2, '0')}일 ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}\n\`\`\``
+                    : `\`\`\`fix\n${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}\n\`\`\``;
+                
+                // 진행률 바 생성
+                const totalTime = hours * 60 * 60 * 1000; // 설정한 시간
+                openCountdown.totalTime = totalTime; // 저장
+                const elapsed = totalTime - remaining;
+                const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
+                const barLength = 20;
+                const filledLength = Math.floor((progress / 100) * barLength);
+                const progressBar = '🟩'.repeat(filledLength) + '⬜'.repeat(barLength - filledLength);
+                
                 // 초기 카운트다운 메시지 생성
                 const countdownEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
                     .setTitle('🚀 김헌터 RPG 정식 오픈 카운트다운!')
                     .setDescription('**모든 기능이 잠겨있습니다!**\n오픈 시간까지 기다려주세요!')
                     .addFields(
-                        { name: '⏰ 오픈 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
-                        { name: '⏱️ 남은 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:R>`, inline: false }
+                        { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
+                        { name: '🕐 실시간 카운트다운', value: countdownDisplay, inline: false },
+                        { name: '📊 진행률', value: `${progressBar} ${progress.toFixed(1)}%`, inline: false }
                     )
-                    .setFooter({ text: '오픈 후 모든 기능을 사용할 수 있습니다!' })
+                    .setImage('https://i.imgur.com/YOUR_IMAGE.gif') // 카운트다운 이미지 URL
+                    .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다!' })
                     .setTimestamp();
                 
                 const message = await channel.send({ embeds: [countdownEmbed] });
                 openCountdown.messageId = message.id;
                 
-                // 1분마다 업데이트
+                // 더 빠른 업데이트 (10초마다)
                 openCountdown.interval = setInterval(async () => {
-                    const remaining = openCountdown.launchTime - Date.now();
-                    
-                    if (remaining <= 0) {
-                        // 카운트다운 종료
-                        clearInterval(openCountdown.interval);
-                        openCountdown.isActive = false;
+                    try {
+                        const remaining = openCountdown.launchTime - Date.now();
                         
-                        const launchEmbed = new EmbedBuilder()
-                            .setColor('#00ff00')
-                            .setTitle('🎉 김헌터 RPG 정식 오픈!')
-                            .setDescription('**게임이 오픈되었습니다!**\n이제 모든 기능을 사용할 수 있습니다!')
-                            .setFooter({ text: '즐거운 게임 되세요!' })
-                            .setTimestamp();
-                        
-                        await message.edit({ embeds: [launchEmbed] });
-                        
-                        // 전체 공지
-                        await channel.send('@everyone 🎊 **김헌터 RPG가 정식 오픈되었습니다!**');
-                    } else {
-                        // 카운트다운 업데이트
-                        const hours = Math.floor(remaining / (1000 * 60 * 60));
-                        const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-                        const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
-                        
-                        countdownEmbed.data.fields[1].value = `${hours}시간 ${minutes}분 ${seconds}초`;
-                        await message.edit({ embeds: [countdownEmbed] });
+                        if (remaining <= 0) {
+                            // 카운트다운 종료
+                            clearInterval(openCountdown.interval);
+                            openCountdown.isActive = false;
+                            
+                            const launchEmbed = new EmbedBuilder()
+                                .setColor('#00ff00')
+                                .setTitle('🎉 김헌터 RPG 정식 오픈!')
+                                .setDescription('**게임이 오픈되었습니다!**\n이제 모든 기능을 사용할 수 있습니다!')
+                                .setImage('https://i.imgur.com/CELEBRATION_IMAGE.gif') // 축하 이미지
+                                .setFooter({ text: '🎮 즐거운 게임 되세요!' })
+                                .setTimestamp();
+                            
+                            await message.edit({ embeds: [launchEmbed] });
+                            
+                            // 전체 공지
+                            await channel.send('@everyone 🎊 **김헌터 RPG가 정식 오픈되었습니다!**');
+                        } else {
+                            // 카운트다운 업데이트
+                            const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+                            const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                            const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                            const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                            
+                            // 카운트다운 디스플레이 업데이트
+                            const countdownDisplay = days > 0 
+                                ? `\`\`\`fix\n${String(days).padStart(2, '0')}일 ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}\n\`\`\``
+                                : `\`\`\`fix\n${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}\n\`\`\``;
+                            
+                            // 진행률 업데이트
+                            const totalTime = openCountdown.totalTime;
+                            const elapsed = totalTime - remaining;
+                            const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
+                            const barLength = 20;
+                            const filledLength = Math.floor((progress / 100) * barLength);
+                            const progressBar = '🟩'.repeat(filledLength) + '⬜'.repeat(barLength - filledLength);
+                            
+                            // 색상 변경 (남은 시간에 따라)
+                            let embedColor = '#ff0000'; // 빨강
+                            if (remaining < 60 * 60 * 1000) embedColor = '#ff6600'; // 주황 (1시간 미만)
+                            if (remaining < 10 * 60 * 1000) embedColor = '#ffff00'; // 노랑 (10분 미만)
+                            
+                            // 임베드 업데이트
+                            countdownEmbed.setColor(embedColor);
+                            countdownEmbed.data.fields[1].value = countdownDisplay;
+                            countdownEmbed.data.fields[2].value = `${progressBar} ${progress.toFixed(1)}%`;
+                            
+                            await message.edit({ embeds: [countdownEmbed] });
+                        }
+                    } catch (error) {
+                        console.error('카운트다운 업데이트 오류:', error);
                     }
-                }, 60000); // 1분마다 업데이트
+                }, 10000); // 10초마다 업데이트
                 
                 await interaction.reply({ content: `✅ ${hours}시간 카운트다운이 시작되었습니다!`, flags: 64 });
                 
