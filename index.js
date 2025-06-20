@@ -20142,7 +20142,7 @@ client.on('interactionCreate', async (interaction) => {
             // 레이스 참가 화면 표시
             await interaction.deferReply({ flags: 64 });
             
-            const raceStatus = raceSystem.getCurrentRaceStatus();
+            const raceStatus = raceSystem.getRaceStatus();
             
             // 진행 중인 레이스가 있는지 확인
             if (raceStatus.isRacing) {
@@ -20279,7 +20279,7 @@ client.on('interactionCreate', async (interaction) => {
             // 레이스 현황 보기
             await interaction.deferReply({ flags: 64 });
             
-            const raceStatus = raceSystem.getCurrentRaceStatus();
+            const raceStatus = raceSystem.getRaceStatus();
             
             const statusEmbed = new EmbedBuilder()
                 .setColor('#0099ff')
