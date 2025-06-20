@@ -150,4 +150,17 @@ build/
 
 # Temporary files
 *.tmp
-*.temp
+*.temp# 백업 제외 파일들
+*.backup
+test-*.js
+system-check.js
+fix-game-buttons.js
+
+# MIMESIS 프로젝트 (별도 관리)
+MIMESIS/
+
+# 임시 문서
+SYSTEM_FIXES.md
+
+# 로컬 백업
+backup/
