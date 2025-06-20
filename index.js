@@ -11444,7 +11444,7 @@ client.on('interactionCreate', async (interaction) => {
                     break;
                     
                 case 'admin_stats':
-                    await interaction.deferReply({ ephemeral: true });
+                    await interaction.deferReply({ flags: 64 });
                     const totalUsers = await User.countDocuments();
                     const totalGold = await User.aggregate([
                         { $group: { _id: null, total: { $sum: '$gold' } } }
@@ -11566,7 +11566,7 @@ client.on('interactionCreate', async (interaction) => {
             const categoryData = SHOP_CATEGORIES[selectedCategory];
             
             if (!categoryData) {
-                await interaction.reply({ content: '❌ 해당 카테고리를 찾을 수 없습니다!', ephemeral: true });
+                await interaction.reply({ content: '❌ 해당 카테고리를 찾을 수 없습니다!', flags: 64 });
                 return;
             }
             
@@ -11647,14 +11647,14 @@ client.on('interactionCreate', async (interaction) => {
             const item = categoryData.items[parseInt(itemIndex)];
             
             if (!item) {
-                await interaction.reply({ content: '❌ 아이템을 찾을 수 없습니다!', ephemeral: true });
+                await interaction.reply({ content: '❌ 아이템을 찾을 수 없습니다!', flags: 64 });
                 return;
             }
             
             const user = await getUser(interaction.user.id);
             
             if (user.gold < item.price) {
-                await interaction.reply({ content: '❌ 골드가 부족합니다!', ephemeral: true });
+                await interaction.reply({ content: '❌ 골드가 부족합니다!', flags: 64 });
                 return;
             }
             
@@ -11802,13 +11802,13 @@ client.on('interactionCreate', async (interaction) => {
             const exercise = EXERCISE_SYSTEM.exercises[exerciseId];
             
             if (!exercise) {
-                return await interaction.reply({ content: '❌ 잘못된 운동입니다!', ephemeral: true });
+                return await interaction.reply({ content: '❌ 잘못된 운동입니다!', flags: 64 });
             }
             
             // Modal을 사용하므로 defer하지 않음
             const user = await getUser(interaction.user.id);
             if (!user) {
-                return await interaction.reply({ content: '유저 데이터를 불러올 수 없습니다!', ephemeral: true });
+                return await interaction.reply({ content: '유저 데이터를 불러올 수 없습니다!', flags: 64 });
             }
             
             // 피로도 확인
@@ -23430,14 +23430,14 @@ client.on('interactionCreate', async (interaction) => {
             const item = categoryData.items[parseInt(itemIndex)];
             
             if (!item) {
-                await interaction.reply({ content: '❌ 아이템을 찾을 수 없습니다!', ephemeral: true });
+                await interaction.reply({ content: '❌ 아이템을 찾을 수 없습니다!', flags: 64 });
                 return;
             }
             
             const user = await getUser(interaction.user.id);
             
             if (user.gold < item.price) {
-                await interaction.reply({ content: '❌ 골드가 부족합니다!', ephemeral: true });
+                await interaction.reply({ content: '❌ 골드가 부족합니다!', flags: 64 });
                 return;
             }
             
@@ -23451,7 +23451,7 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             if (emptySlot === -1) {
-                await interaction.reply({ content: '❌ 인벤토리가 가득 찼습니다!', ephemeral: true });
+                await interaction.reply({ content: '❌ 인벤토리가 가득 찼습니다!', flags: 64 });
                 return;
             }
             
@@ -23679,8 +23679,8 @@ client.on('interactionCreate', async (interaction) => {
         
         // 장비 부위별 강화 버튼 처리
         else if (interaction.customId.startsWith('enhance_slot_')) {
-            // 먼저 defer 처리
-            await interaction.deferReply({ ephemeral: true });
+            // 먼저 defer 처리 - flags 사용
+            await interaction.deferReply({ flags: 64 });
             
             const slot = interaction.customId.replace('enhance_slot_', '');
             const user = await getUser(interaction.user.id);
@@ -24258,7 +24258,7 @@ client.on('interactionCreate', async (interaction) => {
             
             const categoryData = SHOP_CATEGORIES[category];
             if (!categoryData) {
-                await interaction.reply({ content: '❌ 카테고리를 찾을 수 없습니다!', ephemeral: true });
+                await interaction.reply({ content: '❌ 카테고리를 찾을 수 없습니다!', flags: 64 });
                 return;
             }
             
