@@ -20138,6 +20138,72 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         // 레이싱 버튼 핸들러들
+        else if (interaction.customId === 'join_race') {
+            // 레이스 참가 화면 표시
+            await interaction.deferReply({ flags: 64 });
+            
+            const raceStatus = raceSystem.getCurrentRaceStatus();
+            
+            // 진행 중인 레이스가 있는지 확인
+            if (raceStatus.isRacing) {
+                const remainingTime = Math.max(0, raceStatus.raceEndTime - Date.now());
+                const seconds = Math.floor(remainingTime / 1000);
+                
+                await interaction.editReply({ 
+                    content: `⏱️ 현재 레이스가 진행 중입니다! (${seconds}초 남음)\n다음 레이스를 기다려주세요.` 
+                });
+                return;
+            }
+            
+            // 이미 참가했는지 확인
+            const isParticipating = raceStatus.players.some(p => p.userId === interaction.user.id);
+            if (isParticipating) {
+                await interaction.editReply({ 
+                    content: '❌ 이미 레이스에 참가하셨습니다!' 
+                });
+                return;
+            }
+            
+            // 참가 옵션 표시
+            const joinEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('🏁 레이스 참가')
+                .setDescription('베팅 금액을 선택해주세요!')
+                .addFields(
+                    { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                    { name: '👥 현재 참가자', value: `${raceStatus.players.length}/${raceSystem.maxPlayers}명`, inline: true },
+                    { name: '💎 현재 상금풀', value: `${raceStatus.totalPot.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
+                );
+            
+            const joinButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('join_race_1000')
+                        .setLabel('🎯 1,000골드')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.gold < 1000),
+                    new ButtonBuilder()
+                        .setCustomId('join_race_5000')
+                        .setLabel('💎 5,000골드')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(user.gold < 5000),
+                    new ButtonBuilder()
+                        .setCustomId('join_race_custom')
+                        .setLabel('💰 직접 입력')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(user.gold < raceSystem.minBet),
+                    new ButtonBuilder()
+                        .setCustomId('racing')
+                        .setLabel('🔙 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [joinEmbed], 
+                components: [joinButtons] 
+            });
+        }
+        
         else if (interaction.customId === 'join_race_1000') {
             const result = await raceSystem.joinRace(
                 interaction.user.id, 
@@ -20207,6 +20273,81 @@ client.on('interactionCreate', async (interaction) => {
             } else {
                 await interaction.reply({ content: `❌ ${result.message}`, flags: 64 });
             }
+        }
+        
+        else if (interaction.customId === 'race_status') {
+            // 레이스 현황 보기
+            await interaction.deferReply({ flags: 64 });
+            
+            const raceStatus = raceSystem.getCurrentRaceStatus();
+            
+            const statusEmbed = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('🏁 레이스 현황')
+                .setTimestamp();
+            
+            if (raceStatus.isRacing) {
+                const remainingTime = Math.max(0, raceStatus.raceEndTime - Date.now());
+                const seconds = Math.floor(remainingTime / 1000);
+                
+                statusEmbed.setDescription(`⏱️ **레이스 진행 중!** (${seconds}초 남음)`);
+                
+                // 현재 순위 표시
+                const positions = raceStatus.players
+                    .map(p => ({
+                        ...p,
+                        position: Math.random() * 100 // 임시 위치 (실제로는 레이스 진행 상황에 따라)
+                    }))
+                    .sort((a, b) => b.position - a.position);
+                
+                let raceField = '```\n';
+                positions.forEach((player, index) => {
+                    const progress = Math.floor(player.position);
+                    const bar = '═'.repeat(Math.floor(progress / 5)) + '🏎️' + '─'.repeat(20 - Math.floor(progress / 5));
+                    raceField += `${index + 1}. ${player.name.padEnd(12)} ${bar} ${progress}%\n`;
+                });
+                raceField += '```';
+                
+                statusEmbed.addFields(
+                    { name: '🏎️ 레이스 진행 상황', value: raceField },
+                    { name: '💰 총 상금풀', value: `${raceStatus.totalPot.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true }
+                );
+            } else {
+                statusEmbed.setDescription('🔴 현재 진행 중인 레이스가 없습니다.');
+                
+                if (raceStatus.players.length > 0) {
+                    const playerList = raceStatus.players
+                        .map((p, i) => `${i + 1}. ${p.name} - ${p.betAmount.toLocaleString()}G`)
+                        .join('\n');
+                    
+                    statusEmbed.addFields(
+                        { name: '👥 대기 중인 참가자', value: playerList || '없음' },
+                        { name: '💰 현재 상금풀', value: `${raceStatus.totalPot.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
+                        { name: '🎯 참가자 수', value: `${raceStatus.players.length}/${raceSystem.maxPlayers}명`, inline: true }
+                    );
+                    
+                    if (raceStatus.players.length >= raceSystem.minPlayers) {
+                        statusEmbed.setFooter({ text: `${raceSystem.minPlayers}명이 모이면 자동으로 시작됩니다!` });
+                    }
+                } else {
+                    statusEmbed.addFields(
+                        { name: '📢 안내', value: '레이스에 참가해보세요!' }
+                    );
+                }
+            }
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('racing')
+                        .setLabel('🔙 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [statusEmbed], 
+                components: [backButton] 
+            });
         }
         
         else if (interaction.customId === 'racing_stats') {
