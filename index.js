@@ -14,6 +14,7 @@ const MUSHROOM_GAME = require('./data/mushroomGame');
 const ARTIFACT_SYSTEM = require('./data/artifactSystem');
 const EXERCISE_SYSTEM = require('./data/exerciseSystem');
 const { QUEST_SYSTEM, checkQuestProgress } = require('./data/questSystem');
+const BOSS_SYSTEM = require('./data/bossSystem');
 const Jimp = require('jimp');
 
 // 아이템 경매장 시스템
@@ -376,6 +377,89 @@ async function createCountdownClock(remainingTime) {
         console.error('카운트다운 시계 이미지 생성 오류:', error);
         return null;
     }
+}
+
+// 보스 스폰 함수
+async function spawnBoss(channel) {
+    // 랜덤 보스 선택
+    const availableBosses = BOSS_SYSTEM.bosses.filter(boss => {
+        // 레벨에 따라 보스 필터링 (선택사항)
+        return true;
+    });
+    
+    const boss = availableBosses[Math.floor(Math.random() * availableBosses.length)];
+    
+    // 보스 활성화
+    BOSS_SYSTEM.activeBoss = {
+        ...boss,
+        currentHp: boss.hp,
+        spawnTime: Date.now(),
+        endTime: Date.now() + BOSS_SYSTEM.spawnSettings.duration,
+        channelId: channel.id
+    };
+    
+    BOSS_SYSTEM.participants.clear();
+    BOSS_SYSTEM.damageDealt.clear();
+    BOSS_SYSTEM.battleState.isActive = false;
+    
+    // 보스 출현 알림
+    const bossEmbed = new EmbedBuilder()
+        .setColor('#ff0000')
+        .setTitle('🚨 보스 출현 알림! 🚨')
+        .setDescription(`**${boss.emoji} ${boss.name}**이(가) 나타났습니다!`)
+        .addFields(
+            { name: '⚔️ 레벨', value: `${boss.level}`, inline: true },
+            { name: '❤️ HP', value: `${boss.hp.toLocaleString()}`, inline: true },
+            { name: '🎯 요구 레벨', value: `${boss.requiredLevel}`, inline: true }
+        )
+        .setFooter({ text: '30분 후 사라집니다! 서둘러 파티를 구성하세요!' })
+        .setTimestamp();
+    
+    const bossButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('boss_challenge')
+                .setLabel('🗡️ 보스 도전하기')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('boss_info')
+                .setLabel('📊 보스 정보')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('boss_participants')
+                .setLabel('👥 참가자 목록')
+                .setStyle(ButtonStyle.Primary)
+        );
+    
+    await channel.send({
+        content: '@everyone',
+        embeds: [bossEmbed],
+        components: [bossButtons]
+    });
+    
+    // 30분 후 보스 사라짐
+    setTimeout(async () => {
+        if (BOSS_SYSTEM.activeBoss && !BOSS_SYSTEM.battleState.isActive) {
+            BOSS_SYSTEM.activeBoss = null;
+            await channel.send('⏰ 보스가 사라졌습니다... 다음 기회를 기다려주세요!');
+        }
+    }, BOSS_SYSTEM.spawnSettings.duration);
+}
+
+// 보스 스폰 스케줄러
+function scheduleBossSpawn() {
+    const interval = Math.random() * 
+        (BOSS_SYSTEM.spawnSettings.maxInterval - BOSS_SYSTEM.spawnSettings.minInterval) + 
+        BOSS_SYSTEM.spawnSettings.minInterval;
+    
+    setTimeout(async () => {
+        // 보스 채널 찾기 (설정 필요)
+        const bossChannel = client.channels.cache.get(process.env.BOSS_CHANNEL_ID || '1380684353998426122');
+        if (bossChannel && !BOSS_SYSTEM.activeBoss) {
+            await spawnBoss(bossChannel);
+        }
+        scheduleBossSpawn(); // 다음 스폰 예약
+    }, interval);
 }
 
 // 게임 메뉴 표시 함수
@@ -9639,7 +9723,33 @@ const commands = [
             option.setName('금액')
                 .setDescription('지급할 골드 금액')
                 .setRequired(true)
-                .setMinValue(1))
+                .setMinValue(1)),
+    new SlashCommandBuilder()
+        .setName('보스')
+        .setDescription('🗡️ 보스 레이드 관리 (관리자 전용)')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('스폰')
+                .setDescription('보스를 즉시 스폰합니다')
+                .addStringOption(option =>
+                    option.setName('보스')
+                        .setDescription('스폰할 보스 선택')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: '🗡️ 그림자 암살자', value: 'shadow_assassin' },
+                            { name: '🐉 서리 드래곤', value: 'frost_dragon' },
+                            { name: '👹 데몬 로드', value: 'demon_lord' },
+                            { name: '🗿 고대 골렘', value: 'ancient_golem' },
+                            { name: '👑 공허의 황제', value: 'void_emperor' }
+                        )))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('종료')
+                .setDescription('현재 보스를 제거합니다'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('정보')
+                .setDescription('현재 보스 상태를 확인합니다'))
 ];
 
 // 봇이 준비되었을 때
@@ -9758,6 +9868,11 @@ async function initializeEmblemSystem() {
         });
 
         console.log('엠블럼 시스템이 초기화되었습니다.');
+        
+        // 보스 스폰 스케줄러 시작
+        console.log('보스 스폰 스케줄러 시작...');
+        scheduleBossSpawn();
+        
     } catch (error) {
         console.error('엠블럼 시스템 초기화 오류:', error);
     }
@@ -11362,6 +11477,162 @@ client.on('interactionCreate', async (interaction) => {
                     );
                 
                 await interaction.editReply({ embeds: [failEmbed] });
+            }
+        }
+        
+        // 보스 도전하기 버튼 처리
+        else if (customId === 'boss_challenge') {
+            const boss = BOSS_SYSTEM.activeBoss;
+            if (!boss) {
+                await interaction.reply({ content: '❌ 현재 활성화된 보스가 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            if (user.level < boss.requiredLevel) {
+                await interaction.reply({ 
+                    content: `❌ 레벨이 부족합니다! (필요 레벨: ${boss.requiredLevel}, 현재 레벨: ${user.level})`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 서버 멤버 목록 가져오기
+            const guild = interaction.guild;
+            const members = await guild.members.fetch();
+            const validMembers = members.filter(member => 
+                !member.user.bot && 
+                member.user.id !== interaction.user.id
+            ).map(member => ({
+                label: member.displayName,
+                description: `@${member.user.username}`,
+                value: member.user.id
+            })).slice(0, 25); // Discord 제한
+            
+            if (validMembers.length === 0) {
+                BOSS_SYSTEM.participants.add(interaction.user.id);
+                await interaction.reply({
+                    content: `⚔️ **${user.nickname}**님이 보스 레이드에 참가했습니다!\n초대할 멤버가 없어 혼자 도전합니다!`,
+                    flags: 64
+                });
+                return;
+            }
+            
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('boss_party_invite')
+                .setPlaceholder('🎯 초대할 파티원을 선택하세요 (최대 10명)')
+                .setMinValues(0)
+                .setMaxValues(Math.min(validMembers.length, 10))
+                .addOptions(validMembers);
+            
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            
+            await interaction.reply({
+                content: '🎯 보스 레이드에 초대할 파티원을 선택하세요!',
+                components: [row],
+                flags: 64
+            });
+        }
+        
+        // 보스 정보 버튼 처리
+        else if (customId === 'boss_info') {
+            const boss = BOSS_SYSTEM.activeBoss;
+            if (!boss) {
+                await interaction.reply({ content: '❌ 현재 활성화된 보스가 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const remainingTime = Math.max(0, boss.endTime - Date.now());
+            const minutes = Math.floor(remainingTime / 60000);
+            const seconds = Math.floor((remainingTime % 60000) / 1000);
+            
+            const infoEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle(`${boss.emoji} ${boss.name} 정보`)
+                .setDescription(`레벨 ${boss.level} 보스`)
+                .addFields(
+                    { name: '❤️ 체력', value: `${boss.currentHp.toLocaleString()} / ${boss.hp.toLocaleString()}`, inline: true },
+                    { name: '⚔️ 공격력', value: `${boss.attack}`, inline: true },
+                    { name: '🛡️ 방어력', value: `${boss.defense}`, inline: true },
+                    { name: '💰 골드 보상', value: `${boss.rewards.gold.toLocaleString()}G`, inline: true },
+                    { name: '✨ 경험치 보상', value: `${boss.rewards.exp.toLocaleString()} EXP`, inline: true },
+                    { name: '⏰ 남은 시간', value: `${minutes}분 ${seconds}초`, inline: true }
+                )
+                .setFooter({ text: `현재 ${BOSS_SYSTEM.participants.size}명 참가중` });
+            
+            // 스킬 정보 추가
+            if (boss.skills && boss.skills.length > 0) {
+                const skillText = boss.skills.map(skill => 
+                    `• **${skill.name}**: ${skill.damage ? `데미지 ${skill.damage}` : skill.effect}`
+                ).join('\n');
+                infoEmbed.addFields({ name: '💫 스킬', value: skillText, inline: false });
+            }
+            
+            // 드롭 아이템 정보
+            if (boss.rewards.items && boss.rewards.items.length > 0) {
+                const itemText = boss.rewards.items.map(item => {
+                    const itemInfo = BOSS_SYSTEM.bossItems[item.id];
+                    return `• **${itemInfo.name}** (${(item.chance * 100).toFixed(1)}%)`;
+                }).join('\n');
+                infoEmbed.addFields({ name: '🎁 드롭 아이템', value: itemText, inline: false });
+            }
+            
+            await interaction.reply({ embeds: [infoEmbed], flags: 64 });
+        }
+        
+        // 보스 파티 초대 처리
+        else if (customId === 'boss_party_invite') {
+            await interaction.deferUpdate();
+            const selectedUsers = values;
+            
+            // 자신을 참가자에 추가
+            BOSS_SYSTEM.participants.add(interaction.user.id);
+            
+            // 참가 메시지
+            await interaction.editReply({
+                content: `⚔️ **${user.nickname}**님이 보스 레이드에 참가했습니다!\n현재 참가자: ${BOSS_SYSTEM.participants.size}명`,
+                components: []
+            });
+            
+            // 채널에 알림
+            const bossChannel = client.channels.cache.get(BOSS_SYSTEM.activeBoss.channelId);
+            if (bossChannel) {
+                await bossChannel.send(`⚔️ **${user.nickname}**님이 보스 레이드에 참가했습니다! (참가자: ${BOSS_SYSTEM.participants.size}명)`);
+            }
+            
+            // 선택된 유저들에게 DM 전송
+            if (selectedUsers.length > 0) {
+                const boss = BOSS_SYSTEM.activeBoss;
+                const inviteEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('🗡️ 보스 레이드 파티 초대!')
+                    .setDescription(`**${user.nickname}**님이 보스 레이드에 초대했습니다!`)
+                    .addFields(
+                        { name: '🎯 보스', value: `${boss.emoji} ${boss.name} (Lv.${boss.level})`, inline: true },
+                        { name: '❤️ HP', value: `${boss.hp.toLocaleString()}`, inline: true },
+                        { name: '⏰ 남은 시간', value: '약 30분', inline: true }
+                    )
+                    .setFooter({ text: '서버에서 보스 도전하기 버튼을 눌러 참가하세요!' });
+                
+                for (const userId of selectedUsers) {
+                    try {
+                        const targetUser = await client.users.fetch(userId);
+                        await targetUser.send({ embeds: [inviteEmbed] });
+                        console.log(`보스 초대 DM 전송 성공: ${targetUser.username}`);
+                    } catch (error) {
+                        console.error(`DM 전송 실패 (${userId}):`, error);
+                    }
+                }
+                
+                await interaction.followUp({
+                    content: `📨 ${selectedUsers.length}명에게 초대 메시지를 전송했습니다!`,
+                    flags: 64
+                });
             }
         }
         
@@ -14566,6 +14837,153 @@ client.on('interactionCreate', async (interaction) => {
                     content: '❌ 골드 지급 중 오류가 발생했습니다!', 
                     flags: 64 
                 });
+            }
+        }
+        
+        else if (commandName === '보스') {
+            // 관리자 권한 체크
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const subcommand = interaction.options.getSubcommand();
+            
+            if (subcommand === '스폰') {
+                const bossId = interaction.options.getString('보스');
+                const channel = interaction.channel;
+                
+                // 이미 보스가 있는지 체크
+                if (BOSS_SYSTEM.activeBoss) {
+                    await interaction.reply({ 
+                        content: '❌ 이미 활성화된 보스가 있습니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                // 특정 보스 스폰
+                if (bossId) {
+                    const boss = BOSS_SYSTEM.bosses.find(b => b.id === bossId);
+                    if (boss) {
+                        BOSS_SYSTEM.activeBoss = {
+                            ...boss,
+                            currentHp: boss.hp,
+                            spawnTime: Date.now(),
+                            endTime: Date.now() + BOSS_SYSTEM.spawnSettings.duration,
+                            channelId: channel.id
+                        };
+                    }
+                } else {
+                    // 랜덤 보스 스폰
+                    await spawnBoss(channel);
+                    await interaction.reply({ 
+                        content: '✅ 보스가 스폰되었습니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                // 보스 출현 알림 (특정 보스)
+                const boss = BOSS_SYSTEM.activeBoss;
+                const bossEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('🚨 보스 출현 알림! 🚨')
+                    .setDescription(`**${boss.emoji} ${boss.name}**이(가) 나타났습니다!`)
+                    .addFields(
+                        { name: '⚔️ 레벨', value: `${boss.level}`, inline: true },
+                        { name: '❤️ HP', value: `${boss.hp.toLocaleString()}`, inline: true },
+                        { name: '🎯 요구 레벨', value: `${boss.requiredLevel}`, inline: true }
+                    )
+                    .setFooter({ text: '30분 후 사라집니다! 서둘러 파티를 구성하세요!' })
+                    .setTimestamp();
+                
+                const bossButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('boss_challenge')
+                            .setLabel('🗡️ 보스 도전하기')
+                            .setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder()
+                            .setCustomId('boss_info')
+                            .setLabel('📊 보스 정보')
+                            .setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder()
+                            .setCustomId('boss_participants')
+                            .setLabel('👥 참가자 목록')
+                            .setStyle(ButtonStyle.Primary)
+                    );
+                
+                await channel.send({
+                    content: '@everyone',
+                    embeds: [bossEmbed],
+                    components: [bossButtons]
+                });
+                
+                await interaction.reply({ 
+                    content: `✅ **${boss.name}**이(가) 스폰되었습니다!`, 
+                    flags: 64 
+                });
+                
+                // 30분 후 보스 사라짐
+                setTimeout(async () => {
+                    if (BOSS_SYSTEM.activeBoss && !BOSS_SYSTEM.battleState.isActive) {
+                        BOSS_SYSTEM.activeBoss = null;
+                        await channel.send('⏰ 보스가 사라졌습니다... 다음 기회를 기다려주세요!');
+                    }
+                }, BOSS_SYSTEM.spawnSettings.duration);
+            }
+            
+            else if (subcommand === '종료') {
+                if (!BOSS_SYSTEM.activeBoss) {
+                    await interaction.reply({ 
+                        content: '❌ 현재 활성화된 보스가 없습니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                const bossName = BOSS_SYSTEM.activeBoss.name;
+                BOSS_SYSTEM.activeBoss = null;
+                BOSS_SYSTEM.participants.clear();
+                BOSS_SYSTEM.damageDealt.clear();
+                BOSS_SYSTEM.battleState.isActive = false;
+                
+                await interaction.reply({ 
+                    content: `✅ **${bossName}** 보스가 제거되었습니다!`, 
+                    flags: 64 
+                });
+            }
+            
+            else if (subcommand === '정보') {
+                if (!BOSS_SYSTEM.activeBoss) {
+                    await interaction.reply({ 
+                        content: '❌ 현재 활성화된 보스가 없습니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                const boss = BOSS_SYSTEM.activeBoss;
+                const remainingTime = Math.max(0, boss.endTime - Date.now());
+                const minutes = Math.floor(remainingTime / 60000);
+                const seconds = Math.floor((remainingTime % 60000) / 1000);
+                
+                const statusEmbed = new EmbedBuilder()
+                    .setColor('#0099ff')
+                    .setTitle('📊 보스 상태')
+                    .addFields(
+                        { name: '🎯 보스', value: `${boss.emoji} ${boss.name} (Lv.${boss.level})`, inline: true },
+                        { name: '❤️ HP', value: `${boss.currentHp.toLocaleString()} / ${boss.hp.toLocaleString()}`, inline: true },
+                        { name: '⏱️ 남은 시간', value: `${minutes}분 ${seconds}초`, inline: true },
+                        { name: '👥 참가자', value: `${BOSS_SYSTEM.participants.size}명`, inline: true },
+                        { name: '⚔️ 전투 상태', value: BOSS_SYSTEM.battleState.isActive ? '전투 중' : '대기 중', inline: true }
+                    );
+                
+                await interaction.reply({ embeds: [statusEmbed], flags: 64 });
             }
         }
         
@@ -20164,6 +20582,125 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.update({ embeds: [pvpEmbed], components: [pvpButtons] });
         }
         
+        // 보스 공격 버튼 처리
+        else if (interaction.customId === 'boss_attack') {
+            const boss = BOSS_SYSTEM.activeBoss;
+            if (!boss) {
+                await interaction.reply({ content: '❌ 보스가 사라졌습니다!', flags: 64 });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            if (!BOSS_SYSTEM.participants.has(interaction.user.id)) {
+                await interaction.reply({ content: '❌ 보스 레이드에 참가하지 않았습니다!', flags: 64 });
+                return;
+            }
+            
+            // 플레이어 공격력 계산
+            const combatPower = calculateCombatPower(user);
+            const damage = Math.floor(combatPower * (0.8 + Math.random() * 0.4));
+            
+            // 보스 HP 감소
+            boss.currentHp = Math.max(0, boss.currentHp - damage);
+            
+            // 데미지 기록
+            const currentDamage = BOSS_SYSTEM.damageDealt.get(interaction.user.id) || 0;
+            BOSS_SYSTEM.damageDealt.set(interaction.user.id, currentDamage + damage);
+            
+            const attackEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('⚔️ 공격 성공!')
+                .setDescription(`**${user.nickname}**님이 **${damage}**의 데미지를 입혔습니다!`)
+                .addFields(
+                    { name: '❤️ 보스 HP', value: `${boss.currentHp.toLocaleString()} / ${boss.hp.toLocaleString()}`, inline: true },
+                    { name: '💥 누적 데미지', value: `${(currentDamage + damage).toLocaleString()}`, inline: true }
+                );
+            
+            // 보스 격파 체크
+            if (boss.currentHp <= 0) {
+                await interaction.reply({ embeds: [attackEmbed], flags: 64 });
+                await handleBossDefeat(interaction.channel);
+                return;
+            }
+            
+            // 보스 반격
+            const bossSkill = boss.skills[Math.floor(Math.random() * boss.skills.length)];
+            if (Math.random() < bossSkill.chance) {
+                attackEmbed.addFields({
+                    name: '⚡ 보스 반격!',
+                    value: `${boss.emoji} ${boss.name}이(가) **${bossSkill.name}**을(를) 사용했습니다!`,
+                    inline: false
+                });
+            }
+            
+            await interaction.reply({ embeds: [attackEmbed], flags: 64 });
+        }
+        
+        // 보스 스킬 사용 버튼 처리
+        else if (interaction.customId === 'boss_skill') {
+            const boss = BOSS_SYSTEM.activeBoss;
+            if (!boss) {
+                await interaction.reply({ content: '❌ 보스가 사라졌습니다!', flags: 64 });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            if (!BOSS_SYSTEM.participants.has(interaction.user.id)) {
+                await interaction.reply({ content: '❌ 보스 레이드에 참가하지 않았습니다!', flags: 64 });
+                return;
+            }
+            
+            // 스킬 쿨다운 체크 (5초)
+            const lastSkillTime = user.lastBossSkillTime || 0;
+            const cooldown = 5000;
+            if (Date.now() - lastSkillTime < cooldown) {
+                const remaining = Math.ceil((cooldown - (Date.now() - lastSkillTime)) / 1000);
+                await interaction.reply({ content: `⏱️ 스킬 쿨다운: ${remaining}초 남음`, flags: 64 });
+                return;
+            }
+            
+            // 플레이어 스킬 데미지 계산 (일반 공격의 2배)
+            const combatPower = calculateCombatPower(user);
+            const damage = Math.floor(combatPower * 2 * (0.8 + Math.random() * 0.4));
+            
+            // 보스 HP 감소
+            boss.currentHp = Math.max(0, boss.currentHp - damage);
+            
+            // 데미지 기록
+            const currentDamage = BOSS_SYSTEM.damageDealt.get(interaction.user.id) || 0;
+            BOSS_SYSTEM.damageDealt.set(interaction.user.id, currentDamage + damage);
+            
+            // 쿨다운 기록
+            user.lastBossSkillTime = Date.now();
+            await user.save();
+            
+            const skillEmbed = new EmbedBuilder()
+                .setColor('#ffff00')
+                .setTitle('💫 스킬 발동!')
+                .setDescription(`**${user.nickname}**님이 필살기로 **${damage}**의 데미지를 입혔습니다!`)
+                .addFields(
+                    { name: '❤️ 보스 HP', value: `${boss.currentHp.toLocaleString()} / ${boss.hp.toLocaleString()}`, inline: true },
+                    { name: '💥 누적 데미지', value: `${(currentDamage + damage).toLocaleString()}`, inline: true }
+                );
+            
+            // 보스 격파 체크
+            if (boss.currentHp <= 0) {
+                await interaction.reply({ embeds: [skillEmbed], flags: 64 });
+                await handleBossDefeat(interaction.channel);
+                return;
+            }
+            
+            await interaction.reply({ embeds: [skillEmbed], flags: 64 });
+        }
+        
+        // 보스 방어 버튼 처리
+        else if (interaction.customId === 'boss_defend') {
+            await interaction.reply({ 
+                content: '🛡️ 방어 태세를 취했습니다! (다음 공격 데미지 50% 감소)', 
+                flags: 64 
+            });
+        }
+        
         else if (interaction.customId === 'stock_portfolio') {
             const portfolio = await getPlayerPortfolio(interaction.user.id);
             
@@ -20930,6 +21467,174 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [statusEmbed], 
                 components: [backButton] 
             });
+        }
+        
+        // 보스 시스템 핸들러
+        else if (interaction.customId === 'boss_challenge') {
+            // 보스 도전하기
+            if (!BOSS_SYSTEM.activeBoss) {
+                await interaction.reply({ content: '❌ 현재 활성화된 보스가 없습니다!', flags: 64 });
+                return;
+            }
+            
+            // 레벨 체크
+            if (user.level < BOSS_SYSTEM.activeBoss.requiredLevel) {
+                await interaction.reply({ 
+                    content: `❌ 레벨이 부족합니다! (요구 레벨: ${BOSS_SYSTEM.activeBoss.requiredLevel})`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 이미 참가했는지 체크
+            if (BOSS_SYSTEM.participants.has(interaction.user.id)) {
+                await interaction.reply({ content: '✅ 이미 보스 레이드에 참가하셨습니다!', flags: 64 });
+                return;
+            }
+            
+            // 서버 멤버 선택 메뉴 생성
+            const guild = interaction.guild;
+            const members = await guild.members.fetch();
+            
+            // 봇과 자신을 제외한 온라인 멤버만 필터링
+            const onlineMembers = members.filter(member => 
+                !member.user.bot && 
+                member.user.id !== interaction.user.id &&
+                member.presence?.status !== 'offline'
+            ).first(24); // 최대 24명 (셀렉트 메뉴 제한)
+            
+            if (onlineMembers.length === 0) {
+                // 혼자 참가
+                BOSS_SYSTEM.participants.add(interaction.user.id);
+                await interaction.reply({ 
+                    content: `⚔️ **${user.nickname}**님이 보스 레이드에 참가했습니다!\n현재 참가자: ${BOSS_SYSTEM.participants.size}명`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const memberOptions = onlineMembers.map(member => ({
+                label: member.user.username,
+                description: member.nickname || '파티 초대',
+                value: member.user.id,
+                emoji: '👤'
+            }));
+            
+            const partySelect = new StringSelectMenuBuilder()
+                .setCustomId('boss_party_invite')
+                .setPlaceholder('함께 보스를 잡을 파티원을 선택하세요 (선택사항)')
+                .setMinValues(0)
+                .setMaxValues(Math.min(4, memberOptions.length)) // 최대 4명까지 초대
+                .addOptions(memberOptions);
+            
+            const selectRow = new ActionRowBuilder().addComponents(partySelect);
+            
+            const skipButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('boss_solo_join')
+                        .setLabel('🗡️ 혼자 참가하기')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            await interaction.reply({
+                content: '👥 함께 보스를 잡을 파티원을 선택하세요!',
+                components: [selectRow, skipButton],
+                flags: 64
+            });
+        }
+        
+        else if (interaction.customId === 'boss_solo_join') {
+            // 혼자 참가
+            if (BOSS_SYSTEM.participants.has(interaction.user.id)) {
+                await interaction.update({ 
+                    content: '✅ 이미 보스 레이드에 참가하셨습니다!', 
+                    components: [] 
+                });
+                return;
+            }
+            
+            BOSS_SYSTEM.participants.add(interaction.user.id);
+            await interaction.update({ 
+                content: `⚔️ **${user.nickname}**님이 보스 레이드에 참가했습니다!\n현재 참가자: ${BOSS_SYSTEM.participants.size}명`, 
+                components: [] 
+            });
+            
+            // 채널에도 알림
+            const bossChannel = client.channels.cache.get(BOSS_SYSTEM.activeBoss.channelId);
+            if (bossChannel) {
+                await bossChannel.send(`⚔️ **${user.nickname}**님이 보스 레이드에 참가했습니다! (참가자: ${BOSS_SYSTEM.participants.size}명)`);
+            }
+        }
+        
+        else if (interaction.customId === 'boss_info') {
+            // 보스 정보 표시
+            if (!BOSS_SYSTEM.activeBoss) {
+                await interaction.reply({ content: '❌ 현재 활성화된 보스가 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const boss = BOSS_SYSTEM.activeBoss;
+            const remainingTime = Math.max(0, boss.endTime - Date.now());
+            const minutes = Math.floor(remainingTime / 60000);
+            const seconds = Math.floor((remainingTime % 60000) / 1000);
+            
+            const infoEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle(`${boss.emoji} ${boss.name} 정보`)
+                .setDescription(`레벨 ${boss.level} 보스`)
+                .addFields(
+                    { name: '❤️ 현재 HP', value: `${boss.currentHp.toLocaleString()} / ${boss.hp.toLocaleString()}`, inline: true },
+                    { name: '⚔️ 공격력', value: `${boss.attack}`, inline: true },
+                    { name: '🛡️ 방어력', value: `${boss.defense}`, inline: true },
+                    { name: '⏱️ 남은 시간', value: `${minutes}분 ${seconds}초`, inline: true },
+                    { name: '👥 참가자', value: `${BOSS_SYSTEM.participants.size}명`, inline: true },
+                    { name: '🎯 요구 레벨', value: `${boss.requiredLevel}`, inline: true }
+                )
+                .addFields(
+                    { 
+                        name: '💀 보스 스킬', 
+                        value: boss.skills.map(skill => `• **${skill.name}** (데미지: ${skill.damage || '특수'})`).join('\n'),
+                        inline: false
+                    },
+                    {
+                        name: '🎁 예상 보상',
+                        value: `• 경험치: ${boss.rewards.exp.toLocaleString()}\n• 골드: ${boss.rewards.gold.toLocaleString()}<:currency_emoji:1377404064316522778>\n• 특별 아이템 드롭 가능`,
+                        inline: false
+                    }
+                );
+            
+            await interaction.reply({ embeds: [infoEmbed], flags: 64 });
+        }
+        
+        else if (interaction.customId === 'boss_participants') {
+            // 참가자 목록
+            if (!BOSS_SYSTEM.activeBoss) {
+                await interaction.reply({ content: '❌ 현재 활성화된 보스가 없습니다!', flags: 64 });
+                return;
+            }
+            
+            if (BOSS_SYSTEM.participants.size === 0) {
+                await interaction.reply({ content: '📋 아직 참가자가 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const participantList = [];
+            for (const userId of BOSS_SYSTEM.participants) {
+                const participant = await User.findOne({ discordId: userId });
+                if (participant) {
+                    const damage = BOSS_SYSTEM.damageDealt.get(userId) || 0;
+                    participantList.push(`• **${participant.nickname}** (Lv.${participant.level}) - 데미지: ${damage.toLocaleString()}`);
+                }
+            }
+            
+            const listEmbed = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('👥 보스 레이드 참가자')
+                .setDescription(participantList.join('\n') || '참가자가 없습니다.')
+                .setFooter({ text: `총 ${BOSS_SYSTEM.participants.size}명 참가 중` });
+            
+            await interaction.reply({ embeds: [listEmbed], flags: 64 });
         }
         
         else if (interaction.customId === 'racing_stats') {
@@ -25116,6 +25821,216 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 });
+
+// 보스 스폰 함수
+async function spawnBoss(channel) {
+    const availableBosses = BOSS_SYSTEM.bosses;
+    const boss = availableBosses[Math.floor(Math.random() * availableBosses.length)];
+    
+    BOSS_SYSTEM.activeBoss = {
+        ...boss,
+        currentHp: boss.hp,
+        spawnTime: Date.now(),
+        endTime: Date.now() + BOSS_SYSTEM.spawnSettings.duration,
+        channelId: channel.id
+    };
+    
+    BOSS_SYSTEM.participants = new Set();
+    BOSS_SYSTEM.damageDealt = new Map();
+    
+    const bossEmbed = new EmbedBuilder()
+        .setColor('#ff0000')
+        .setTitle('🚨 보스 출현 알림! 🚨')
+        .setDescription(`**${boss.emoji} ${boss.name}**이(가) 나타났습니다!`)
+        .addFields(
+            { name: '⚔️ 레벨', value: `${boss.level}`, inline: true },
+            { name: '❤️ HP', value: `${boss.hp.toLocaleString()}`, inline: true },
+            { name: '🎯 요구 레벨', value: `${boss.requiredLevel}`, inline: true },
+            { name: '⏰ 제한 시간', value: '30분', inline: true },
+            { name: '💰 보상', value: `${boss.rewards.gold.toLocaleString()}G / ${boss.rewards.exp.toLocaleString()} EXP`, inline: true }
+        )
+        .setFooter({ text: '30분 후 사라집니다! 서둘러 파티를 구성하세요!' });
+    
+    const bossButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('boss_challenge')
+                .setLabel('⚔️ 보스 도전하기')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('boss_info')
+                .setLabel('📖 보스 정보')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    
+    await channel.send({ embeds: [bossEmbed], components: [bossButtons] });
+    
+    // 30분 후 자동 제거
+    setTimeout(async () => {
+        if (BOSS_SYSTEM.activeBoss && BOSS_SYSTEM.activeBoss.spawnTime === boss.spawnTime) {
+            BOSS_SYSTEM.activeBoss = null;
+            BOSS_SYSTEM.participants.clear();
+            BOSS_SYSTEM.damageDealt.clear();
+            
+            await channel.send({
+                embeds: [new EmbedBuilder()
+                    .setColor('#808080')
+                    .setTitle('⏰ 보스 사라짐')
+                    .setDescription(`${boss.emoji} ${boss.name}이(가) 시간이 지나 사라졌습니다...`)]
+            });
+        }
+    }, BOSS_SYSTEM.spawnSettings.duration);
+}
+
+// 보스 전투 함수
+async function startBossBattle(interaction, participants) {
+    const boss = BOSS_SYSTEM.activeBoss;
+    if (!boss) return;
+    
+    const battleEmbed = new EmbedBuilder()
+        .setColor('#ff0000')
+        .setTitle('⚔️ 보스 레이드 진행중!')
+        .setDescription(`**${boss.emoji} ${boss.name}** 와의 전투!`)
+        .addFields(
+            { name: '❤️ 보스 HP', value: `${boss.currentHp.toLocaleString()} / ${boss.hp.toLocaleString()}`, inline: true },
+            { name: '👥 참가자', value: `${participants.size}명`, inline: true }
+        );
+    
+    const battleButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('boss_attack')
+                .setLabel('⚔️ 공격')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('boss_skill')
+                .setLabel('💫 스킬 사용')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('boss_defend')
+                .setLabel('🛡️ 방어')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    
+    await interaction.followUp({ embeds: [battleEmbed], components: [battleButtons] });
+}
+
+// 보스 격파 처리 함수
+async function handleBossDefeat(channel) {
+    const boss = BOSS_SYSTEM.activeBoss;
+    if (!boss) return;
+    
+    // 데미지 순위 계산
+    const damageRanking = Array.from(BOSS_SYSTEM.damageDealt.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+    
+    const defeatEmbed = new EmbedBuilder()
+        .setColor('#ffd700')
+        .setTitle('🎉 보스 격파!')
+        .setDescription(`**${boss.emoji} ${boss.name}**을(를) 물리쳤습니다!`)
+        .setFooter({ text: '모든 참가자에게 보상이 지급됩니다!' });
+    
+    // 데미지 순위 표시
+    if (damageRanking.length > 0) {
+        let rankingText = '';
+        for (let i = 0; i < damageRanking.length; i++) {
+            const [userId, damage] = damageRanking[i];
+            const user = await User.findOne({ discordId: userId });
+            if (user) {
+                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}위`;
+                rankingText += `${medal} **${user.nickname}** - ${damage.toLocaleString()} 데미지\n`;
+            }
+        }
+        defeatEmbed.addFields({ name: '🏆 데미지 순위', value: rankingText, inline: false });
+    }
+    
+    // 보상 지급
+    for (const participantId of BOSS_SYSTEM.participants) {
+        const user = await User.findOne({ discordId: participantId });
+        if (!user) continue;
+        
+        const damage = BOSS_SYSTEM.damageDealt.get(participantId) || 0;
+        const contribution = damage / boss.hp;
+        
+        // 기본 보상 + 기여도 보너스
+        const goldReward = Math.floor(boss.rewards.gold * (0.5 + contribution * 0.5));
+        const expReward = Math.floor(boss.rewards.exp * (0.5 + contribution * 0.5));
+        
+        user.gold += goldReward;
+        user.exp += expReward;
+        
+        // 레벨업 체크
+        while (user.exp >= user.level * 100) {
+            user.exp -= user.level * 100;
+            user.level += 1;
+            user.statPoints += 5;
+        }
+        
+        // 아이템 드롭 체크
+        const droppedItems = [];
+        for (const item of boss.rewards.items) {
+            if (Math.random() < item.chance) {
+                const bossItem = BOSS_SYSTEM.bossItems[item.id];
+                if (bossItem) {
+                    // 인벤토리에 추가
+                    const newItem = {
+                        id: `boss_${item.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        name: bossItem.name,
+                        type: bossItem.type,
+                        rarity: bossItem.rarity,
+                        level: bossItem.level || boss.level,
+                        quantity: 1,
+                        enhanceLevel: 0,
+                        stats: bossItem.stats || {},
+                        price: goldReward * 10,
+                        description: `${boss.name}에게서 획득한 ${bossItem.rarity} 아이템`
+                    };
+                    
+                    const result = addItemToInventory(user, newItem);
+                    if (result.success) {
+                        droppedItems.push(bossItem.name);
+                    }
+                }
+            }
+        }
+        
+        await user.save();
+        
+        // 개인 보상 DM
+        try {
+            const targetUser = await client.users.fetch(participantId);
+            const rewardEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('🎁 보스 레이드 보상')
+                .setDescription(`${boss.emoji} ${boss.name} 격파 보상입니다!`)
+                .addFields(
+                    { name: '💰 골드', value: `+${goldReward.toLocaleString()}G`, inline: true },
+                    { name: '✨ 경험치', value: `+${expReward.toLocaleString()} EXP`, inline: true },
+                    { name: '💥 기여도', value: `${(contribution * 100).toFixed(1)}%`, inline: true }
+                );
+            
+            if (droppedItems.length > 0) {
+                rewardEmbed.addFields({
+                    name: '🎁 획득 아이템',
+                    value: droppedItems.join('\n'),
+                    inline: false
+                });
+            }
+            
+            await targetUser.send({ embeds: [rewardEmbed] });
+        } catch (error) {
+            console.error(`보상 DM 전송 실패 (${participantId}):`, error);
+        }
+    }
+    
+    await channel.send({ embeds: [defeatEmbed] });
+    
+    // 보스 시스템 초기화
+    BOSS_SYSTEM.activeBoss = null;
+    BOSS_SYSTEM.participants.clear();
+    BOSS_SYSTEM.damageDealt.clear();
+}
 
 // 봇 로그인
 client.login(TOKEN); 
