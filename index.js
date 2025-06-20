@@ -22102,6 +22102,26 @@ client.on('interactionCreate', async (interaction) => {
             await showRankingMenu(interaction, page);
         }
         
+        // 개별 랭킹 버튼 처리
+        else if (interaction.customId === 'ranking_level') {
+            await showRankingMenu(interaction, 0); // 레벨 랭킹
+        }
+        else if (interaction.customId === 'ranking_gold') {
+            await showRankingMenu(interaction, 1); // 재산 랭킹
+        }
+        else if (interaction.customId === 'ranking_popularity') {
+            await showRankingMenu(interaction, 2); // 인기도 랭킹
+        }
+        else if (interaction.customId === 'ranking_pvp') {
+            await showRankingMenu(interaction, 4); // PVP 랭킹
+        }
+        else if (interaction.customId === 'ranking_racing') {
+            await showRankingMenu(interaction, 5); // 레이싱 랭킹
+        }
+        else if (interaction.customId === 'ranking_energy') {
+            await showRankingMenu(interaction, 8); // 융합 랭킹
+        }
+        
         // 독버섯 게임 버튼 처리
         else if (interaction.customId === 'mushroom_solo') {
             console.log('🍄 독버섯 게임 버튼 클릭됨!');
