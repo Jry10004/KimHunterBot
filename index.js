@@ -10628,7 +10628,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'ranking':
                     // 랭킹
-                    await interaction.deferReply({ flags: 64 });
+                    // interaction이 이미 defer되었으므로 deferReply 제거
                     
                     const rankingEmbed = new EmbedBuilder()
                         .setColor('#ff4500')
@@ -10671,22 +10671,21 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'emblem':
                     // 엠블럼 시스템
-                    await interaction.deferReply({ flags: 64 });
+                    // interaction이 이미 defer되었으므로 deferReply 제거
                     
-                    const emblemUser = await getUser(interaction.user.id);
-                    if (!emblemUser || !emblemUser.registered) {
+                    if (!user || !user.registered) {
                         return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
                     
-                    if (emblemUser.level < 20) {
+                    if (user.level < 20) {
                         return await interaction.editReply({ content: '⚠️ 엠블럼은 레벨 20부터 사용 가능합니다!' });
                     }
                     
-                    if (emblemUser.emblem) {
+                    if (user.emblem) {
                         const emblemEmbed = new EmbedBuilder()
                             .setColor('#ff6b6b')
                             .setTitle('🏆 내 엠블럼')
-                            .setDescription(`현재 엠블럼: **${emblemUser.emblem}**\n\n⚠️ 엠블럼은 한 번 선택하면 변경할 수 없습니다!`)
+                            .setDescription(`현재 엠블럼: **${user.emblem}**\n\n⚠️ 엠블럼은 한 번 선택하면 변경할 수 없습니다!`)
                             .setFooter({ text: '엠블럼은 당신의 정체성을 나타냅니다!' });
                         
                         return await interaction.editReply({ embeds: [emblemEmbed] });
@@ -10750,10 +10749,9 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'enhancement':
                     // 장비 강화
-                    await interaction.deferReply({ flags: 64 });
+                    // interaction이 이미 defer되었으므로 deferReply 제거
                     
-                    const enhUser = await getUser(interaction.user.id);
-                    if (!enhUser || !enhUser.registered) {
+                    if (!user || !user.registered) {
                         return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
                     
@@ -10762,9 +10760,9 @@ client.on('interactionCreate', async (interaction) => {
                         .setTitle('💎 장비 강화')
                         .setDescription('장비를 강화하여 더 강력하게 만드세요!')
                         .addFields(
-                            { name: '💰 보유 골드', value: `${enhUser.gold.toLocaleString()}G`, inline: true },
-                            { name: '🛡️ 보호권', value: `${enhUser.protectionScrolls || 0}개`, inline: true },
-                            { name: '📊 강화 통계', value: `성공: ${enhUser.enhanceStats?.successCount || 0}회\n파괴: ${enhUser.enhanceStats?.destroyCount || 0}회`, inline: true }
+                            { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                            { name: '🛡️ 보호권', value: `${user.protectionScrolls || 0}개`, inline: true },
+                            { name: '📊 강화 통계', value: `성공: ${user.enhanceStats?.successCount || 0}회\n파괴: ${user.enhanceStats?.destroyCount || 0}회`, inline: true }
                         );
                     
                     const enhButtons = new ActionRowBuilder()
