@@ -9454,13 +9454,12 @@ client.on('interactionCreate', async (interaction) => {
         // 메인 메뉴 처리
         if (customId === 'main_menu') {
             const selectedValue = values[0];
+            const user = await getUser(interaction.user.id);
             
             // 카테고리로 돌아가기
             if (selectedValue === 'back_to_categories') {
                 const categoryMenu = createCategoryMenu();
                 const menuRow = new ActionRowBuilder().addComponents(categoryMenu);
-                
-                const user = await getUser(interaction.user.id);
                 
                 // 경험치 계산
                 const maxExp = user.level * 100;
@@ -9531,19 +9530,20 @@ client.on('interactionCreate', async (interaction) => {
             
             // 관리자 패널 접근 권한 확인
             if (selectedValue === 'admin_panel' && !isAdmin(user.id)) {
-                return await interaction.reply({ 
-                    content: '❌ 관리자만 접근할 수 있습니다!', 
-                    flags: 64 
+                await interaction.deferUpdate();
+                return await interaction.editReply({ 
+                    content: '❌ 관리자만 접근할 수 있습니다!' 
                 });
             }
+            
+            // StringSelectMenu 상호작용이므로 먼저 deferUpdate 실행
+            await interaction.deferUpdate();
             
             // 각 메뉴 항목에 따른 처리 - 기존 기능들을 실제로 호출
             switch (selectedValue) {
                 case 'hunting':
                     // 기존 사냥 로직 호출
-                    await interaction.deferReply({ flags: 64 });
                     
-                    const user = await getUser(interaction.user.id);
                     if (!user || !user.registered) {
                         return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
                     }
@@ -9718,13 +9718,12 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'shop':
                     // 상점을 드롭다운 메뉴로 변경
-                    await interaction.deferReply({ flags: 64 });
+                    // interaction이 이미 defer되었으므로 deferReply 제거
                     
-                    const shopUser = await getUser(interaction.user.id);
                     const shopEmbed = new EmbedBuilder()
                         .setColor('#00ff7f')
                         .setTitle('🛒 김헌터 상점')
-                        .setDescription('원하는 카테고리를 선택하세요\n\n💰 보유 골드: ' + shopUser.gold.toLocaleString() + 'G');
+                        .setDescription('원하는 카테고리를 선택하세요\n\n💰 보유 골드: ' + user.gold.toLocaleString() + 'G');
                     
                     // 카테고리 드롭다운 메뉴
                     const categoryOptions = [
@@ -9788,7 +9787,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'stocks':
                     // 기존 주식 로직 호출
-                    await interaction.deferReply({ flags: 64 });
+                    // interaction이 이미 defer되었으므로 deferReply 제거
                     
                     const stockEmbed = new EmbedBuilder()
                         .setColor('#4169e1')
@@ -9835,7 +9834,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'artifacts':
                     // 기존 유물탐사 로직 호출
-                    await interaction.deferReply({ flags: 64 });
+                    // interaction이 이미 defer되었으므로 deferReply 제거
                     
                     const artifactEmbed = new EmbedBuilder()
                         .setColor('#daa520')
