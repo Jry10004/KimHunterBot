@@ -860,12 +860,12 @@ const MENU_DEFINITIONS = {
         emoji: '🔮',
         category: 'character'
     },
-    equipment: {
-        label: '⚔️ 장비관리',
-        description: '장비 착용 및 관리',
-        emoji: '⚔️',
-        category: 'character'
-    },
+    // equipment: {
+    //     label: '⚔️ 장비관리',
+    //     description: '장비 착용 및 관리',
+    //     emoji: '⚔️',
+    //     category: 'character'
+    // },
     inventory: {
         label: '🎒 인벤토리',
         description: '보유 아이템 확인',
@@ -1216,7 +1216,7 @@ async function createCustomizedMenu(userId) {
         // 기본 메뉴 순서 또는 사용자 설정
         let menuOrder = user?.menuSettings?.menuOrder || [
             // 캐릭터 관리
-            'stats', 'skills', 'equipment', 'inventory', 'profile', 'emblem',
+            'stats', 'skills', 'inventory', 'profile', 'emblem',
             // 일일 활동
             'daily', 'work', 'quest', 
             // 전투 콘텐츠
