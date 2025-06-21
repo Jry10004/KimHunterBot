@@ -15022,6 +15022,12 @@ client.on('interactionCreate', async (interaction) => {
     
     if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
     
+    // 첫 번째 핸들러(StringSelectMenu 전용)에서 처리하는 메뉴들은 제외
+    if (interaction.isStringSelectMenu() && (interaction.customId === 'category_menu' || interaction.customId === 'main_menu')) {
+        console.log(`🟡 세 번째 핸들러에서 제외됨 (첫 번째 핸들러에서 처리): ${interaction.customId}`);
+        return;
+    }
+    
     // equip_item_select는 다른 핸들러에서 처리하므로 제외
     if (interaction.customId === 'equip_item_select') {
         console.log(`🟡 첫 번째 핸들러에서 equip_item_select 제외`);
