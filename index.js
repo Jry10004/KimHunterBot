@@ -6946,8 +6946,27 @@ class PVPSystem {
             'Challenger': { min: 2300, max: 9999 }
         };
         this.initializeBotUsers();
+        
+        // 오래된 매치 정리 (매 5분마다)
+        setInterval(() => this.cleanupOldMatches(), 5 * 60 * 1000);
     }
 
+    // 오래된 매치 정리
+    cleanupOldMatches() {
+        const now = Date.now();
+        const timeout = 30 * 60 * 1000; // 30분
+        
+        for (const [matchId, match] of this.activeMatches.entries()) {
+            if (now - match.startTime > timeout) {
+                console.log(`[PVP] 오래된 매치 제거: ${matchId}`);
+                if (match.roundTimer) {
+                    clearTimeout(match.roundTimer);
+                }
+                this.activeMatches.delete(matchId);
+            }
+        }
+    }
+    
     // 봇 유저 데이터 초기화
     async initializeBotUsers() {
         const botProfiles = [
@@ -7292,7 +7311,8 @@ class PVPSystem {
 
     // 매치 생성
     async createMatch(player1, player2) {
-        const matchId = Date.now().toString();
+        // 더 고유한 매치 ID 생성 (타임스탬프 + 랜덤 문자열)
+        const matchId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         
         // 티켓 소모
         if (!player1.isBot) {
@@ -7316,7 +7336,8 @@ class PVPSystem {
             startTime: Date.now(),
             round: 0,
             battleLog: [],
-            pendingActions: new Map(),
+            pendingActions: new Map(), // 각 라운드의 선택 상태
+            roundTimer: null, // 라운드 타이머
             player1HP: p1Stats.maxHp,
             player2HP: p2Stats.maxHp
         };
@@ -7461,7 +7482,11 @@ class PVPSystem {
         await this.sendBattleResult(match, battleResult, winner, loser, ratingChange);
         
         // 매치 정리
-        this.activeMatches.delete(match.id);
+        match.status = 'finished';
+        if (match.roundTimer) {
+            clearTimeout(match.roundTimer);
+        }
+        this.activeMatches.delete(match.matchId);
     }
 
     // 레이팅 변화 계산
@@ -7637,11 +7662,16 @@ class PVPSystem {
     async startPendulumBattle(match) {
         match.round = 1;
         match.battleLog = [];
-        match.pendingActions = new Map();
+        match.pendingActions = new Map(); // 초기화 확실히
+        match.status = 'in_progress';
+        console.log(`[PVP] 펜들럼 배틀 시작 - matchId: ${match.matchId}`);
         await this.showBattleRound(match);
     }
     
     async showBattleRound(match) {
+        // 매치 상태 업데이트
+        match.status = 'in_progress';
+        
         const { player1, player2 } = match;
         const p1Stats = this.calculateCombatStats(player1);
         const p2Stats = this.calculateCombatStats(player2);
@@ -7738,7 +7768,10 @@ class PVPSystem {
         if (match.roundTimer) {
             clearTimeout(match.roundTimer);
         }
-        match.roundTimer = setTimeout(() => this.resolveRound(match), 10000);
+        match.roundTimer = setTimeout(() => {
+            console.log(`[PVP] 라운드 ${match.round} 타임아웃`);
+            this.resolveRound(match);
+        }, 10000);
     }
     
     makeBotChoice(match, playerKey) {
@@ -7750,7 +7783,15 @@ class PVPSystem {
     async handlePendulumChoice(interaction, matchId, position) {
         const match = this.activeMatches.get(matchId);
         if (!match) {
+            console.error(`[PVP] 매치를 찾을 수 없음: ${matchId}`);
             await interaction.reply({ content: '매치를 찾을 수 없습니다!', flags: 64 });
+            return;
+        }
+        
+        // 매치 상태 확인
+        if (match.status !== 'preparing' && match.status !== 'in_progress') {
+            console.log(`[PVP] 잘못된 매치 상태: ${match.status}`);
+            await interaction.reply({ content: '이미 종료된 매치입니다!', flags: 64 });
             return;
         }
         
@@ -7778,17 +7819,29 @@ class PVPSystem {
         } else if (!match.player2.isBot && match.player2.userId === userId) {
             playerKey = 'player2';
         } else {
-            console.log(`매치 참가자 확인 실패 - 요청 userId: ${userId}`);
-            await interaction.reply({ content: '이 대결의 참가자가 아닙니다!', flags: 64 });
-            return;
+            // 디스코드 ID로도 확인 (호환성)
+            if (!match.player1.isBot && match.player1.user && match.player1.user.discordId === userId) {
+                playerKey = 'player1';
+            } else if (!match.player2.isBot && match.player2.user && match.player2.user.discordId === userId) {
+                playerKey = 'player2';
+            } else {
+                console.log(`매치 참가자 확인 실패 - 요청 userId: ${userId}`);
+                console.log(`Player1 userId: ${match.player1.userId}, discordId: ${match.player1.user?.discordId}`);
+                console.log(`Player2 userId: ${match.player2.userId}, discordId: ${match.player2.user?.discordId}`);
+                await interaction.reply({ content: '이 대결의 참가자가 아닙니다!', flags: 64 });
+                return;
+            }
         }
         
+        // 이미 선택했는지 확인 (현재 라운드만 체크)
         if (match.pendingActions.has(playerKey)) {
+            console.log(`[PVP] 중복 선택 시도 - userId: ${userId}, playerKey: ${playerKey}, round: ${match.round}`);
             await interaction.reply({ content: '이미 공격 타이밍을 선택했습니다!', flags: 64 });
             return;
         }
         
         match.pendingActions.set(playerKey, position);
+        console.log(`[PVP] 선택 저장 - userId: ${userId}, playerKey: ${playerKey}, position: ${position}, round: ${match.round}`);
         
         const attackNames = {
             'high': '🌟 별똥베기',
@@ -7803,18 +7856,27 @@ class PVPSystem {
         
         // 두 플레이어 모두 선택했으면 즉시 라운드 종료
         if (match.pendingActions.size === 2) {
+            console.log(`[PVP] 두 플레이어 모두 선택 완료 - 즉시 라운드 종료`);
             clearTimeout(match.roundTimer);
             await this.resolveRound(match);
         }
     }
     
     async resolveRound(match) {
+        // 이미 종료된 매치인지 확인
+        if (match.status === 'finished') {
+            console.log('[PVP] resolveRound - 이미 종료된 매치');
+            return;
+        }
+        
         const { player1, player2 } = match;
         const p1Stats = this.calculateCombatStats(player1);
         const p2Stats = this.calculateCombatStats(player2);
         
         const p1Choice = match.pendingActions.get('player1') || 'middle';
         const p2Choice = match.pendingActions.get('player2') || 'middle';
+        
+        console.log(`[PVP] 라운드 ${match.round} 결과 처리 - p1: ${p1Choice}, p2: ${p2Choice}`);
         
         // 플레이어 정보 가져오기
         const getPlayerName = (player) => {
@@ -7934,12 +7996,20 @@ class PVPSystem {
         } else {
             // 다음 라운드 (3초 대기)
             match.round++;
-            match.pendingActions.clear();
+            match.pendingActions.clear(); // 다음 라운드를 위해 선택 초기화
+            console.log(`[PVP] 라운드 ${match.round} 시작, pendingActions 초기화`);
             setTimeout(() => this.showBattleRound(match), 3000);
         }
     }
     
     async endPendulumBattle(match) {
+        // 이미 종료된 매치인지 확인
+        if (match.status === 'finished') {
+            console.log('[PVP] 이미 종료된 매치 재처리 시도 방지');
+            return;
+        }
+        
+        match.status = 'finished';
         const winner = match.player1HP > match.player2HP ? 'player1' : 'player2';
         const battleResult = {
             winner,
@@ -20558,6 +20628,7 @@ client.on('interactionCreate', async (interaction) => {
             const matchId = parts[2];
             const position = parts[3]; // high, middle, low
             
+            console.log(`[PVP] 펜들럼 버튼 클릭 - matchId: ${matchId}, position: ${position}, userId: ${interaction.user.id}`);
             await pvpSystem.handlePendulumChoice(interaction, matchId, position);
         }
         
