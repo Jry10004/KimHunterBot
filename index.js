@@ -10616,7 +10616,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'mushroom':
                     // 독버섯 게임
-                    await interaction.deferReply();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const mushroomUser = await getUser(interaction.user.id);
                     if (!mushroomUser || !mushroomUser.registered) {
@@ -21596,8 +21596,10 @@ client.on('interactionCreate', async (interaction) => {
                 const remainingTime = Math.max(0, raceStatus.raceEndTime - Date.now());
                 const seconds = Math.floor(remainingTime / 1000);
                 
-                await interaction.update({ 
-                    content: `⏱️ 현재 레이스가 진행 중입니다! (${seconds}초 남음)\n다음 레이스를 기다려주세요.` 
+                await interaction.editReply({ 
+                    content: `⏱️ 현재 레이스가 진행 중입니다! (${seconds}초 남음)\n다음 레이스를 기다려주세요.`,
+                    embeds: [],
+                    components: [] 
                 });
                 return;
             }
@@ -21605,8 +21607,10 @@ client.on('interactionCreate', async (interaction) => {
             // 이미 참가했는지 확인
             const isParticipating = raceStatus.players.some(p => p.userId === interaction.user.id);
             if (isParticipating) {
-                await interaction.update({ 
-                    content: '❌ 이미 레이스에 참가하셨습니다!' 
+                await interaction.editReply({ 
+                    content: '❌ 이미 레이스에 참가하셨습니다!',
+                    embeds: [],
+                    components: [] 
                 });
                 return;
             }
@@ -21645,7 +21649,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                 );
             
-            await interaction.update({ 
+            await interaction.editReply({ 
                 embeds: [joinEmbed], 
                 components: [joinButtons] 
             });
