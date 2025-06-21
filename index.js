@@ -12868,7 +12868,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '게임') {
             // 먼저 defer로 응답을 지연시킴 (3초 제한 해결)
-            // 이미 위에서 deferUpdate를 했으므로 제거
+            await interaction.deferReply({ ephemeral: true });
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -13119,7 +13119,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (commandName === '이메일테스트') {
             try {
                 // 먼저 응답을 지연시켜 시간 제한 문제 해결
-                // 이미 위에서 deferUpdate를 했으므로 제거
+                await interaction.deferReply({ ephemeral: true });
                 
                 const testCode = generateVerificationCode();
                 const emailSent = await sendVerificationEmail('sup.kimhunter@gmail.com', testCode);
@@ -13151,7 +13151,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '회원가입채널설정') {
             try {
-                // 이미 위에서 deferUpdate를 했으므로 제거
+                await interaction.deferReply({ ephemeral: true });
                 
                 const SIGNUP_CHANNEL_ID = '1380684353998426122';
                 const signupChannel = await client.channels.fetch(SIGNUP_CHANNEL_ID);
@@ -14343,7 +14343,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '결투') {
-            // 이미 위에서 deferUpdate를 했으므로 제거
+            await interaction.deferReply({ ephemeral: true });
             
             const user = await getUser(interaction.user.id);
             
@@ -14383,7 +14383,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '결투정보') {
-            // 이미 위에서 deferUpdate를 했으므로 제거
+            await interaction.deferReply({ ephemeral: true });
             
             const user = await getUser(interaction.user.id);
             
@@ -14424,7 +14424,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '랭킹') {
             try {
-                // 이미 위에서 deferUpdate를 했으므로 제거
+                await interaction.deferReply({ ephemeral: true });
                 
                 const topUsers = await User.find({ registered: true })
                     .sort({ 'pvp.rating': -1 })
@@ -18006,7 +18006,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 인벤토리 아이템 사용/장착 처리
         else if (interaction.customId.startsWith('inv_use_')) {
-            // 이미 위에서 deferUpdate를 했으므로 제거
+            await interaction.deferReply({ ephemeral: true });
             
             // customId 파싱: inv_use_{itemId}_{category}_{currentPage}
             // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
