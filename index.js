@@ -25823,14 +25823,6 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // 중복 제거됨 - 기존 spawnBoss, startBossBattle, handleBossDefeat 함수는 이미 위에 정의되어 있음
-    
-    await channel.send({ embeds: [defeatEmbed] });
-    
-    // 보스 시스템 초기화
-    BOSS_SYSTEM.activeBoss = null;
-    BOSS_SYSTEM.participants.clear();
-    BOSS_SYSTEM.damageDealt.clear();
-}
 
 // 봇 로그인
 client.login(TOKEN); 
