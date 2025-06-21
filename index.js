@@ -10093,7 +10093,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'equipment':
                     // 장비 관리를 드롭다운으로 변경
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const equipUser = await getUser(interaction.user.id);
                     if (!equipUser || !equipUser.registered) {
@@ -10379,7 +10379,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'profile':
                     // 기존 프로필 로직 호출
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const profileUser = await getUser(interaction.user.id);
                     if (!profileUser || !profileUser.registered) {
@@ -10417,7 +10417,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'work':
                     // 운동하기 시스템
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const exerciseUser = await getUser(interaction.user.id);
                     if (!exerciseUser || !exerciseUser.registered) {
@@ -10540,7 +10540,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'quest':
                     // 랜덤 의뢰 기능
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const questUser = await getUser(interaction.user.id);
                     if (!questUser || !questUser.registered) {
@@ -10589,7 +10589,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'pvp':
                     // PVP 메뉴
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const pvpUser = await getUser(interaction.user.id);
                     if (!pvpUser || !pvpUser.registered) {
@@ -10663,7 +10663,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'oddeven':
                     // 홀짝 게임
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const oddevenUser = await getUser(interaction.user.id);
                     if (!oddevenUser || !oddevenUser.registered) {
@@ -10696,7 +10696,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'stats':
                     // 능력치
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const statsUser = await getUser(interaction.user.id);
                     if (!statsUser || !statsUser.registered) {
@@ -10807,7 +10807,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'skills':
                     // 스킬
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const skillsUser = await getUser(interaction.user.id);
                     if (!skillsUser || !skillsUser.registered) {
@@ -10823,7 +10823,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'inventory':
                     // 인벤토리를 드롭다운으로 변경
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const invUser = await getUser(interaction.user.id);
                     if (!invUser || !invUser.registered) {
@@ -10943,7 +10943,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'enhancement':
                     // 장비 강화
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const enhanceUser = await getUser(interaction.user.id);
                     if (!enhanceUser || !enhanceUser.registered) {
@@ -10975,7 +10975,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'fusion':
                     // 조각 융합
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const fusionUser = await getUser(interaction.user.id);
                     if (!fusionUser || !fusionUser.registered) {
@@ -11011,7 +11011,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'racing':
                     // 레이싱 게임
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const racingUser = await getUser(interaction.user.id);
                     if (!racingUser || !racingUser.registered) {
@@ -11293,7 +11293,7 @@ client.on('interactionCreate', async (interaction) => {
         // 장비 선택 드롭다운 처리
         else if (customId === 'equipment_select') {
             const slotType = values[0].replace('equip_', '');
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             const itemsPerPage = 5;
@@ -11393,7 +11393,7 @@ client.on('interactionCreate', async (interaction) => {
             const parts = value.split('_');
             const inventorySlot = parseInt(parts[2]); // enhance_item_inventorySlot_timestamp_index에서 inventorySlot 추출
             
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             const item = user.inventory.find(inv => inv.inventorySlot === inventorySlot && inv.equipped);
@@ -11642,7 +11642,7 @@ client.on('interactionCreate', async (interaction) => {
             console.log('=== 장착 핸들러 진입 ===');
             console.log('선택된 value:', value);
             
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             const user = await getUser(interaction.user.id);
             
             // 데이터 무결성 검사
@@ -11708,7 +11708,7 @@ client.on('interactionCreate', async (interaction) => {
         // 인벤토리 카테고리 선택 처리
         else if (customId === 'inventory_category_select') {
             const categoryType = values[0].replace('inv_', '');
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             const itemsPerPage = 10;
@@ -12090,7 +12090,7 @@ client.on('interactionCreate', async (interaction) => {
                     break;
                     
                 case 'admin_stats':
-                    await interaction.deferReply({ flags: 64 });
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     const totalUsers = await User.countDocuments();
                     const totalGold = await User.aggregate([
                         { $group: { _id: null, total: { $sum: '$gold' } } }
@@ -12216,7 +12216,7 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             
@@ -12338,7 +12338,7 @@ client.on('interactionCreate', async (interaction) => {
 //         else if (customId === 'equipment_select') {
 //             const selectedSlot = values[0].replace('equip_', '');
 //             
-//             await interaction.deferReply({ flags: 64 });
+//             // 이미 위에서 deferUpdate를 했으므로 제거
 //             
 //             const user = await getUser(interaction.user.id);
 //             if (!user) {
@@ -12401,7 +12401,7 @@ client.on('interactionCreate', async (interaction) => {
 //         else if (customId === 'equipment_item_select') {
 //             const value = values[0];
 //             
-//             await interaction.deferReply({ flags: 64 });
+//             // 이미 위에서 deferUpdate를 했으므로 제거
 //             
 //             const user = await getUser(interaction.user.id);
 //             if (!user) {
@@ -12489,7 +12489,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (customId === 'inventory_select') {
             const action = values[0];
             
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -12568,7 +12568,7 @@ client.on('interactionCreate', async (interaction) => {
             const index = parseInt(parts[1]);
             const selectedSlot = parseInt(parts[2]);
             
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -12622,7 +12622,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (customId === 'inventory_filter_select') {
             const filterType = values[0].replace('filter_', '');
             
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -12698,7 +12698,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (customId === 'inventory_category_select') {
             const category = values[0].replace('inv_', '');
             
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -12868,7 +12868,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '게임') {
             // 먼저 defer로 응답을 지연시킴 (3초 제한 해결)
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -13119,7 +13119,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (commandName === '이메일테스트') {
             try {
                 // 먼저 응답을 지연시켜 시간 제한 문제 해결
-                await interaction.deferReply({ flags: 64 });
+                // 이미 위에서 deferUpdate를 했으므로 제거
                 
                 const testCode = generateVerificationCode();
                 const emailSent = await sendVerificationEmail('sup.kimhunter@gmail.com', testCode);
@@ -13151,7 +13151,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '회원가입채널설정') {
             try {
-                await interaction.deferReply({ flags: 64 });
+                // 이미 위에서 deferUpdate를 했으므로 제거
                 
                 const SIGNUP_CHANNEL_ID = '1380684353998426122';
                 const signupChannel = await client.channels.fetch(SIGNUP_CHANNEL_ID);
@@ -14343,7 +14343,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '결투') {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             
@@ -14383,7 +14383,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '결투정보') {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             
@@ -14424,7 +14424,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '랭킹') {
             try {
-                await interaction.deferReply({ flags: 64 });
+                // 이미 위에서 deferUpdate를 했으므로 제거
                 
                 const topUsers = await User.find({ registered: true })
                     .sort({ 'pvp.rating': -1 })
@@ -18006,7 +18006,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 인벤토리 아이템 사용/장착 처리
         else if (interaction.customId.startsWith('inv_use_')) {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             // customId 파싱: inv_use_{itemId}_{category}_{currentPage}
             // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
@@ -18136,7 +18136,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 모든 장비 해제 처리
         else if (interaction.customId === 'unequip_all') {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -19112,7 +19112,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (interaction.customId.startsWith('confirm_enhance_')) {
             // 즉시 응답하여 시간 초과 방지
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             // 강화 실행
             const slotName = interaction.customId.replace('confirm_enhance_', '');
@@ -19818,7 +19818,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'game_menu_page2') {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             if (!user || !user.registered) {
@@ -21259,7 +21259,7 @@ client.on('interactionCreate', async (interaction) => {
         // 레이싱 버튼 핸들러들
         else if (interaction.customId === 'join_race') {
             // 레이스 참가 화면 표시
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const raceStatus = raceSystem.getRaceStatus();
             
@@ -21396,7 +21396,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (interaction.customId === 'race_status') {
             // 레이스 현황 보기
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const raceStatus = raceSystem.getRaceStatus();
             
@@ -23276,7 +23276,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         // 탐사 실행
-        await interaction.deferReply({ flags: 64 });
+        // 이미 위에서 deferUpdate를 했으므로 제거
         const user = await getUser(interaction.user.id);
         await executeExploration(interaction, user, companyId, investmentAmount);
     }
@@ -23415,7 +23415,7 @@ client.on('interactionCreate', async (interaction) => {
         // 독버섯 게임 버튼 처리
         else if (interaction.customId === 'mushroom_solo') {
             console.log('🍄 독버섯 게임 버튼 클릭됨!');
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const user = await getUser(interaction.user.id);
             
@@ -23487,7 +23487,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'mushroom_pvp') {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             // PVP는 나중에 구현
             await interaction.editReply({ 
@@ -24045,7 +24045,7 @@ client.on('interactionCreate', async (interaction) => {
         // 엠블럼 계열 선택
         else if (interaction.customId === 'emblem_category') {
             // 인터랙션 즉시 defer
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const category = interaction.values[0];
             const emblemData = EMBLEMS[category];
@@ -24262,7 +24262,7 @@ client.on('interactionCreate', async (interaction) => {
         // 엠블럼 구매
         else if (interaction.customId.startsWith('buy_emblem_')) {
             // 인터랙션을 즉시 defer하여 토큰 만료 방지
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const parts = interaction.customId.split('_');
             const category = parts[2];
@@ -24582,7 +24582,7 @@ client.on('interactionCreate', async (interaction) => {
             const autoFusionCommand = client.application.commands.cache.find(cmd => cmd.name === '조각융합');
             if (autoFusionCommand) {
                 // 자동 융합 로직 실행
-                await interaction.deferReply({ flags: 64 });
+                // 이미 위에서 deferUpdate를 했으므로 제거
                 
                 // 기존 조각융합 명령어의 execute 로직을 여기서 실행
                 // 간단히 메시지만 표시
@@ -24834,7 +24834,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 내 주식 복구 버튼
         else if (interaction.customId === 'recover_my_stocks') {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             try {
                 const user = await User.findOne({ discordId: interaction.user.id });
@@ -25140,7 +25140,7 @@ client.on('interactionCreate', async (interaction) => {
         // 장비 부위별 강화 버튼 처리
         else if (interaction.customId.startsWith('enhance_slot_')) {
             // 먼저 defer 처리 - flags 사용
-            await interaction.deferReply({ flags: 64 });
+            // 이미 위에서 deferUpdate를 했으므로 제거
             
             const slot = interaction.customId.replace('enhance_slot_', '');
             const user = await getUser(interaction.user.id);
