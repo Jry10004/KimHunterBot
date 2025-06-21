@@ -3554,7 +3554,7 @@ async function showExerciseMenu(interaction, user) {
     const embed = new EmbedBuilder()
         .setColor('#ff6b6b')
         .setTitle('🏃 운동하기')
-        .setDescription(`**${user.nickname}**님의 피트니스 센터${currentExerciseInfo}`)
+        .setDescription(`**${user.nickname || interaction.user.username}**님의 피트니스 센터${currentExerciseInfo}`)
         .addFields(
             { 
                 name: '💪 피트니스 레벨', 
@@ -6371,7 +6371,7 @@ class MushroomGameSystem {
             const waitingEmbed = new EmbedBuilder()
                 .setColor('#ffff00')
                 .setTitle('🔍 상대방을 찾고 있습니다...')
-                .setDescription(`${user.nickname}님, 다른 플레이어를 찾고 있습니다!\n\n⏰ 30초 후 봇과 대결로 자동 전환됩니다.`)
+                .setDescription(`${user.nickname || interaction.user.username}님, 다른 플레이어를 찾고 있습니다!\n\n⏰ 30초 후 봇과 대결로 자동 전환됩니다.`)
                 .setThumbnail(`attachment://${MUSHROOM_GAME.effects.thinking}`);
 
             const cancelButton = new ActionRowBuilder()
@@ -6510,7 +6510,7 @@ class MushroomGameSystem {
         const startEmbed = new EmbedBuilder()
             .setColor('#00ff00')
             .setTitle(MUSHROOM_GAME.messages.gameStart)
-            .setDescription(`${user.nickname}님의 버섯 사냥이 시작됩니다!\n\n모드: ${this.getDifficultyName(difficulty)}`)
+            .setDescription(`${user.nickname || user.username || '플레이어'}님의 버섯 사냥이 시작됩니다!\n\n모드: ${this.getDifficultyName(difficulty)}`)
             .setImage(`attachment://${MUSHROOM_GAME.backgrounds.gameStart}`)
             .setThumbnail(`attachment://${MUSHROOM_GAME.effects.gameStart}`);
 
@@ -7062,7 +7062,7 @@ class PVPSystem {
                     const instantMatchEmbed = new EmbedBuilder()
                         .setColor('#27ae60')
                         .setTitle('⚡ 즉시 매칭 성사!')
-                        .setDescription(`**${opponent.user.nickname}** 님과 바로 매칭되었습니다!`)
+                        .setDescription(`**${opponent.user.nickname || opponent.user.username || '상대 플레이어'}** 님과 바로 매칭되었습니다!`)
                         .addFields(
                             { name: '👤 상대 플레이어', value: `${opponent.user.nickname} (${opponent.rating}점)`, inline: true },
                             { name: '📊 레이팅 차이', value: `±${ratingDiff}점`, inline: true },
@@ -7106,7 +7106,7 @@ class PVPSystem {
                         const playerMatchEmbed = new EmbedBuilder()
                             .setColor('#e74c3c')
                             .setTitle('🔥 실제 플레이어 매칭 성사!')
-                            .setDescription(`**${opponent.user.nickname}** 님과 매칭되었습니다!`)
+                            .setDescription(`**${opponent.user.nickname || opponent.user.username || '상대 플레이어'}** 님과 매칭되었습니다!`)
                             .addFields(
                                 { name: '👤 상대 플레이어', value: `${opponent.user.nickname} (${opponent.rating}점)`, inline: true },
                                 { name: '📊 레이팅 차이', value: `±${ratingDiff}점`, inline: true },
@@ -10037,7 +10037,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                     // 사냥터 목록 표시 (기존 hunting 로직 재사용)
                     const currentPage = 0;
-                    const itemsPerPage = 5;
+                    const itemsPerPage = 3; // Changed to match the other hunting menu
                     const availableAreas = huntingAreas.filter(area => user.unlockedAreas.includes(area.id));
                     const totalPages = Math.ceil(availableAreas.length / itemsPerPage);
                     
@@ -11611,7 +11611,7 @@ client.on('interactionCreate', async (interaction) => {
                 const inviteEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
                     .setTitle('🗡️ 보스 레이드 파티 초대!')
-                    .setDescription(`**${user.nickname}**님이 보스 레이드에 초대했습니다!`)
+                    .setDescription(`**${user.nickname || interaction.user.username}**님이 보스 레이드에 초대했습니다!`)
                     .addFields(
                         { name: '🎯 보스', value: `${boss.emoji} ${boss.name} (Lv.${boss.level})`, inline: true },
                         { name: '❤️ HP', value: `${boss.hp.toLocaleString()}`, inline: true },
@@ -13086,7 +13086,7 @@ client.on('interactionCreate', async (interaction) => {
                 const embed = new EmbedBuilder()
                     .setColor('#e74c3c')
                     .setTitle('⚔️ 전투력 정보')
-                    .setDescription(`**${user.nickname}**님의 전투력 정보`)
+                    .setDescription(`**${user.nickname || interaction.user.username}**님의 전투력 정보`)
                     .addFields(
                         { name: '총 전투력', value: `${combatPower}`, inline: true },
                         { name: '💪 힘', value: `${user.stats.strength}`, inline: true },
@@ -13517,7 +13517,7 @@ client.on('interactionCreate', async (interaction) => {
             const stockEmbed = new EmbedBuilder()
                 .setColor('#2ecc71')
                 .setTitle('📊 김헌터 주식 시장')
-                .setDescription(`**${user.nickname}**님의 투자 현황\n\n${portfolioText}`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 투자 현황\n\n${portfolioText}`)
                 .addFields(
                     { 
                         name: '🏆 상위 기업 순위', 
@@ -14068,7 +14068,7 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setColor('#00CED1')
                 .setTitle('💎 에너지 조각 보관함')
-                .setDescription(`**${user.nickname}**님의 에너지 조각 현황`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 에너지 조각 현황`)
                 .addFields(
                     { name: '📦 보유 조각', value: fragmentText || '없음', inline: false },
                     { name: '📊 통계', value: `총 조각: ${totalFragments}개\n전투력 합계: ${totalCombatPower.toLocaleString()}\n최고 레벨: ${user.energyFragments.highestLevel}단계`, inline: true },
@@ -14212,7 +14212,7 @@ client.on('interactionCreate', async (interaction) => {
                                 const announceEmbed = new EmbedBuilder()
                                     .setColor('#FFD700')
                                     .setTitle('🌟 전설의 100단계 에너지 조각 달성! 🌟')
-                                    .setDescription(`**${user.nickname}**님이 최초로 100단계 에너지 조각을 완성했습니다!`)
+                                    .setDescription(`**${user.nickname || interaction.user.username}**님이 최초로 100단계 에너지 조각을 완성했습니다!`)
                                     .addFields(
                                         { name: '🏆 보상', value: '100만 골드 + 영구 성공률 10% + 칭호: 에너지의 신', inline: false }
                                     )
@@ -14520,7 +14520,7 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setColor('#FFD700')
                 .setTitle('⚔️ 전투력 정보')
-                .setDescription(`**${user.nickname}**님의 전투력 상세 정보`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 전투력 상세 정보`)
                 .addFields(
                     { name: '📊 기본 전투력', value: `${baseCombatPower.toLocaleString()}`, inline: true },
                     { name: '💎 조각 전투력', value: `${fragmentCombatPower.toLocaleString()}`, inline: true },
@@ -14701,7 +14701,7 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setColor('#00CED1')
                 .setTitle('🎯 수동 융합')
-                .setDescription(`**${user.nickname}**님, 융합할 조각을 선택하세요!`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님, 융합할 조각을 선택하세요!`)
                 .addFields(
                     { name: '📊 융합 상태', value: `오늘 융합: ${user.energyFragments.dailyFusions}/20회\n${stackInfo}\n연속 성공: ${user.energyFragments.consecutiveSuccess}회`, inline: true },
                     { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
@@ -15174,7 +15174,7 @@ client.on('interactionCreate', async (interaction) => {
             const huntingEmbed = new EmbedBuilder()
                 .setColor('#8b0000')
                 .setTitle('⚔️ 사냥터 선택')
-                .setDescription(`**${user.nickname}**님의 사냥터 목록\n\n현재 레벨: **Lv.${user.level}**`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 사냥터 목록\n\n현재 레벨: **Lv.${user.level}**`)
                 .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages} | 사냥터를 선택하세요!` });
 
             // 사냥터별 필드 추가
@@ -16329,7 +16329,7 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setColor('#00cec9')
                 .setTitle('📊 운동 통계')
-                .setDescription(`**${user.nickname}**님의 운동 기록`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 운동 기록`)
                 .addFields(
                     {
                         name: '⏱️ 총 운동 시간',
@@ -16451,7 +16451,7 @@ client.on('interactionCreate', async (interaction) => {
             const statusEmbed = new EmbedBuilder()
                 .setColor('#4ecdc4')
                 .setTitle('📊 운동 현황')
-                .setDescription(`**${user.nickname}**님의 운동 상태`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 운동 상태`)
                 .addFields(
                     { name: '💪 피트니스 레벨', value: `Lv.${user.fitness.level}`, inline: true },
                     { name: '✨ 피트니스 경험치', value: `${user.fitness.exp}/${getFitnessLevelRequirement(user.fitness.level + 1)}`, inline: true },
@@ -16617,7 +16617,7 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setColor('#9932cc')
                 .setTitle('내 정보')
-                .setDescription(`**${user.nickname}**님의 게임 정보`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 게임 정보`)
                 .addFields(
                     { name: '레벨', value: `Lv.${user.level}`, inline: true },
                     { name: '경험치', value: `${user.exp}/${maxExp} EXP`, inline: true },
@@ -16638,7 +16638,7 @@ client.on('interactionCreate', async (interaction) => {
             const statsEmbed = new EmbedBuilder()
                 .setColor('#ff6b6b')
                 .setTitle('💪 능력치')
-                .setDescription(`**${user.nickname}**님의 능력치 정보`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 능력치 정보`)
                 .addFields(
                     { name: '💪 힘', value: `${user.stats.strength}`, inline: true },
                     { name: '🏃 민첩', value: `${user.stats.agility}`, inline: true },
@@ -16692,9 +16692,9 @@ client.on('interactionCreate', async (interaction) => {
             const skillsEmbed = new EmbedBuilder()
                 .setColor('#4ecdc4')
                 .setTitle('🔮 스킬')
-                .setDescription(`**${user.nickname}**님의 스킬 정보`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 스킬 정보`)
                 .addFields(
-                    { name: '📚 보유 스킬', value: user.skills.length > 0 ? user.skills.map(skill => `**${skill.name}** Lv.${skill.level}`).join('\n') : '보유한 스킬이 없습니다.', inline: false },
+                    { name: '📚 보유 스킬', value: user.skills && user.skills.length > 0 ? user.skills.map(skill => `**${skill.name}** Lv.${skill.level}`).join('\n') : '보유한 스킬이 없습니다.', inline: false },
                     { name: '💡 스킬 획득', value: '특정 조건을 만족하면 새로운 스킬을 습득할 수 있습니다!', inline: false }
                 )
                 .setFooter({ text: '스킬은 전투와 활동에서 도움을 줍니다!' });
@@ -20175,6 +20175,9 @@ client.on('interactionCreate', async (interaction) => {
         
         // PVP 매칭 취소
         else if (interaction.customId === 'cancel_pvp_queue') {
+            // Defer the update first to prevent interaction errors
+            await interaction.deferUpdate();
+            
             const result = pvpSystem.leaveQueue(interaction.user.id);
             
             if (result.success) {
@@ -20183,9 +20186,9 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ 매칭 취소')
                     .setDescription(result.message);
                     
-                await interaction.update({ embeds: [cancelEmbed], components: [] });
+                await interaction.editReply({ embeds: [cancelEmbed], components: [] });
             } else {
-                await interaction.reply({ content: result.message, flags: 64 });
+                await interaction.editReply({ content: result.message });
             }
         }
         
@@ -21206,7 +21209,7 @@ client.on('interactionCreate', async (interaction) => {
             const stockEmbed = new EmbedBuilder()
                 .setColor('#2ecc71')
                 .setTitle('📊 김헌터 주식 시장')
-                .setDescription(`**${user.nickname}**님의 투자 현황\n\n${portfolioText}`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 투자 현황\n\n${portfolioText}`)
                 .addFields(
                     { 
                         name: '🏆 상위 기업 순위', 
@@ -21813,18 +21816,22 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (interaction.customId === 'cancel_pvp_queue') {
+            // Check if already deferred or replied
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate();
+            }
+            
             const result = pvpSystem.leaveQueue(interaction.user.id);
             
             if (result.success) {
-                await interaction.update({ 
+                await interaction.editReply({ 
                     content: `✅ ${result.message}`, 
                     embeds: [], 
                     components: [] 
                 });
             } else {
-                await interaction.reply({ 
-                    content: `❌ ${result.message}`, 
-                    flags: 64 
+                await interaction.editReply({ 
+                    content: `❌ ${result.message}` 
                 });
             }
         }
