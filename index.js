@@ -860,12 +860,12 @@ const MENU_DEFINITIONS = {
         emoji: '🔮',
         category: 'character'
     },
-    // equipment: {
-    //     label: '⚔️ 장비관리',
-    //     description: '장비 착용 및 관리',
-    //     emoji: '⚔️',
-    //     category: 'character'
-    // },
+    equipment: {
+        label: '⚔️ 장비관리',
+        description: '장비 착용 및 관리',
+        emoji: '⚔️',
+        category: 'character'
+    },
     inventory: {
         label: '🎒 인벤토리',
         description: '보유 아이템 확인',
@@ -10001,10 +10001,6 @@ client.on('interactionCreate', async (interaction) => {
                             .setLabel('🎯 사냥하기')
                             .setStyle(ButtonStyle.Primary),
                         new ButtonBuilder()
-                            .setCustomId('equipment')
-                            .setLabel('⚔️ 장비관리')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
                             .setCustomId('shop')
                             .setLabel('🛒 상점')
                             .setStyle(ButtonStyle.Primary)
@@ -13197,10 +13193,6 @@ client.on('interactionCreate', async (interaction) => {
                     new ButtonBuilder()
                         .setCustomId('hunting')
                         .setLabel('🎯 사냥하기')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId('equipment')
-                        .setLabel('⚔️ 장비관리')
                         .setStyle(ButtonStyle.Primary),
                     new ButtonBuilder()
                         .setCustomId('shop')
