@@ -10091,116 +10091,103 @@ client.on('interactionCreate', async (interaction) => {
                     });
                     
                 case 'equipment':
-                    // 장비 관리를 드롭다운으로 변경
-                    // 이미 위에서 deferUpdate를 했으므로 제거
+                    // 장비 메인 이미지 첨부파일 생성
+                    const equipmentAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_equipment.gif'), { name: 'kim_equipment.gif' });
                     
-                    const equipUser = await getUser(interaction.user.id);
-                    if (!equipUser || !equipUser.registered) {
-                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
-                    }
+                    // 전투력 계산
+                    const combatPower = calculateCombatPower(user);
                     
-                    // 장비 관리 화면 표시
                     const equipmentEmbed = new EmbedBuilder()
-                        .setColor('#ffaa00')
+                        .setColor('#f39c12')
                         .setTitle('⚔️ 장비 관리')
-                        .setDescription('장착 중인 장비를 확인하고 관리하세요\n\n💼 현재 전투력: ' + calculateCombatPower(equipUser).toLocaleString());
-                    
-                    const slots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
-                    const slotNames = {
-                        weapon: '⚔️ 무기',
-                        armor: '🛡️ 갑옷',
-                        helmet: '⛑️ 헬멧',
-                        gloves: '🧬 장갑',
-                        boots: '👢 부츠',
-                        accessory: '💎 액세서리'
-                    };
-                    
-                    for (const slot of slots) {
-                        const slotIndex = equipUser.equipment[slot];
-                        let slotInfo = '착용 안함';
-                        
-                        if (slotIndex !== -1) {
-                            const equippedItem = equipUser.inventory.find(item => item.inventorySlot === slotIndex);
-                            if (equippedItem) {
-                                const enhanceText = equippedItem.enhanceLevel > 0 ? ` (+${equippedItem.enhanceLevel}강)` : '';
-                                slotInfo = `${equippedItem.name}${enhanceText}`;
-                            }
-                        }
-                        
-                        equipmentEmbed.addFields({
-                            name: slotNames[slot],
-                            value: slotInfo,
-                            inline: true
-                        });
-                    }
-                    
-                    // 장비 변경 드롭다운
-                    const equipOptions = [
-                        {
-                            label: '⚔️ 무기 변경',
-                            description: '무기를 장착하거나 변경합니다',
-                            value: 'equip_weapon',
-                            emoji: '⚔️'
-                        },
-                        {
-                            label: '🛡️ 갑옷 변경',
-                            description: '갑옷을 장착하거나 변경합니다',
-                            value: 'equip_armor',
-                            emoji: '🛡️'
-                        },
-                        {
-                            label: '⛑️ 헬멧 변경',
-                            description: '헬멧을 장착하거나 변경합니다',
-                            value: 'equip_helmet',
-                            emoji: '⛑️'
-                        },
-                        {
-                            label: '🧬 장갑 변경',
-                            description: '장갑을 장착하거나 변경합니다',
-                            value: 'equip_gloves',
-                            emoji: '🧬'
-                        },
-                        {
-                            label: '👢 부츠 변경',
-                            description: '부츠를 장착하거나 변경합니다',
-                            value: 'equip_boots',
-                            emoji: '👢'
-                        },
-                        {
-                            label: '💎 액세서리 변경',
-                            description: '액세서리를 장착하거나 변경합니다',
-                            value: 'equip_accessory',
-                            emoji: '💎'
-                        }
-                    ];
-                    
-                    const equipSelectMenu = new StringSelectMenuBuilder()
-                        .setCustomId('equipment_select')
-                        .setPlaceholder('🎮 변경할 장비 슬롯을 선택하세요')
-                        .addOptions(equipOptions);
-                    
-                    const selectRow = new ActionRowBuilder().addComponents(equipSelectMenu);
-                    
-                    const equipButtons = new ActionRowBuilder()
+                        .setDescription(`**${getUserTitle(user)} ${user.nickname}**님의 현재 장비 상태\n\n🔥 **총 전투력**: ${combatPower.toLocaleString()}`)
+                        .setImage('attachment://kim_equipment.gif')
+                        .addFields(
+                            { name: '⚔️ 무기', value: getEquippedItem(user, 'weapon') ? (() => {
+                                const weapon = getEquippedItem(user, 'weapon');
+                                const enhanceLevel = weapon.enhanceLevel || 0;
+                                const baseAttack = weapon.stats?.attack || [0, 0];
+                                const minAttack = Array.isArray(baseAttack) ? baseAttack[0] : baseAttack;
+                                const maxAttack = Array.isArray(baseAttack) ? baseAttack[1] : baseAttack;
+                                const enhanceBonus = enhanceLevel * 2; // 강화당 +2 공격력
+                                return `${weapon.name}${enhanceLevel > 0 ? ` (+${enhanceLevel}강)` : ''}\n공격력: ${minAttack + enhanceBonus}-${maxAttack + enhanceBonus}`;
+                            })() : '미착용', inline: true },
+                            { name: '🛡️ 갑옷', value: getEquippedItem(user, 'armor') ? (() => {
+                                const armor = getEquippedItem(user, 'armor');
+                                const enhanceLevel = armor.enhanceLevel || 0;
+                                const baseDefense = armor.stats?.defense || [0, 0];
+                                const minDefense = Array.isArray(baseDefense) ? baseDefense[0] : baseDefense;
+                                const maxDefense = Array.isArray(baseDefense) ? baseDefense[1] : baseDefense;
+                                const enhanceBonus = enhanceLevel * 2; // 강화당 +2 방어력
+                                return `${armor.name}${enhanceLevel > 0 ? ` (+${enhanceLevel}강)` : ''}\n방어력: ${minDefense + enhanceBonus}-${maxDefense + enhanceBonus}`;
+                            })() : '미착용', inline: true },
+                            { name: '⛑️ 헬멧', value: getEquippedItem(user, 'helmet') ? `${getEquippedItem(user, 'helmet').name}${(getEquippedItem(user, 'helmet').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'helmet').enhanceLevel}강)` : ''}` : '미착용', inline: true },
+                            { name: '🧤 장갑', value: getEquippedItem(user, 'gloves') ? `${getEquippedItem(user, 'gloves').name}${(getEquippedItem(user, 'gloves').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'gloves').enhanceLevel}강)` : ''}` : '미착용', inline: true },
+                            { name: '👢 부츠', value: getEquippedItem(user, 'boots') ? `${getEquippedItem(user, 'boots').name}${(getEquippedItem(user, 'boots').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'boots').enhanceLevel}강)` : ''}` : '미착용', inline: true },
+                            { name: '💎 액세서리', value: getEquippedItem(user, 'accessory') ? `${getEquippedItem(user, 'accessory').name}${(getEquippedItem(user, 'accessory').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'accessory').enhanceLevel}강)` : ''}` : '미착용', inline: true }
+                        );
+
+                    // 카테고리별 장비 교체 버튼
+                    const categoryButtons = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
-                                .setCustomId('unequip_all')
-                                .setLabel('🚫 모든 장비 해제')
-                                .setStyle(ButtonStyle.Danger),
+                                .setCustomId('equip_category_weapon')
+                                .setLabel('⚔️ 무기')
+                                .setStyle(ButtonStyle.Primary),
                             new ButtonBuilder()
-                                .setCustomId('inventory')
-                                .setLabel('🎒 인벤토리')
-                                .setStyle(ButtonStyle.Secondary),
+                                .setCustomId('equip_category_armor')
+                                .setLabel('🛡️ 갑옷')
+                                .setStyle(ButtonStyle.Primary),
                             new ButtonBuilder()
-                                .setCustomId('back_to_game_menu')
-                                .setLabel('🎮 게임 메뉴')
-                                .setStyle(ButtonStyle.Secondary)
+                                .setCustomId('equip_category_helmet')
+                                .setLabel('⛑️ 헬멧')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('equip_category_gloves')
+                                .setLabel('🧤 장갑')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('equip_category_boots')
+                                .setLabel('👢 부츠')
+                                .setStyle(ButtonStyle.Primary)
                         );
+
+                    const categoryButtons2 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('equip_category_accessory')
+                                .setLabel('💎 액세서리')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+
+                    // 장착된 아이템 해제 버튼들
+                    const unequipButtons = new ActionRowBuilder();
+                    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+                    const buttonLabels = ['⚔️', '🛡️', '⛑️', '🧤', '👢', '💎'];
                     
-                    return await interaction.editReply({ 
-                        embeds: [equipmentEmbed], 
-                        components: [selectRow, equipButtons] 
+                    equipmentSlots.forEach((slot, index) => {
+                        const slotValue = user.equipment[slot];
+                        if (slotValue !== -1 && slotValue !== null && slotValue !== undefined && typeof slotValue === 'number') {
+                            unequipButtons.addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`unequip_${slot}`)
+                                    .setLabel(`${buttonLabels[index]} 해제`)
+                                    .setStyle(ButtonStyle.Danger)
+                            );
+                        }
                     });
+
+                    const components = [categoryButtons, categoryButtons2];
+                    if (unequipButtons.components.length > 0) {
+                        components.push(unequipButtons);
+                    }
+
+                    await interaction.editReply({ 
+                        embeds: [equipmentEmbed], 
+                        components: components,
+                        files: [equipmentAttachment]
+                    });
+                    break;
                     
                 case 'shop':
                     // 상점을 드롭다운 메뉴로 변경
