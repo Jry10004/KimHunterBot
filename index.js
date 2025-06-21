@@ -18870,9 +18870,17 @@ client.on('interactionCreate', async (interaction) => {
             const categoryItems = user.inventory.filter(item => item.type === category);
             
             if (categoryItems.length === 0) {
-                await interaction.reply({ 
-                    content: `인벤토리에 ${getCategoryName(category)} 아이템이 없습니다!`, 
-                    flags: 64 
+                await interaction.update({ 
+                    content: `인벤토리에 ${getCategoryName(category)} 아이템이 없습니다!`,
+                    embeds: [],
+                    components: [
+                        new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('equipment')
+                                .setLabel('🔙 장비 메인으로')
+                                .setStyle(ButtonStyle.Primary)
+                        )
+                    ]
                 });
                 return;
             }
@@ -18987,10 +18995,9 @@ client.on('interactionCreate', async (interaction) => {
                 ));
             }
 
-            await interaction.reply({
+            await interaction.update({
                 embeds: [categoryEmbed],
-                components: components,
-                flags: 64
+                components: components
             });
         }
         
