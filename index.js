@@ -10702,7 +10702,7 @@ client.on('interactionCreate', async (interaction) => {
                             { name: '📊 잔여 포인트', value: `${statsUser.statPoints}`, inline: true }
                         );
                     
-                    const components = [];
+                    const statsComponents = [];
                     
                     // 각 스탯별 +1, +10 버튼
                     if (statsUser.statPoints > 0) {
@@ -10771,7 +10771,7 @@ client.on('interactionCreate', async (interaction) => {
                                     .setDisabled(statsUser.statPoints < 10)
                             );
                         
-                        components.push(strengthButtons, agilityIntButtons, vitalityLuckButtons);
+                        statsComponents.push(strengthButtons, agilityIntButtons, vitalityLuckButtons);
                     }
                     
                     // 기타 버튼
@@ -10787,9 +10787,9 @@ client.on('interactionCreate', async (interaction) => {
                                 .setStyle(ButtonStyle.Secondary)
                         );
                     
-                    components.push(otherButtons);
+                    statsComponents.push(otherButtons);
                     
-                    return await interaction.editReply({ embeds: [statsEmbed], components });
+                    return await interaction.editReply({ embeds: [statsEmbed], components: statsComponents });
                     
                 case 'skills':
                     // 스킬
