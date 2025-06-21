@@ -10093,7 +10093,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'equipment':
                     // 장비 관리를 드롭다운으로 변경
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const equipUser = await getUser(interaction.user.id);
                     if (!equipUser || !equipUser.registered) {
@@ -10379,7 +10379,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'profile':
                     // 기존 프로필 로직 호출
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const profileUser = await getUser(interaction.user.id);
                     if (!profileUser || !profileUser.registered) {
@@ -10417,7 +10417,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'work':
                     // 운동하기 시스템
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const exerciseUser = await getUser(interaction.user.id);
                     if (!exerciseUser || !exerciseUser.registered) {
@@ -10540,7 +10540,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'quest':
                     // 랜덤 의뢰 기능
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const questUser = await getUser(interaction.user.id);
                     if (!questUser || !questUser.registered) {
@@ -10589,7 +10589,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'pvp':
                     // PVP 메뉴
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const pvpUser = await getUser(interaction.user.id);
                     if (!pvpUser || !pvpUser.registered) {
@@ -10663,7 +10663,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'oddeven':
                     // 홀짝 게임
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const oddevenUser = await getUser(interaction.user.id);
                     if (!oddevenUser || !oddevenUser.registered) {
@@ -10696,7 +10696,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'stats':
                     // 능력치
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const statsUser = await getUser(interaction.user.id);
                     if (!statsUser || !statsUser.registered) {
@@ -10807,7 +10807,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'skills':
                     // 스킬
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const skillsUser = await getUser(interaction.user.id);
                     if (!skillsUser || !skillsUser.registered) {
@@ -10823,7 +10823,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'inventory':
                     // 인벤토리를 드롭다운으로 변경
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const invUser = await getUser(interaction.user.id);
                     if (!invUser || !invUser.registered) {
@@ -10943,7 +10943,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'enhancement':
                     // 장비 강화
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const enhanceUser = await getUser(interaction.user.id);
                     if (!enhanceUser || !enhanceUser.registered) {
@@ -10975,7 +10975,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'fusion':
                     // 조각 융합
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const fusionUser = await getUser(interaction.user.id);
                     if (!fusionUser || !fusionUser.registered) {
@@ -11011,7 +11011,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                 case 'racing':
                     // 레이싱 게임
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     
                     const racingUser = await getUser(interaction.user.id);
                     if (!racingUser || !racingUser.registered) {
@@ -12090,7 +12090,7 @@ client.on('interactionCreate', async (interaction) => {
                     break;
                     
                 case 'admin_stats':
-                    await interaction.deferUpdate();
+                    // 이미 위에서 deferUpdate를 했으므로 제거
                     const totalUsers = await User.countDocuments();
                     const totalGold = await User.aggregate([
                         { $group: { _id: null, total: { $sum: '$gold' } } }
