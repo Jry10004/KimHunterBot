@@ -79,6 +79,8 @@ web_modules/
 .env.production.local
 .env.local
 .env.*.local
+.env.beta
+.env.production
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -164,3 +166,4 @@ SYSTEM_FIXES.md
 
 # 로컬 백업
 backup/
+.env.production.private
