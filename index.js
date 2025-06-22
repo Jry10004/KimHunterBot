@@ -14071,10 +14071,10 @@ client.on('interactionCreate', async (interaction) => {
                 const remainingMinutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
                 const remainingSeconds = Math.floor((remaining % (1000 * 60)) / 1000);
                 
-                // 카운트다운 디스플레이 생성
-                const countdownDisplay = remainingDays > 0 
-                    ? `\`\`\`fix\n${String(remainingDays).padStart(2, '0')}일 ${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}\n\`\`\``
-                    : `\`\`\`fix\n${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}\n\`\`\``;
+                // 카운트다운 디스플레이 생성 (주석 처리)
+                // const countdownDisplay = remainingDays > 0 
+                //     ? `\`\`\`fix\n${String(remainingDays).padStart(2, '0')}일 ${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}\n\`\`\``
+                //     : `\`\`\`fix\n${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}\n\`\`\``;
                 
                 // 진행률 바 생성
                 const totalTime = hours * 60 * 60 * 1000; // 설정한 시간
@@ -14095,7 +14095,6 @@ client.on('interactionCreate', async (interaction) => {
                     .setDescription('**모든 기능이 잠겨있습니다!**\n오픈 시간까지 기다려주세요!')
                     .addFields(
                         { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
-                        { name: '🕐 실시간 카운트다운', value: countdownDisplay, inline: false },
                         { name: '📊 진행률', value: `${progressBar} ${progress.toFixed(1)}%`, inline: false }
                     )
                     .setImage('attachment://countdown.png')
@@ -14151,16 +14150,16 @@ client.on('interactionCreate', async (interaction) => {
                             const updateMinutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
                             const updateSeconds = Math.floor((remaining % (1000 * 60)) / 1000);
                             
-                            // 카운트다운 디스플레이 업데이트
-                            let countdownDisplay;
-                            if (updateDays > 0) {
-                                countdownDisplay = `\`\`\`fix\n${String(updateDays).padStart(2, '0')}일 ${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}\n\`\`\``;
-                            } else if (updateHours > 0) {
-                                countdownDisplay = `\`\`\`fix\n${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}\n\`\`\``;
-                            } else {
-                                // 1시간 미만일 때 더 큰 디스플레이
-                                countdownDisplay = `\`\`\`css\n[${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}]\n\`\`\``;
-                            }
+                            // 카운트다운 디스플레이 업데이트 (주석 처리)
+                            // let countdownDisplay;
+                            // if (updateDays > 0) {
+                            //     countdownDisplay = `\`\`\`fix\n${String(updateDays).padStart(2, '0')}일 ${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}\n\`\`\``;
+                            // } else if (updateHours > 0) {
+                            //     countdownDisplay = `\`\`\`fix\n${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}\n\`\`\``;
+                            // } else {
+                            //     // 1시간 미만일 때 더 큰 디스플레이
+                            //     countdownDisplay = `\`\`\`css\n[${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}]\n\`\`\``;
+                            // }
                             
                             // 마지막 카운트다운 효과
                             let specialEffect = '';
@@ -14208,7 +14207,6 @@ client.on('interactionCreate', async (interaction) => {
                                 .setDescription(description)
                                 .addFields(
                                     { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
-                                    { name: '🕐 실시간 카운트다운', value: countdownDisplay, inline: false },
                                     { name: '📊 진행률', value: `${progressBar} ${progress.toFixed(1)}%`, inline: false }
                                 )
                                 .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다!' })
