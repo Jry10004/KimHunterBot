@@ -80,6 +80,15 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    huntingTickets: {
+        type: Number,
+        default: 20,
+        max: 20
+    },
+    lastTicketRegen: {
+        type: Date,
+        default: Date.now
+    },
     registered: {
         type: Boolean,
         default: false

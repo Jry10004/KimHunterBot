@@ -984,7 +984,7 @@ const MENU_DEFINITIONS = {
         label: '⚡ 조각융합',
         description: '에너지 조각을 융합하여 상위 조각 획득',
         emoji: '⚡',
-        category: 'character'
+        category: 'daily'
     },
     settings: {
         label: '⚙️ 설정',
@@ -9323,6 +9323,27 @@ async function getUser(discordId) {
             user.weekStart = weekStart;
         }
         
+        // 사냥 티켓 재생성 로직
+        if (!user.huntingTickets) user.huntingTickets = 20;
+        if (!user.lastTicketRegen) user.lastTicketRegen = new Date();
+        
+        if (user.huntingTickets < 20) {
+            const now = new Date();
+            const lastRegen = new Date(user.lastTicketRegen);
+            const timeDiff = now - lastRegen;
+            const ticketsToRegen = Math.floor(timeDiff / (5 * 60 * 1000)); // 5분마다 1장
+            
+            if (ticketsToRegen > 0) {
+                user.huntingTickets = Math.min(20, user.huntingTickets + ticketsToRegen);
+                user.lastTicketRegen = now;
+                needsSave = true;
+            }
+        }
+        
+        if (needsSave) {
+            await user.save();
+        }
+        
         return user;
     } catch (error) {
         console.error('유저 조회/생성 오류:', error);
@@ -10117,7 +10138,7 @@ client.on('interactionCreate', async (interaction) => {
                     const embed = new EmbedBuilder()
                         .setColor('#ff6b6b')
                         .setTitle('🗡️ 사냥터 선택')
-                        .setDescription('사냥할 지역을 선택하세요');
+                        .setDescription(`사냥할 지역을 선택하세요\n\n🎫 **남은 사냥권**: ${user.huntingTickets || 20}/20\n💡 5분마다 1장씩 재생성됩니다`);
                     
                     const huntingButtons = new ActionRowBuilder();
                     const startIndex = currentPage * itemsPerPage;
@@ -15507,8 +15528,8 @@ client.on('interactionCreate', async (interaction) => {
             const huntingEmbed = new EmbedBuilder()
                 .setColor('#8b0000')
                 .setTitle('⚔️ 사냥터 선택')
-                .setDescription(`**${user.nickname || interaction.user.username}**님의 사냥터 목록\n\n현재 레벨: **Lv.${user.level}**`)
-                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages} | 사냥터를 선택하세요!` });
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 사냥터 목록\n\n현재 레벨: **Lv.${user.level}**\n🎫 **남은 사냥권**: ${user.huntingTickets || 20}/20`)
+                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages} | 사냥터를 선택하세요! | 5분마다 1장 재생성` });
 
             // 사냥터별 필드 추가
             currentAreas.forEach(area => {
@@ -15953,6 +15974,25 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.reply({ content: '존재하지 않는 사냥터입니다!', flags: 64 });
                 return;
             }
+            
+            // 사냥권 확인
+            if (!user.huntingTickets || user.huntingTickets <= 0) {
+                const nextTicketTime = new Date(user.lastTicketRegen || Date.now());
+                nextTicketTime.setMinutes(nextTicketTime.getMinutes() + 5);
+                const timeRemaining = Math.max(0, nextTicketTime - Date.now());
+                const minutes = Math.floor(timeRemaining / 60000);
+                const seconds = Math.floor((timeRemaining % 60000) / 1000);
+                
+                await interaction.reply({ 
+                    content: `🎫 사냥권이 부족합니다!\n\n현재 사냥권: **${user.huntingTickets || 0}/20**\n다음 사냥권 재생성: **${minutes}분 ${seconds}초** 후`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 사냥권 차감
+            user.huntingTickets -= 1;
+            await user.save();
             
             // 사냥 시작 - 3단계 프로세스
             // 사냥터별 GIF 설정
@@ -25290,7 +25330,6 @@ client.on('interactionCreate', async (interaction) => {
         
         // 융합 돌아가기
         else if (interaction.customId === 'fusion_back') {
-            const fusionMenu = MENU_ITEMS['fusion'];
             const menuEmbed = new EmbedBuilder()
                 .setColor('#ff1493')
                 .setTitle('⚡ 에너지 융합 시스템')
@@ -25746,7 +25785,7 @@ client.on('interactionCreate', async (interaction) => {
                 intelligence: '🧠 지능',
                 vitality: '❤️ 체력',
                 luck: '🍀 행운'
-            }[stat];
+            }[stat] || stat;
             
             await interaction.reply({
                 content: `✅ ${statName}이(가) ${amount} 증가했습니다! (${oldValue} → ${user.stats[stat]})`,
