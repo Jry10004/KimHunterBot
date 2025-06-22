@@ -13949,23 +13949,61 @@ client.on('interactionCreate', async (interaction) => {
                 const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
                 const barLength = 20;
                 const filledLength = Math.floor((progress / 100) * barLength);
-                const progressBar = '🟩'.repeat(filledLength) + '⬜'.repeat(barLength - filledLength);
+                // 개발자 스타일 진행률 바 생성
+                const progressBar = `[${'█'.repeat(filledLength)}${'-'.repeat(barLength - filledLength)}]`;
                 
-                // 초기 카운트다운 메시지 생성 (큰 시계 이미지 제거)
+                // 개발자 스타일 카운트다운 메시지 생성
                 const countdownEmbed = new EmbedBuilder()
-                    .setColor('#ff0000')
-                    .setTitle('🚀 김헌터 RPG 오픈 카운트다운!')
-                    .setDescription('강화왕 김헌터를 기다려주신 성남 핫플레이스분들 대단히 감사합니다 정식 오픈전 마무리 작업 진행중입니다. 모든 기능이 잠겨있습니다!\n오픈 시간까지 조금만 기다려주세요!')
+                    .setColor('#1a1a1a')
+                    .setAuthor({ 
+                        name: 'KimHunter RPG Launch System', 
+                        iconURL: 'attachment://kim_main.png' 
+                    })
+                    .setTitle('SYSTEM > Launch Countdown Active')
+                    .setDescription('```yaml\nStatus: MAINTENANCE MODE\nEnvironment: Production\nBuild: v2.0.0-stable\nRegion: KR-Seoul\n\nAll features are currently locked during pre-launch maintenance.\nThank you for your patience.\n```')
                     .addFields(
-                        { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
-                        { name: '⏱️ 남은 시간', value: `\`\`\`fix\n${countdownDisplay}\n\`\`\``, inline: false },
-                        { name: '📊 진행률', value: `${progressBar} ${progress.toFixed(1)}%`, inline: false }
+                        { 
+                            name: 'SCHEDULED LAUNCH TIME', 
+                            value: `\`\`\`\n${launchTime.toLocaleString('ko-KR', { 
+                                year: 'numeric',
+                                month: '2-digit', 
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: false
+                            })} KST\n\`\`\``, 
+                            inline: false 
+                        },
+                        { 
+                            name: 'TIME REMAINING', 
+                            value: `\`\`\`ansi\n\x1b[1;32m${countdownDisplay}\x1b[0m\n\`\`\``, 
+                            inline: true 
+                        },
+                        { 
+                            name: 'PROGRESS', 
+                            value: `\`\`\`\n${progressBar} ${progress.toFixed(2)}%\n\`\`\``, 
+                            inline: true 
+                        },
+                        {
+                            name: 'SYSTEM INFO',
+                            value: `\`\`\`fix\nServer: Online\nDatabase: Connected\nCache: Ready\nModules: Loaded\n\`\`\``,
+                            inline: false
+                        }
                     )
-                    .setThumbnail('https://i.imgur.com/AfFp7pu.png') // 작은 시계 이미지 URL (예시)
-                    .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다! | 🕓 매초 업데이트' })
+                    .setFooter({ 
+                        text: `PID: ${process.pid} | Node: ${process.version} | Memory: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)}MB` 
+                    })
                     .setTimestamp();
                 
-                const message = await channel.send({ embeds: [countdownEmbed] });
+                // kim_main.png 파일 첨부
+                const kimMainPath = path.join(__dirname, 'resource', 'kim_main.png');
+                const files = [];
+                if (fs.existsSync(kimMainPath)) {
+                    files.push(new AttachmentBuilder(kimMainPath, { name: 'kim_main.png' }));
+                }
+                
+                const message = await channel.send({ embeds: [countdownEmbed], files });
                 openCountdown.messageId = message.id;
                 
                 // 업데이트 카운터 (이미지 업데이트 주기 조절용)
@@ -13987,10 +14025,36 @@ client.on('interactionCreate', async (interaction) => {
                             
                             const launchEmbed = new EmbedBuilder()
                                 .setColor('#00ff00')
-                                .setTitle('🎉 김헌터 RPG 정식 오픈!')
-                                .setDescription('**게임이 오픈되었습니다!**\n이제 모든 기능을 사용할 수 있습니다!')
+                                .setAuthor({ 
+                                    name: 'KimHunter RPG Launch System', 
+                                    iconURL: 'attachment://kim_main.png' 
+                                })
+                                .setTitle('SYSTEM > Launch Complete')
+                                .setDescription('```yaml\nStatus: ONLINE\nEnvironment: Production\nBuild: v2.0.0-stable\nRegion: KR-Seoul\n\n✓ All systems operational\n✓ Features unlocked\n✓ Database synchronized\n✓ Game server ready\n\nWelcome to KimHunter RPG!\n```')
+                                .addFields(
+                                    {
+                                        name: 'LAUNCH TIME',
+                                        value: `\`\`\`\n${new Date().toLocaleString('ko-KR', { 
+                                            year: 'numeric',
+                                            month: '2-digit', 
+                                            day: '2-digit',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            second: '2-digit',
+                                            hour12: false
+                                        })} KST\n\`\`\``,
+                                        inline: true
+                                    },
+                                    {
+                                        name: 'SERVER STATUS',
+                                        value: '```diff\n+ ONLINE\n```',
+                                        inline: true
+                                    }
+                                )
                                 .setImage('attachment://celebration.png')
-                                .setFooter({ text: '🎮 즐거운 게임 되세요!' })
+                                .setFooter({ 
+                                    text: `Launch successful | PID: ${process.pid} | Node: ${process.version}` 
+                                })
                                 .setTimestamp();
                             
                             const files = [];
@@ -13998,10 +14062,16 @@ client.on('interactionCreate', async (interaction) => {
                                 files.push(new AttachmentBuilder(celebrationBuffer, { name: 'celebration.png' }));
                             }
                             
+                            // kim_main.png 파일 첨부
+                            const kimMainPath = path.join(__dirname, 'resource', 'kim_main.png');
+                            if (fs.existsSync(kimMainPath)) {
+                                files.push(new AttachmentBuilder(kimMainPath, { name: 'kim_main.png' }));
+                            }
+                            
                             await message.edit({ embeds: [launchEmbed], files });
                             
                             // 전체 공지
-                            await channel.send('@everyone 🎊 **김헌터 RPG가 정식 오픈되었습니다!**');
+                            await channel.send('```\n🟢 SYSTEM NOTIFICATION\n\nKimHunter RPG is now ONLINE.\nAll features have been unlocked.\n\nThank you for waiting.\n```\n@everyone');
                         } else {
                             // 카운트다운 업데이트
                             const updateDays = Math.floor(remaining / (1000 * 60 * 60 * 24));
@@ -14044,34 +14114,87 @@ client.on('interactionCreate', async (interaction) => {
                             const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
                             const barLength = 20;
                             const filledLength = Math.floor((progress / 100) * barLength);
-                            const progressBar = '🟩'.repeat(filledLength) + '⬜'.repeat(barLength - filledLength);
+                            // 개발자 스타일 진행률 바
+                            const progressBar = `[${'█'.repeat(filledLength)}${'-'.repeat(barLength - filledLength)}]`;
                             
                             // 색상 변경 (남은 시간에 따라)
-                            let embedColor = '#ff0000'; // 빨강
-                            if (remaining < 60 * 60 * 1000) embedColor = '#ff6600'; // 주황 (1시간 미만)
-                            if (remaining < 10 * 60 * 1000) embedColor = '#ffff00'; // 노랑 (10분 미만)
-                            if (remaining < 60 * 1000) embedColor = '#00ff00'; // 초록 (1분 미만)
+                            let embedColor = '#1a1a1a'; // 기본 다크 테마
+                            let statusText = 'MAINTENANCE MODE';
+                            if (remaining < 60 * 60 * 1000) {
+                                embedColor = '#2d2d2d'; // 1시간 미만
+                                statusText = 'PREPARING LAUNCH';
+                            }
+                            if (remaining < 10 * 60 * 1000) {
+                                embedColor = '#ff6600'; // 10분 미만
+                                statusText = 'FINAL CHECKS';
+                            }
+                            if (remaining < 60 * 1000) {
+                                embedColor = '#00ff00'; // 1분 미만
+                                statusText = 'LAUNCHING SOON';
+                            }
                             
-                            // 임베드 업데이트
-                            const description = specialEffect 
-                                ? `강화왕 김헌터를 기다려주신 성남 핫플레이스분들 대단히 감사합니다 정식 오픈전 마무리 작업 진행중입니다. 모든 기능이 잠겨있습니다!\n오픈 시간까지 조금만 기다려주세요!${specialEffect}`
-                                : '강화왕 김헌터를 기다려주신 성남 핫플레이스분들 대단히 감사합니다 정식 오픈전 마무리 작업 진행중입니다. 모든 기능이 잠겨있습니다!\n오픈 시간까지 조금만 기다려주세요!';
+                            // 시스템 상태 업데이트
+                            let systemStatus = `Status: ${statusText}\nEnvironment: Production\nBuild: v2.0.0-stable\nRegion: KR-Seoul`;
+                            
+                            if (specialEffect && remaining < 11000) {
+                                const finalSeconds = Math.ceil(remaining / 1000);
+                                systemStatus += `\n\nCOUNTDOWN: T-${finalSeconds} seconds`;
+                            }
+                            
+                            systemStatus += '\n\nAll features are currently locked during pre-launch maintenance.\nThank you for your patience.';
                             
                             const updatedEmbed = new EmbedBuilder()
                                 .setColor(embedColor)
-                                .setTitle('🚀 김헌터 RPG 오픈 카운트다운!')
-                                .setDescription(description)
+                                .setAuthor({ 
+                                    name: 'KimHunter RPG Launch System', 
+                                    iconURL: 'attachment://kim_main.png' 
+                                })
+                                .setTitle('SYSTEM > Launch Countdown Active')
+                                .setDescription(`\`\`\`yaml\n${systemStatus}\n\`\`\``)
                                 .addFields(
-                                    { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
-                                    { name: '⏱️ 남은 시간', value: `\`\`\`fix\n${countdownDisplay}\n\`\`\``, inline: false },
-                                    { name: '📊 진행률', value: `${progressBar} ${progress.toFixed(1)}%`, inline: false }
+                                    { 
+                                        name: 'SCHEDULED LAUNCH TIME', 
+                                        value: `\`\`\`\n${openCountdown.launchTime.toLocaleString('ko-KR', { 
+                                            year: 'numeric',
+                                            month: '2-digit', 
+                                            day: '2-digit',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            second: '2-digit',
+                                            hour12: false
+                                        })} KST\n\`\`\``, 
+                                        inline: false 
+                                    },
+                                    { 
+                                        name: 'TIME REMAINING', 
+                                        value: `\`\`\`ansi\n\x1b[1;${remaining < 60000 ? '31' : '32'}m${countdownDisplay}\x1b[0m\n\`\`\``, 
+                                        inline: true 
+                                    },
+                                    { 
+                                        name: 'PROGRESS', 
+                                        value: `\`\`\`\n${progressBar} ${progress.toFixed(2)}%\n\`\`\``, 
+                                        inline: true 
+                                    },
+                                    {
+                                        name: 'SYSTEM INFO',
+                                        value: `\`\`\`fix\nServer: Online\nDatabase: Connected\nCache: Ready\nModules: Loaded\n\`\`\``,
+                                        inline: false
+                                    }
                                 )
-                                .setThumbnail('https://i.imgur.com/AfFp7pu.png') // 작은 시계 이미지
-                                .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다! | 🕓 매초 업데이트' })
+                                .setFooter({ 
+                                    text: `PID: ${process.pid} | Node: ${process.version} | Memory: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)}MB | Uptime: ${Math.floor(process.uptime())}s` 
+                                })
                                 .setTimestamp();
                             
-                            // 텍스트만 업데이트 (큰 시계 이미지 제거)
-                            await message.edit({ embeds: [updatedEmbed] });
+                            // kim_main.png 파일 첨부
+                            const kimMainPath = path.join(__dirname, 'resource', 'kim_main.png');
+                            const files = [];
+                            if (fs.existsSync(kimMainPath)) {
+                                files.push(new AttachmentBuilder(kimMainPath, { name: 'kim_main.png' }));
+                            }
+                            
+                            // 업데이트
+                            await message.edit({ embeds: [updatedEmbed], files });
                         }
                     } catch (error) {
                         console.error('카운트다운 업데이트 오류:', error);
