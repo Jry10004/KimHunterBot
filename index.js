@@ -12037,7 +12037,11 @@ client.on('interactionCreate', async (interaction) => {
             currentItems.forEach((item, index) => {
                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel})` : '';
                 const equippedText = item.equipped ? ' [장착중]' : '';
-                const statsText = `공격: ${item.stats.attack[0]}-${item.stats.attack[1]}, 방어: ${item.stats.defense[0]}-${item.stats.defense[1]}`;
+                const attack = item.stats.attack || 0;
+                const defense = item.stats.defense || 0;
+                const statsText = Array.isArray(attack) ? 
+                    `공격: ${attack[0]}-${attack[1]}, 방어: ${defense[0]}-${defense[1]}` :
+                    `공격: ${attack}, 방어: ${defense}`;
                 
                 categoryEmbed.addFields({
                     name: `${startIndex + index + 1}. ${item.name}${enhanceText}${equippedText}`,
@@ -13037,10 +13041,35 @@ client.on('interactionCreate', async (interaction) => {
                 let statsText = '';
                 if (item.stats) {
                     const statParts = [];
-                    if (item.stats.attack && item.stats.attack[0] > 0) statParts.push(`공격력: ${item.stats.attack[0]}-${item.stats.attack[1]}`);
-                    if (item.stats.defense && item.stats.defense[0] > 0) statParts.push(`방어력: ${item.stats.defense[0]}-${item.stats.defense[1]}`);
-                    if (item.stats.dodge && item.stats.dodge[0] > 0) statParts.push(`회피력: ${item.stats.dodge[0]}-${item.stats.dodge[1]}`);
-                    if (item.stats.luck && item.stats.luck[0] > 0) statParts.push(`행운: ${item.stats.luck[0]}-${item.stats.luck[1]}`);
+                    const attack = item.stats.attack || 0;
+                    const defense = item.stats.defense || 0;
+                    const dodge = item.stats.dodge || 0;
+                    const luck = item.stats.luck || 0;
+                    
+                    if (Array.isArray(attack) && attack[0] > 0) {
+                        statParts.push(`공격력: ${attack[0]}-${attack[1]}`);
+                    } else if (attack > 0) {
+                        statParts.push(`공격력: ${attack}`);
+                    }
+                    
+                    if (Array.isArray(defense) && defense[0] > 0) {
+                        statParts.push(`방어력: ${defense[0]}-${defense[1]}`);
+                    } else if (defense > 0) {
+                        statParts.push(`방어력: ${defense}`);
+                    }
+                    
+                    if (Array.isArray(dodge) && dodge[0] > 0) {
+                        statParts.push(`회피력: ${dodge[0]}-${dodge[1]}`);
+                    } else if (dodge > 0) {
+                        statParts.push(`회피력: ${dodge}`);
+                    }
+                    
+                    if (Array.isArray(luck) && luck[0] > 0) {
+                        statParts.push(`행운: ${luck[0]}-${luck[1]}`);
+                    } else if (luck > 0) {
+                        statParts.push(`행운: ${luck}`);
+                    }
+                    
                     statsText = statParts.join(', ');
                 }
                 
@@ -19392,10 +19421,34 @@ client.on('interactionCreate', async (interaction) => {
                 // 스탯 정보 추가
                 const stats = item.stats || {};
                 let statsText = '';
-                if (stats.attack && stats.attack[0] > 0) statsText += ` | 공격: ${stats.attack[0]}-${stats.attack[1]}`;
-                if (stats.defense && stats.defense[0] > 0) statsText += ` | 방어: ${stats.defense[0]}-${stats.defense[1]}`;
-                if (stats.dodge && stats.dodge[0] > 0) statsText += ` | 회피: ${stats.dodge[0]}-${stats.dodge[1]}`;
-                if (stats.luck && stats.luck[0] > 0) statsText += ` | 행운: ${stats.luck[0]}-${stats.luck[1]}`;
+                const attack = stats.attack || 0;
+                const defense = stats.defense || 0;
+                const dodge = stats.dodge || 0;
+                const luck = stats.luck || 0;
+                
+                if (Array.isArray(attack) && attack[0] > 0) {
+                    statsText += ` | 공격: ${attack[0]}-${attack[1]}`;
+                } else if (attack > 0) {
+                    statsText += ` | 공격: ${attack}`;
+                }
+                
+                if (Array.isArray(defense) && defense[0] > 0) {
+                    statsText += ` | 방어: ${defense[0]}-${defense[1]}`;
+                } else if (defense > 0) {
+                    statsText += ` | 방어: ${defense}`;
+                }
+                
+                if (Array.isArray(dodge) && dodge[0] > 0) {
+                    statsText += ` | 회피: ${dodge[0]}-${dodge[1]}`;
+                } else if (dodge > 0) {
+                    statsText += ` | 회피: ${dodge}`;
+                }
+                
+                if (Array.isArray(luck) && luck[0] > 0) {
+                    statsText += ` | 행운: ${luck[0]}-${luck[1]}`;
+                } else if (luck > 0) {
+                    statsText += ` | 행운: ${luck}`;
+                }
                 
                 equipmentList += `**${index + 1}. ${equipped.displayName}**: ${item.name}${enhanceText}${statsText}\n`;
             });
@@ -25005,7 +25058,201 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
-            await interaction.reply({ content: '🎯 수동 융합을 시작합니다...\n/융합수동 명령어를 사용해주세요!', flags: 64 });
+            // 수동 융합 인터페이스 직접 표시
+            await interaction.deferUpdate();
+            
+            // 보유 조각 계산
+            const fragments = user.energyFragments.fragments;
+            let fragmentList = [];
+            for (let i = 1; i <= 50; i++) {
+                const count = fragments.get(i.toString()) || 0;
+                if (count > 0) {
+                    fragmentList.push({ level: i, count: count });
+                }
+            }
+            
+            if (fragmentList.length === 0) {
+                return await interaction.editReply({ 
+                    content: '❌ 보유한 에너지 조각이 없습니다! 먼저 채굴을 해보세요.'
+                });
+            }
+            
+            // 융합 가능한 조각만 필터링 (3개 이상)
+            const fusableFragments = fragmentList.filter(f => f.count >= 3 && f.level < 50);
+            
+            if (fusableFragments.length === 0) {
+                return await interaction.editReply({ 
+                    content: '❌ 융합 가능한 조각이 없습니다! (같은 레벨 3개 이상 필요)'
+                });
+            }
+            
+            // 드롭다운 메뉴 생성
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('select_fragment_fusion')
+                .setPlaceholder('융합할 조각을 선택하세요');
+            
+            fusableFragments.forEach(fragment => {
+                const emoji = fragment.level <= 10 ? '⚡' : fragment.level <= 25 ? '💎' : '🔮';
+                selectMenu.addOptions({
+                    label: `Lv.${fragment.level} 조각 (보유: ${fragment.count}개)`,
+                    description: `3개를 사용하여 Lv.${fragment.level + 1} 조각 1개로 융합`,
+                    value: `${fragment.level}`,
+                    emoji: emoji
+                });
+            });
+            
+            const embed = new EmbedBuilder()
+                .setColor('#00ffff')
+                .setTitle('🎯 수동 융합')
+                .setDescription('융합할 조각을 선택하세요.\n같은 레벨 조각 3개 → 다음 레벨 1개')
+                .addFields(
+                    { name: '📊 현재 실패 스택', value: `${user.energyFragments.failureStack}/10`, inline: true },
+                    { name: '🎫 오늘 융합 횟수', value: `${user.energyFragments.dailyFusions}/20`, inline: true }
+                );
+            
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('fusion_menu')
+                        .setLabel('🔙 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [embed], 
+                components: [row, backButton] 
+            });
+        }
+        
+        // 수동 융합 조각 선택 처리
+        else if (interaction.customId === 'select_fragment_fusion') {
+            if (!interaction.isStringSelectMenu()) return;
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const selectedLevel = parseInt(interaction.values[0]);
+            const currentCount = user.energyFragments.fragments.get(selectedLevel.toString()) || 0;
+            
+            if (currentCount < 3) {
+                await interaction.reply({ content: '❌ 조각이 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 일일 융합 제한 체크
+            const today = new Date().toDateString();
+            if (user.energyFragments.dailyFusionDate !== today) {
+                user.energyFragments.dailyFusions = 0;
+                user.energyFragments.dailyFusionDate = today;
+            }
+            
+            if (user.energyFragments.dailyFusions >= 20 && user.energyFragments.fusionTickets <= 0) {
+                await interaction.reply({ 
+                    content: '❌ 일일 융합 제한(20회)에 도달했습니다!\n융합권을 사용하거나 내일 다시 시도해주세요.', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 융합 진행
+            await interaction.deferUpdate();
+            
+            // 성공률 계산
+            let successRate = 85; // 기본 성공률
+            if (selectedLevel >= 11 && selectedLevel <= 25) successRate = 70;
+            else if (selectedLevel > 25) successRate = 50;
+            
+            // 보너스 적용
+            successRate += user.energyFragments.permanentSuccessBonus;
+            successRate += user.energyFragments.weeklyRankingBonus;
+            
+            // 실패 스택 적용
+            if (user.energyFragments.failureStack >= 10) {
+                successRate = 100;
+            }
+            
+            const isSuccess = Math.random() * 100 < successRate;
+            
+            // 조각 차감
+            user.energyFragments.fragments.set(selectedLevel.toString(), currentCount - 3);
+            
+            let resultEmbed;
+            if (isSuccess) {
+                // 성공
+                const nextLevel = selectedLevel + 1;
+                const nextCount = user.energyFragments.fragments.get(nextLevel.toString()) || 0;
+                user.energyFragments.fragments.set(nextLevel.toString(), nextCount + 1);
+                
+                user.energyFragments.successfulFusions++;
+                user.energyFragments.consecutiveSuccess++;
+                user.energyFragments.failureStack = 0; // 성공 시 스택 초기화
+                
+                if (nextLevel > user.energyFragments.highestLevel) {
+                    user.energyFragments.highestLevel = nextLevel;
+                }
+                
+                resultEmbed = new EmbedBuilder()
+                    .setColor('#00ff00')
+                    .setTitle('✅ 융합 성공!')
+                    .setDescription(`Lv.${selectedLevel} 조각 3개 → Lv.${nextLevel} 조각 1개`)
+                    .addFields(
+                        { name: '🎯 성공률', value: `${successRate}%`, inline: true },
+                        { name: '🔥 연속 성공', value: `${user.energyFragments.consecutiveSuccess}회`, inline: true }
+                    );
+            } else {
+                // 실패
+                user.energyFragments.consecutiveSuccess = 0;
+                
+                // 50% 확률로 실패 스택 증가
+                if (Math.random() < 0.5) {
+                    user.energyFragments.failureStack++;
+                    resultEmbed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('❌ 융합 실패!')
+                        .setDescription(`Lv.${selectedLevel} 조각 3개가 소멸되었습니다...`)
+                        .addFields(
+                            { name: '💔 실패 스택', value: `+1 (현재: ${user.energyFragments.failureStack}/10)`, inline: true },
+                            { name: '🎯 성공률', value: `${successRate}%`, inline: true }
+                        );
+                } else {
+                    resultEmbed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('❌ 융합 실패!')
+                        .setDescription(`Lv.${selectedLevel} 조각 3개가 소멸되었습니다...`)
+                        .addFields(
+                            { name: '💔 실패 스택', value: `변화 없음 (현재: ${user.energyFragments.failureStack}/10)`, inline: true },
+                            { name: '🎯 성공률', value: `${successRate}%`, inline: true }
+                        );
+                }
+            }
+            
+            // 융합 횟수 증가
+            user.energyFragments.dailyFusions++;
+            user.energyFragments.totalFusions++;
+            
+            await user.save();
+            
+            // 다시 융합 버튼
+            const continueButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('fragment_manual_fusion')
+                        .setLabel('🔄 계속 융합하기')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('fusion_menu')
+                        .setLabel('🔙 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({ 
+                embeds: [resultEmbed], 
+                components: [continueButton] 
+            });
         }
         
         // 융합 정보
@@ -25471,8 +25718,10 @@ client.on('interactionCreate', async (interaction) => {
                 luck: '🍀 행운'
             }[stat];
             
+            const oldStat = user.stats[stat] - amount;
+            
             await interaction.reply({
-                content: `✅ ${statName}이(가) ${amount} 증가했습니다! (현재: ${user.stats[stat]})`,
+                content: `✅ ${statName}이(가) ${amount} 증가했습니다! (${oldStat} → ${user.stats[stat]})`,
                 flags: 64
             });
         }
