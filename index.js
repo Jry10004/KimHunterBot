@@ -13955,7 +13955,7 @@ client.on('interactionCreate', async (interaction) => {
                 const countdownEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
                     .setTitle('🚀 김헌터 RPG 오픈 카운트다운!')
-                    .setDescription('**모든 기능이 잠겨있습니다!**\n오픈 시간까지 기다려주세요!')
+                    .setDescription('강화왕 김헌터를 기다려주신 성남 핫플레이스분들 대단히 감사합니다 정식 오픈전 마무리 작업 진행중입니다. 모든 기능이 잠겨있습니다!\n오픈 시간까지 조금만 기다려주세요!')
                     .addFields(
                         { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
                         { name: '⏱️ 남은 시간', value: `\`\`\`fix\n${countdownDisplay}\n\`\`\``, inline: false },
@@ -14054,8 +14054,8 @@ client.on('interactionCreate', async (interaction) => {
                             
                             // 임베드 업데이트
                             const description = specialEffect 
-                                ? `**모든 기능이 잠겨있습니다!**\n오픈 시간까지 기다려주세요!${specialEffect}`
-                                : '**모든 기능이 잠겨있습니다!**\n오픈 시간까지 기다려주세요!';
+                                ? `강화왕 김헌터를 기다려주신 성남 핫플레이스분들 대단히 감사합니다 정식 오픈전 마무리 작업 진행중입니다. 모든 기능이 잠겨있습니다!\n오픈 시간까지 조금만 기다려주세요!${specialEffect}`
+                                : '강화왕 김헌터를 기다려주신 성남 핫플레이스분들 대단히 감사합니다 정식 오픈전 마무리 작업 진행중입니다. 모든 기능이 잠겨있습니다!\n오픈 시간까지 조금만 기다려주세요!';
                             
                             const updatedEmbed = new EmbedBuilder()
                                 .setColor(embedColor)
@@ -21698,7 +21698,7 @@ client.on('interactionCreate', async (interaction) => {
                 interaction.user.id, 
                 1000, 
                 user, 
-                interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
+                interaction.user.displayAvatarURL({ dynamic: true, size: 128 }),
                 interaction.channel
             );
             
@@ -21717,7 +21717,7 @@ client.on('interactionCreate', async (interaction) => {
                 interaction.user.id, 
                 5000, 
                 user, 
-                interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
+                interaction.user.displayAvatarURL({ dynamic: true, size: 128 }),
                 interaction.channel
             );
             
