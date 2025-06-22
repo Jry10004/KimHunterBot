@@ -25475,6 +25475,7 @@ client.on('interactionCreate', async (interaction) => {
                 content: `✅ ${statName}이(가) ${amount} 증가했습니다! (현재: ${user.stats[stat]})`,
                 flags: 64
             });
+        }
         
         // 능력치 포인트 버튼 처리 (구버전)
         else if (interaction.customId.startsWith('stat_add_')) {
