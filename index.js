@@ -9230,6 +9230,8 @@ async function getUser(discordId) {
             console.log(`새 유저 생성: ${discordId}`);
         }
         
+        let needsSave = false;
+        
         // 인벤토리 데이터 무결성 검사 및 복구
         const needsInventoryFix = validateAndFixInventory(user);
         
