@@ -36,7 +36,9 @@ let openCountdown = {
     launchTime: null,
     channelId: null,
     messageId: null,
-    interval: null
+    interval: null,
+    totalTime: null,
+    startTime: null
 };
 
 // 카운트다운 체크 함수
@@ -217,167 +219,10 @@ async function createAnimatedCountdown(seconds) {
     }
 }
 
-// 카운트다운 시계 이미지 생성
-async function createCountdownClock(remainingTime) {
-    try {
-        const width = 800;
-        const height = 400;
-        
-        // 새 이미지 생성
-        const image = new Jimp(width, height, 0x1a1a2eff);
-        
-        // 남은 시간 계산
-        const days = Math.floor(remainingTime / (1000 * 60 * 60 * 24));
-        const hours = Math.floor((remainingTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const minutes = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((remainingTime % (1000 * 60)) / 1000);
-        
-        // 폰트 로드
-        const font64 = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE);
-        const font32 = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
-        const font16 = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-        
-        // 배경 그라데이션 효과
-        for (let y = 0; y < height; y++) {
-            const gradient = Math.floor(255 * (1 - y / height) * 0.3);
-            const color = Jimp.rgbaToInt(26 + gradient, 26 + gradient, 46 + gradient, 255);
-            for (let x = 0; x < width; x++) {
-                image.setPixelColor(color, x, y);
-            }
-        }
-        
-        // 테두리 그리기
-        const borderColor = Jimp.rgbaToInt(255, 215, 0, 255); // 금색
-        for (let i = 0; i < 5; i++) {
-            // 상단
-            for (let x = 0; x < width; x++) {
-                image.setPixelColor(borderColor, x, i);
-            }
-            // 하단
-            for (let x = 0; x < width; x++) {
-                image.setPixelColor(borderColor, x, height - 1 - i);
-            }
-            // 좌측
-            for (let y = 0; y < height; y++) {
-                image.setPixelColor(borderColor, i, y);
-            }
-            // 우측
-            for (let y = 0; y < height; y++) {
-                image.setPixelColor(borderColor, width - 1 - i, y);
-            }
-        }
-        
-        // 제목
-        const title = "KIM HUNTER RPG COUNTDOWN";
-        const titleWidth = Jimp.measureText(font32, title);
-        image.print(font32, (width - titleWidth) / 2, 40, title);
-        
-        // 시계 표시
-        let timeText = "";
-        let yPosition = 150;
-        
-        if (days > 0) {
-            // 일수가 있을 때
-            timeText = `${String(days).padStart(2, '0')}D ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        } else {
-            // 일수가 없을 때 (더 큰 글씨)
-            timeText = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        }
-        
-        // 디지털 시계 효과를 위한 배경
-        const clockBgColor = Jimp.rgbaToInt(0, 0, 0, 200);
-        const clockX = 150;
-        const clockY = yPosition - 10;
-        const clockWidth = 500;
-        const clockHeight = 100;
-        
-        for (let y = clockY; y < clockY + clockHeight; y++) {
-            for (let x = clockX; x < clockX + clockWidth; x++) {
-                image.setPixelColor(clockBgColor, x, y);
-            }
-        }
-        
-        // 시계 테두리
-        const clockBorderColor = Jimp.rgbaToInt(0, 255, 255, 255); // 시안색
-        for (let i = 0; i < 2; i++) {
-            // 상단
-            for (let x = clockX; x < clockX + clockWidth; x++) {
-                image.setPixelColor(clockBorderColor, x, clockY + i);
-            }
-            // 하단
-            for (let x = clockX; x < clockX + clockWidth; x++) {
-                image.setPixelColor(clockBorderColor, x, clockY + clockHeight - 1 - i);
-            }
-            // 좌측
-            for (let y = clockY; y < clockY + clockHeight; y++) {
-                image.setPixelColor(clockBorderColor, clockX + i, y);
-            }
-            // 우측
-            for (let y = clockY; y < clockY + clockHeight; y++) {
-                image.setPixelColor(clockBorderColor, clockX + clockWidth - 1 - i, y);
-            }
-        }
-        
-        // 시간 텍스트
-        const timeWidth = Jimp.measureText(font64, timeText);
-        image.print(font64, (width - timeWidth) / 2, yPosition, timeText);
-        
-        // 진행률 바
-        const progressY = 300;
-        const progressHeight = 30;
-        const progressWidth = 600;
-        const progressX = (width - progressWidth) / 2;
-        
-        // 진행률 계산
-        const totalTime = openCountdown.totalTime || (24 * 60 * 60 * 1000); // 기본값 24시간
-        const elapsed = totalTime - remainingTime;
-        const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
-        
-        // 진행률 바 배경
-        const progressBgColor = Jimp.rgbaToInt(50, 50, 50, 255);
-        for (let y = progressY; y < progressY + progressHeight; y++) {
-            for (let x = progressX; x < progressX + progressWidth; x++) {
-                image.setPixelColor(progressBgColor, x, y);
-            }
-        }
-        
-        // 진행률 바 채우기
-        const filledWidth = Math.floor((progress / 100) * progressWidth);
-        let progressColor;
-        
-        if (remainingTime < 60 * 60 * 1000) { // 1시간 미만
-            progressColor = Jimp.rgbaToInt(255, 255, 0, 255); // 노란색
-        } else if (remainingTime < 6 * 60 * 60 * 1000) { // 6시간 미만
-            progressColor = Jimp.rgbaToInt(255, 165, 0, 255); // 주황색
-        } else {
-            progressColor = Jimp.rgbaToInt(0, 255, 0, 255); // 초록색
-        }
-        
-        for (let y = progressY + 2; y < progressY + progressHeight - 2; y++) {
-            for (let x = progressX + 2; x < progressX + filledWidth - 2; x++) {
-                image.setPixelColor(progressColor, x, y);
-            }
-        }
-        
-        // 진행률 텍스트
-        const progressText = `${progress.toFixed(1)}%`;
-        const progressTextWidth = Jimp.measureText(font16, progressText);
-        image.print(font16, (width - progressTextWidth) / 2, progressY + progressHeight + 10, progressText);
-        
-        // 하단 메시지
-        const bottomMessage = remainingTime < 60 * 60 * 1000 ? "OPENING SOON!" : "PLEASE WAIT FOR LAUNCH!";
-        const bottomWidth = Jimp.measureText(font16, bottomMessage);
-        image.print(font16, (width - bottomWidth) / 2, height - 40, bottomMessage);
-        
-        // 버퍼로 변환
-        const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
-        return buffer;
-        
-    } catch (error) {
-        console.error('카운트다운 시계 이미지 생성 오류:', error);
-        return null;
-    }
-}
+// 카운트다운 시계 이미지 생성 (사용 안함 - 주석처리)
+// async function createCountdownClock(remainingTime) {
+//     // 큰 시계 이미지 생성 코드 제거
+// }
 
 // 보스 스폰 함수
 async function spawnBoss(channel) {
@@ -9752,12 +9597,10 @@ const commands = [
             subcommand
                 .setName('시작')
                 .setDescription('카운트다운 시작')
-                .addIntegerOption(option =>
+                .addStringOption(option =>
                     option.setName('시간')
-                        .setDescription('카운트다운 시간 (시간 단위)')
-                        .setRequired(true)
-                        .setMinValue(1)
-                        .setMaxValue(168)) // 최대 7일
+                        .setDescription('오픈 시간 (예: 2025-01-15 20:00 또는 시간 단위: 24)')
+                        .setRequired(true))
                 .addChannelOption(option =>
                     option.setName('채널')
                         .setDescription('카운트다운을 표시할 채널')
@@ -14051,7 +13894,7 @@ client.on('interactionCreate', async (interaction) => {
             const subcommand = interaction.options.getSubcommand();
             
             if (subcommand === '시작') {
-                const hours = interaction.options.getInteger('시간');
+                const timeInput = interaction.options.getString('시간');
                 const channel = interaction.options.getChannel('채널');
                 
                 // 기존 카운트다운 중지
@@ -14059,9 +13902,28 @@ client.on('interactionCreate', async (interaction) => {
                     clearInterval(openCountdown.interval);
                 }
                 
+                // 시간 파싱
+                let launchTime;
+                if (timeInput.includes('-')) {
+                    // 날짜 형식 (예: 2025-01-15 20:00)
+                    launchTime = new Date(timeInput);
+                    if (isNaN(launchTime.getTime())) {
+                        await interaction.reply({ content: '❌ 올바른 날짜 형식을 입력해주세요! (예: 2025-01-15 20:00)', flags: 64 });
+                        return;
+                    }
+                } else {
+                    // 시간 단위 (예: 24)
+                    const hours = parseInt(timeInput);
+                    if (isNaN(hours) || hours < 1 || hours > 168) {
+                        await interaction.reply({ content: '❌ 시간은 1~168 사이의 숙c자로 입력해주세요!', flags: 64 });
+                        return;
+                    }
+                    launchTime = new Date(Date.now() + hours * 60 * 60 * 1000);
+                }
+                
                 // 새 카운트다운 설정
                 openCountdown.isActive = true;
-                openCountdown.launchTime = new Date(Date.now() + hours * 60 * 60 * 1000);
+                openCountdown.launchTime = launchTime;
                 openCountdown.channelId = channel.id;
                 
                 // 초기 카운트다운 계산
@@ -14071,40 +13933,37 @@ client.on('interactionCreate', async (interaction) => {
                 const remainingMinutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
                 const remainingSeconds = Math.floor((remaining % (1000 * 60)) / 1000);
                 
-                // 카운트다운 디스플레이 생성 (주석 처리)
-                // const countdownDisplay = remainingDays > 0 
-                //     ? `\`\`\`fix\n${String(remainingDays).padStart(2, '0')}일 ${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}\n\`\`\``
-                //     : `\`\`\`fix\n${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}\n\`\`\``;
+                // 실시간 카운트다운 표시
+                let countdownDisplay;
+                if (remainingDays > 0) {
+                    countdownDisplay = `${remainingDays}일 ${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+                } else {
+                    countdownDisplay = `${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+                }
                 
                 // 진행률 바 생성
-                const totalTime = hours * 60 * 60 * 1000; // 설정한 시간
+                const totalTime = launchTime.getTime() - Date.now(); // 전체 시간
                 openCountdown.totalTime = totalTime; // 저장
+                openCountdown.startTime = Date.now(); // 시작 시간 저장
                 const elapsed = totalTime - remaining;
                 const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
                 const barLength = 20;
                 const filledLength = Math.floor((progress / 100) * barLength);
                 const progressBar = '🟩'.repeat(filledLength) + '⬜'.repeat(barLength - filledLength);
                 
-                // 초기 시계 이미지 생성
-                const clockBuffer = await createCountdownClock(remaining);
-                
-                // 초기 카운트다운 메시지 생성
+                // 초기 카운트다운 메시지 생성 (큰 시계 이미지 제거)
                 const countdownEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
-                    .setTitle('🚀 김헌터 RPG 정식 오픈 카운트다운!')
+                    .setTitle('🚀 김헌터 RPG 오픈 카운트다운!')
                     .setDescription('**모든 기능이 잠겨있습니다!**\n오픈 시간까지 기다려주세요!')
                     .addFields(
                         { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
+                        { name: '⏱️ 남은 시간', value: `\`\`\`fix\n${countdownDisplay}\n\`\`\``, inline: false },
                         { name: '📊 진행률', value: `${progressBar} ${progress.toFixed(1)}%`, inline: false }
                     )
-                    .setImage('attachment://countdown.png')
-                    .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다!' })
+                    .setThumbnail('https://i.imgur.com/AfFp7pu.png') // 작은 시계 이미지 URL (예시)
+                    .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다! | 🕓 매초 업데이트' })
                     .setTimestamp();
-                
-                const files = [];
-                if (clockBuffer) {
-                    files.push(new AttachmentBuilder(clockBuffer, { name: 'countdown.png' }));
-                }
                 
                 const message = await channel.send({ embeds: [countdownEmbed] });
                 openCountdown.messageId = message.id;
@@ -14150,16 +14009,13 @@ client.on('interactionCreate', async (interaction) => {
                             const updateMinutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
                             const updateSeconds = Math.floor((remaining % (1000 * 60)) / 1000);
                             
-                            // 카운트다운 디스플레이 업데이트 (주석 처리)
-                            // let countdownDisplay;
-                            // if (updateDays > 0) {
-                            //     countdownDisplay = `\`\`\`fix\n${String(updateDays).padStart(2, '0')}일 ${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}\n\`\`\``;
-                            // } else if (updateHours > 0) {
-                            //     countdownDisplay = `\`\`\`fix\n${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}\n\`\`\``;
-                            // } else {
-                            //     // 1시간 미만일 때 더 큰 디스플레이
-                            //     countdownDisplay = `\`\`\`css\n[${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}]\n\`\`\``;
-                            // }
+                            // 실시간 카운트다운 표시
+                            let countdownDisplay;
+                            if (updateDays > 0) {
+                                countdownDisplay = `${updateDays}일 ${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}`;
+                            } else {
+                                countdownDisplay = `${String(updateHours).padStart(2, '0')}:${String(updateMinutes).padStart(2, '0')}:${String(updateSeconds).padStart(2, '0')}`;
+                            }
                             
                             // 마지막 카운트다운 효과
                             let specialEffect = '';
@@ -14184,7 +14040,7 @@ client.on('interactionCreate', async (interaction) => {
                             
                             // 진행률 업데이트
                             const totalTime = openCountdown.totalTime;
-                            const elapsed = totalTime - remaining;
+                            const elapsed = Date.now() - openCountdown.startTime;
                             const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
                             const barLength = 20;
                             const filledLength = Math.floor((progress / 100) * barLength);
@@ -14203,44 +14059,37 @@ client.on('interactionCreate', async (interaction) => {
                             
                             const updatedEmbed = new EmbedBuilder()
                                 .setColor(embedColor)
-                                .setTitle('🚀 김헌터 RPG 정식 오픈 카운트다운!')
+                                .setTitle('🚀 김헌터 RPG 오픈 카운트다운!')
                                 .setDescription(description)
                                 .addFields(
                                     { name: '⏰ 오픈 예정 시간', value: `<t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>`, inline: false },
+                                    { name: '⏱️ 남은 시간', value: `\`\`\`fix\n${countdownDisplay}\n\`\`\``, inline: false },
                                     { name: '📊 진행률', value: `${progressBar} ${progress.toFixed(1)}%`, inline: false }
                                 )
-                                .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다!' })
+                                .setThumbnail('https://i.imgur.com/AfFp7pu.png') // 작은 시계 이미지
+                                .setFooter({ text: '🎮 오픈 후 모든 기능을 사용할 수 있습니다! | 🕓 매초 업데이트' })
                                 .setTimestamp();
                             
-                            // 10초마다 또는 처음에만 이미지 업데이트
-                            if (updateCounter % 10 === 1) {
-                                const newClockBuffer = await createCountdownClock(remaining);
-                                updatedEmbed.setImage('attachment://countdown.png');
-                                
-                                const files = [];
-                                if (newClockBuffer) {
-                                    files.push(new AttachmentBuilder(newClockBuffer, { name: 'countdown.png' }));
-                                }
-                                
-                                await message.edit({ embeds: [updatedEmbed], files });
-                            } else {
-                                // 텍스트만 업데이트 (이미지는 유지)
-                                updatedEmbed.setImage(message.embeds[0].image?.url || 'attachment://countdown.png');
-                                await message.edit({ embeds: [updatedEmbed] });
-                            }
+                            // 텍스트만 업데이트 (큰 시계 이미지 제거)
+                            await message.edit({ embeds: [updatedEmbed] });
                         }
                     } catch (error) {
                         console.error('카운트다운 업데이트 오류:', error);
                     }
                 }, 1000); // 1초마다 업데이트
                 
-                await interaction.reply({ content: `✅ ${hours}시간 카운트다운이 시작되었습니다!`, flags: 64 });
+                const timeDisplay = timeInput.includes('-') 
+                    ? `오픈 시간: ${launchTime.toLocaleString('ko-KR')}`
+                    : `${parseInt(timeInput)}시간 후`;
+                await interaction.reply({ content: `✅ 카운트다운이 시작되었습니다! (${timeDisplay})`, flags: 64 });
                 
             } else if (subcommand === '중지') {
                 if (openCountdown.interval) {
                     clearInterval(openCountdown.interval);
                 }
                 openCountdown.isActive = false;
+                openCountdown.interval = null;
+                
                 openCountdown.interval = null;
                 
                 await interaction.reply({ content: '✅ 카운트다운이 중지되었습니다!', flags: 64 });
