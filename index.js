@@ -17338,7 +17338,24 @@ client.on('interactionCreate', async (interaction) => {
             // 데이터베이스 저장
             await user.save();
             
-            await interaction.update({ embeds: [resultEmbed], components: [] });
+            // 융합 성공/실패 후 버튼 추가
+            const afterFusionButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('energy_fusion')
+                        .setLabel('🎯 다시 융합하기')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('fusion_ranking')
+                        .setLabel('🏆 융합 랭킹')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('fusion_back')
+                        .setLabel('🔙 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({ embeds: [resultEmbed], components: [afterFusionButtons] });
         }
         
         else if (interaction.customId === 'cancel_manual_fusion') {
@@ -25704,8 +25721,21 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             
+            // stats 객체가 없으면 초기화
+            if (!user.stats) {
+                user.stats = {
+                    strength: 10,
+                    agility: 10,
+                    intelligence: 10,
+                    vitality: 10,
+                    luck: 10
+                };
+            }
+            
+            const oldValue = user.stats[stat] || 10;
+            
             // 능력치 증가
-            user.stats[stat] += amount;
+            user.stats[stat] = (user.stats[stat] || 10) + amount;
             user.statPoints -= amount;
             
             await user.save();
@@ -25718,10 +25748,8 @@ client.on('interactionCreate', async (interaction) => {
                 luck: '🍀 행운'
             }[stat];
             
-            const oldStat = user.stats[stat] - amount;
-            
             await interaction.reply({
-                content: `✅ ${statName}이(가) ${amount} 증가했습니다! (${oldStat} → ${user.stats[stat]})`,
+                content: `✅ ${statName}이(가) ${amount} 증가했습니다! (${oldValue} → ${user.stats[stat]})`,
                 flags: 64
             });
         }
