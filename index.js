@@ -7417,44 +7417,34 @@ class PVPSystem {
         };
     }
 
-    // 전투력 계산
+    // 전투력 계산 - 통합 전투력 시스템 사용
     calculateCombatStats(player) {
         const user = player.user;
-        let baseStats;
         
-        if (player.isBot) {
-            baseStats = user.stats;
-        } else {
-            baseStats = user.stats;
-        }
-
-        // 장비 스탯 계산
-        let equipmentBonus = { attack: 0, defense: 0, dodge: 0, luck: 0 };
-        const weapon = getEquippedItem(user, 'weapon');
-        const armor = getEquippedItem(user, 'armor');
+        // 통합 전투력 계산
+        const totalCombatPower = calculateCombatPower(user);
         
-        if (weapon && weapon.stats) {
-            equipmentBonus.attack += weapon.stats.attack?.[0] || 0;
+        // 전투력을 기반으로 PVP 스탯 계산
+        // 전투력이 높을수록 attack, defense 등도 비례하여 증가
+        const powerScale = totalCombatPower / 1000; // 1000 전투력을 기준으로 스케일링
+        
+        // PVP 강화 보너스
+        let pvpBonus = 1;
+        if (user.pvp?.attackEnhancement) {
+            const totalEnhancement = (user.pvp.attackEnhancement.high || 0) +
+                                   (user.pvp.attackEnhancement.middle || 0) +
+                                   (user.pvp.attackEnhancement.low || 0);
+            pvpBonus = 1 + (totalEnhancement * 0.02); // 각 강화당 2% 보너스
         }
-        if (armor && armor.stats) {
-            equipmentBonus.defense += armor.stats.defense?.[0] || 0;
-        }
-
-        const totalStats = {
-            strength: baseStats.strength + Math.floor(equipmentBonus.attack / 10),
-            agility: baseStats.agility + Math.floor(equipmentBonus.dodge / 10),
-            intelligence: baseStats.intelligence,
-            vitality: baseStats.vitality + Math.floor(equipmentBonus.defense / 10),
-            luck: baseStats.luck + Math.floor(equipmentBonus.luck / 10)
-        };
 
         return {
-            attack: totalStats.strength * 2 + equipmentBonus.attack,
-            defense: totalStats.vitality + equipmentBonus.defense,
-            maxHp: totalStats.vitality * 10 + (user.level || 1) * 50,
-            accuracy: Math.min(0.95, 0.7 + (totalStats.agility / 1000)),
-            critRate: Math.min(0.3, 0.05 + (totalStats.luck / 1000)),
-            dodge: Math.min(0.2, totalStats.agility / 1000)
+            attack: Math.floor(100 + (powerScale * 50) * pvpBonus), // 기본 100 + 전투력 기반 공격력
+            defense: Math.floor(50 + (powerScale * 30)), // 기본 50 + 전투력 기반 방어력
+            maxHp: Math.floor(1000 + (powerScale * 200)), // 기본 1000 + 전투력 기반 HP
+            accuracy: Math.min(0.95, 0.7 + (user.stats.agility / 1000)),
+            critRate: Math.min(0.3, 0.05 + (user.stats.luck / 1000)),
+            dodge: Math.min(0.2, user.stats.agility / 1000),
+            combatPower: totalCombatPower // 전투력 표시용
         };
     }
 
@@ -9194,6 +9184,23 @@ function calculateMonsterPower(monster, level) {
     return Math.floor(monster.stats.atk + monster.stats.def + (level * 3));
 }
 
+// 다음 사냥권 재생성까지 남은 시간 계산
+function getNextTicketRegenTime(user) {
+    if (!user.huntingTickets || user.huntingTickets >= 20) {
+        return null; // 티켓이 가득 차면 표시하지 않음
+    }
+    
+    const now = new Date();
+    const lastRegen = new Date(user.lastTicketRegen || now);
+    const timeSinceLastRegen = now - lastRegen;
+    const timeToNextRegen = (5 * 60 * 1000) - (timeSinceLastRegen % (5 * 60 * 1000));
+    
+    const minutes = Math.floor(timeToNextRegen / 60000);
+    const seconds = Math.floor((timeToNextRegen % 60000) / 1000);
+    
+    return `${minutes}분 ${seconds}초`;
+}
+
 // 피로도 업데이트 함수
 function updateFatigue(user) {
     if (!user.fitness) return;
@@ -10140,7 +10147,7 @@ client.on('interactionCreate', async (interaction) => {
                     const embed = new EmbedBuilder()
                         .setColor('#ff6b6b')
                         .setTitle('🗡️ 사냥터 선택')
-                        .setDescription(`사냥할 지역을 선택하세요\n\n🎫 **남은 사냥권**: ${user.huntingTickets || 20}/20\n💡 5분마다 1장씩 재생성됩니다`);
+                        .setDescription(`사냥할 지역을 선택하세요\n\n🎫 **남은 사냥권**: ${user.huntingTickets || 20}/20${getNextTicketRegenTime(user) ? ` (다음 재생성: ${getNextTicketRegenTime(user)})` : ''}\n💡 5분마다 1장씩 재생성됩니다`);
                     
                     const huntingButtons = new ActionRowBuilder();
                     const startIndex = currentPage * itemsPerPage;
@@ -14100,7 +14107,7 @@ client.on('interactionCreate', async (interaction) => {
                     files.push(new AttachmentBuilder(clockBuffer, { name: 'countdown.png' }));
                 }
                 
-                const message = await channel.send({ embeds: [countdownEmbed], files });
+                const message = await channel.send({ embeds: [countdownEmbed] });
                 openCountdown.messageId = message.id;
                 
                 // 업데이트 카운터 (이미지 업데이트 주기 조절용)
@@ -14759,6 +14766,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setColor('#ff6b6b')
                 .setTitle(`⚔️ ${user.nickname}님의 PVP 정보`)
                 .addFields(
+                    { name: '🔥 전투력', value: `${pvpInfo.combatPower.toLocaleString()}`, inline: true },
                     { name: `${pvpInfo.tierEmoji} 티어`, value: `${pvpInfo.tier}`, inline: true },
                     { name: '🏆 레이팅', value: `${pvpInfo.rating}`, inline: true },
                     { name: '💳 결투권', value: `${pvpInfo.duelTickets}/20`, inline: true },
@@ -15530,7 +15538,7 @@ client.on('interactionCreate', async (interaction) => {
             const huntingEmbed = new EmbedBuilder()
                 .setColor('#8b0000')
                 .setTitle('⚔️ 사냥터 선택')
-                .setDescription(`**${user.nickname || interaction.user.username}**님의 사냥터 목록\n\n현재 레벨: **Lv.${user.level}**\n🎫 **남은 사냥권**: ${user.huntingTickets || 20}/20`)
+                .setDescription(`**${user.nickname || interaction.user.username}**님의 사냥터 목록\n\n현재 레벨: **Lv.${user.level}**\n🎫 **남은 사냥권**: ${user.huntingTickets || 20}/20${getNextTicketRegenTime(user) ? ` (다음 재생성: ${getNextTicketRegenTime(user)})` : ''}`)
                 .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages} | 사냥터를 선택하세요! | 5분마다 1장 재생성` });
 
             // 사냥터별 필드 추가
@@ -22197,6 +22205,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('⚔️ PVP 아레나')
                 .setDescription('플레이어들과 치열한 전투를 벌여보세요!')
                 .addFields(
+                    { name: '🔥 전투력', value: `${pvpInfo.combatPower.toLocaleString()}`, inline: true },
                     { name: `${pvpInfo.tierEmoji} 티어`, value: `${pvpInfo.tier}`, inline: true },
                     { name: '🏆 레이팅', value: `${pvpInfo.rating}`, inline: true },
                     { name: '💳 결투권', value: `${pvpInfo.duelTickets}/20`, inline: true },
@@ -22306,6 +22315,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setColor('#ff6b6b')
                 .setTitle(`⚔️ ${user.nickname}님의 PVP 정보`)
                 .addFields(
+                    { name: '🔥 전투력', value: `${pvpInfo.combatPower.toLocaleString()}`, inline: true },
                     { name: `${pvpInfo.tierEmoji} 티어`, value: `${pvpInfo.tier}`, inline: true },
                     { name: '🏆 레이팅', value: `${pvpInfo.rating}`, inline: true },
                     { name: '💳 결투권', value: `${pvpInfo.duelTickets}/20`, inline: true },
