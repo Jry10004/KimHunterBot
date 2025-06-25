@@ -71,6 +71,25 @@ const migrations = {
         );
         console.log(`  - ${result.modifiedCount}명의 유저에게 멀티플레이 필드가 추가되었습니다.`);
         return result;
+    },
+
+    // 2024-06-26: 주식 포트폴리오 초기화 보호
+    'protect_stock_portfolio_2024_06_26': async () => {
+        // 빈 배열이나 null인 경우만 초기화 (기존 데이터는 보호)
+        const result = await User.updateMany(
+            {
+                $or: [
+                    { stockPortfolio: { $exists: false } },
+                    { stockPortfolio: null },
+                    { stockPortfolio: { $size: 0 } }
+                ]
+            },
+            {
+                $set: { stockPortfolio: [] }
+            }
+        );
+        console.log(`  - ${result.modifiedCount}명의 유저 주식 포트폴리오가 초기화되었습니다.`);
+        return result;
     }
 };
 

@@ -1,6 +1,6 @@
 {
   "424480594542592009": {
-    "points": 7769,
+    "points": 5969,
     "attempts": 46,
     "currentItem": {
       "name": "🌟 전설의 무기",
@@ -9,7 +9,7 @@
       "difficulty": "legendary",
       "maxLevel": 999
     },
-    "currentLevel": 71,
+    "currentLevel": 53,
     "successStreak": 0,
     "failStreak": 1,
     "achievements": [

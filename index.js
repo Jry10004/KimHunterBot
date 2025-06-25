@@ -406,11 +406,22 @@ async function startDogBotEvent() {
 
 // 댕댕봇 이벤트 스케줄러
 function scheduleDogBotEvent() {
-    if (!isCountdownActive()) return;
+    if (!isCountdownActive()) {
+        console.log('❌ 댕댕봇 스케줄러: 카운트다운이 비활성화 상태입니다.');
+        return;
+    }
+    
+    // 기본 채널 설정 (관리자 채널)
+    if (!dogBotEvent.rememberedChannel) {
+        dogBotEvent.rememberedChannel = '1387483613913944145'; // 관리자 채널
+        console.log('🐕 댕댕봇 기본 채널 설정: 관리자 채널');
+    }
     
     // 1시간에 5번 = 평균 12분마다, 랜덤하게 8-16분 사이
     const nextDelay = (8 + Math.random() * 8) * 60 * 1000;
     dogBotEvent.nextEventTime = Date.now() + nextDelay;
+    
+    console.log(`🐕 다음 댕댕봇 이벤트: ${Math.floor(nextDelay / 60000)}분 후`);
     
     setTimeout(() => {
         startDogBotEvent();
@@ -2966,7 +2977,7 @@ async function endWordGame(session) {
 
 // 독버섯 게임 생성 함수 (라운드별)
 function generateMushroomGameRound(round) {
-    const totalMushrooms = 6;
+    const totalMushrooms = MUSHROOM_GAME.gameSettings.mushroomsPerRound; // 12개
     const poisonCount = MUSHROOM_GAME.difficultyByRound[round].poisonCount;
     const mushrooms = [];
     
@@ -2992,38 +3003,43 @@ function generateMushroomGameRound(round) {
 // 독버섯 게임 버튼 생성 함수
 function createMushroomGameButtons(gameId, mushrooms, currentPlayer) {
     const rows = [];
-    const row1 = new ActionRowBuilder();
-    const row2 = new ActionRowBuilder();
     
     // 랜덤 버섯 타입 선택
     const mushroomTypes = Object.keys(MUSHROOM_GAME.mushroomTypes);
     const selectedType = mushroomTypes[Math.floor(Math.random() * mushroomTypes.length)];
     const mushroomInfo = MUSHROOM_GAME.mushroomTypes[selectedType];
     
-    // 6개 버섯을 2줄로 배치
-    mushrooms.forEach((mushroom, index) => {
-        const button = new ButtonBuilder()
-            .setCustomId(`mushroom_select_${gameId}_${index}`)
-            .setStyle(mushroom.revealed ? 
-                (mushroom.isPoisonous ? ButtonStyle.Danger : ButtonStyle.Success) : 
-                ButtonStyle.Primary)
-            .setDisabled(mushroom.revealed || currentPlayer !== 'player');
-        
-        // 버튼 라벨 설정
-        if (mushroom.revealed) {
-            button.setLabel(mushroom.isPoisonous ? '☠️' : '✨');
-        } else {
-            button.setLabel(`${mushroomInfo.emoji} ${index + 1}`);
-        }
-        
-        if (index < 3) {
-            row1.addComponents(button);
-        } else {
-            row2.addComponents(button);
-        }
-    });
+    // 12개 버섯을 3줄로 배치 (4개씩)
+    const mushroomsPerRow = 4;
+    const totalRows = Math.ceil(mushrooms.length / mushroomsPerRow);
     
-    rows.push(row1, row2);
+    for (let rowIndex = 0; rowIndex < totalRows; rowIndex++) {
+        const row = new ActionRowBuilder();
+        const startIndex = rowIndex * mushroomsPerRow;
+        const endIndex = Math.min(startIndex + mushroomsPerRow, mushrooms.length);
+        
+        for (let i = startIndex; i < endIndex; i++) {
+            const mushroom = mushrooms[i];
+            const button = new ButtonBuilder()
+                .setCustomId(`mushroom_select_${gameId}_${i}`)
+                .setStyle(mushroom.revealed ? 
+                    (mushroom.isPoisonous ? ButtonStyle.Danger : ButtonStyle.Success) : 
+                    ButtonStyle.Primary)
+                .setDisabled(mushroom.revealed || currentPlayer !== 'player');
+            
+            // 버튼 라벨 설정
+            if (mushroom.revealed) {
+                button.setLabel(mushroom.isPoisonous ? '☠️' : '✨');
+            } else {
+                button.setLabel(`${mushroomInfo.emoji} ${i + 1}`);
+            }
+            
+            row.addComponents(button);
+        }
+        
+        rows.push(row);
+    }
+    
     return rows;
 }
 

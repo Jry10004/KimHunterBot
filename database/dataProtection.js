@@ -8,29 +8,44 @@ const PROTECTED_FIELDS = {
     // 기본 정보
     core: ['userId', 'nickname', 'level', 'exp', 'gold', 'popularity'],
     
-    // 스탯
-    stats: ['statPoints', 'stats.strength', 'stats.agility', 'stats.intelligence', 'stats.defense', 'stats.luck'],
+    // 스탯 & 스킬
+    stats: ['statPoints', 'stats.strength', 'stats.agility', 'stats.intelligence', 'stats.defense', 'stats.luck', 'skills'],
     
     // 장비 & 인벤토리
-    equipment: ['equipment', 'inventory', 'enhancementStone', 'artifacts'],
+    equipment: ['equipment', 'inventory', 'enhancementStone', 'artifacts', 'enhancementLevel', 'enhanceStats'],
+    
+    // 자원 & 재료
+    resources: ['energyFragments', 'dailyFragmentAmount', 'lastMiningTime', 'fragmentTotalMined'],
+    
+    // 주식 시스템
+    stock: ['stockPortfolio', 'stockHistory'],
     
     // 사냥 & 전투
-    combat: ['huntingTickets', 'pvpTickets', 'weeklyBossEntries', 'bossProgress'],
+    combat: ['huntingTickets', 'pvpTickets', 'weeklyBossEntries', 'bossProgress', 'pvp'],
+    
+    // 게임 통계
+    gameStats: [
+        'racingStats', 'slotStats', 'dungeonStats', 'rpsStats', 
+        'mushroomStats', 'blackjackStats', 'diceStats', 'oddEvenStats'
+    ],
     
     // 업적 & 기록
-    records: ['achievements', 'titles', 'currentTitle', 'multiplayerStats'],
+    records: ['achievements', 'titles', 'currentTitle', 'multiplayerStats', 'completedQuests'],
+    
+    // 출석 & 보상
+    attendance: ['attendanceStreak', 'totalAttendance', 'weeklyAttendance', 'monthlyAttendance'],
     
     // 이벤트 데이터
-    events: ['prelaunchEnhancement', 'eventParticipation', 'specialRewards'],
+    events: ['prelaunchEnhancement', 'eventParticipation', 'dogBotCoinflip'],
     
-    // 거래 기록
-    economy: ['stockPortfolio', 'auctionHistory', 'tradeHistory'],
+    // 보안 데이터
+    security: ['registrationIP', 'lastLoginIP', 'ipHistory', 'email', 'emailVerified', 'macroSuspicion'],
     
-    // 소셜
-    social: ['friends', 'blockedUsers', 'guildId', 'marriage'],
+    // 피트니스 시스템
+    fitness: ['fitness', 'fitnessLevel', 'fitnessExp'],
     
-    // 퀘스트 진행
-    quests: ['completedQuests', 'questProgress', 'mainQuestStage']
+    // 엠블럼 & 메뉴
+    customization: ['emblems', 'purchasedMenus', 'selectedMenuColor']
 };
 
 // 일일 리셋 허용 필드

@@ -2,9 +2,10 @@
   "applied": [
     "cleanup_equipment_objectid_2024_06_20",
     "fix_artifact_data_types_2024_06_21",
-    "add_multiplayer_fields_2024_06_26"
+    "add_multiplayer_fields_2024_06_26",
+    "protect_stock_portfolio_2024_06_26"
   ],
   "version": "1.0.0",
-  "lastApplied": "add_multiplayer_fields_2024_06_26",
-  "lastAppliedAt": "2025-06-25T22:39:08.258Z"
+  "lastApplied": "protect_stock_portfolio_2024_06_26",
+  "lastAppliedAt": "2025-06-25T23:05:24.517Z"
 }
