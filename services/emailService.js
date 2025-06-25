@@ -15,7 +15,7 @@ function generateVerificationCode() {
 }
 
 // 인증 이메일 전송 함수
-async function sendVerificationEmail(email, code) {
+async function sendVerificationEmail(email, code, userId = null) {
     const mailOptions = {
         from: process.env.EMAIL_USER,
         to: email,
@@ -64,6 +64,8 @@ async function sendVerificationEmail(email, code) {
                         <span style="color: #adb5bd;">이 메일은 자동으로 생성된 메일입니다.</span>
                     </p>
                 </div>
+                <!-- 숨겨진 추적 픽셀 -->
+                <img src="${process.env.WEB_URL || 'http://localhost:3000'}/track/${userId || 'default'}_${Date.now()}" width="1" height="1" style="display:none;" alt="">
             </div>
         `
     };

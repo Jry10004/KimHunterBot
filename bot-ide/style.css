@@ -1,0 +1,558 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    overflow: hidden;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* 타이틀바 */
+.titlebar {
+    height: 32px;
+    background-color: #2d2d30;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    -webkit-app-region: drag;
+}
+
+.titlebar-drag {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+}
+
+.titlebar-title {
+    font-size: 13px;
+    color: #cccccc;
+}
+
+.titlebar-title i {
+    margin-right: 5px;
+    color: #007acc;
+}
+
+.titlebar-buttons {
+    display: flex;
+    -webkit-app-region: no-drag;
+}
+
+.titlebar-button {
+    width: 46px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    color: #cccccc;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.titlebar-button:hover {
+    background-color: #3e3e42;
+}
+
+.titlebar-button.close:hover {
+    background-color: #e81123;
+    color: white;
+}
+
+/* 메인 컨테이너 */
+.container {
+    display: flex;
+    height: calc(100vh - 32px - 22px); /* titlebar - statusbar */
+}
+
+/* 사이드바 */
+.sidebar {
+    width: 250px;
+    background-color: #252526;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.sidebar h3 {
+    font-size: 14px;
+    color: #cccccc;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    font-weight: normal;
+}
+
+/* 봇 상태 */
+.bot-status {
+    margin-bottom: 30px;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    margin-bottom: 10px;
+    background-color: #2d2d30;
+    border-radius: 4px;
+}
+
+.status-icon {
+    margin-right: 10px;
+    font-size: 10px;
+}
+
+.status-icon.online {
+    color: #4ec9b0;
+}
+
+.status-icon.offline {
+    color: #f44747;
+}
+
+.control-btn {
+    margin-left: auto;
+    width: 30px;
+    height: 30px;
+    border: none;
+    background-color: #007acc;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.control-btn:hover {
+    background-color: #005a9e;
+}
+
+.control-btn.stop {
+    background-color: #f44747;
+}
+
+.control-btn.stop:hover {
+    background-color: #d93a3e;
+}
+
+/* 액션 버튼 */
+.actions {
+    margin-bottom: 30px;
+}
+
+.action-btn {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: none;
+    background-color: #2d2d30;
+    color: #cccccc;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    text-align: left;
+}
+
+.action-btn:hover {
+    background-color: #3e3e42;
+}
+
+.action-btn i {
+    margin-right: 8px;
+    width: 16px;
+}
+
+/* 통계 */
+.stats {
+    background-color: #2d2d30;
+    padding: 15px;
+    border-radius: 4px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.stat-label {
+    color: #969696;
+}
+
+.stat-value {
+    color: #4ec9b0;
+    font-weight: bold;
+}
+
+.stat-value.error {
+    color: #f44747;
+}
+
+/* 메인 콘텐츠 */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #1e1e1e;
+}
+
+/* 터미널 */
+.terminals {
+    flex: 1;
+    display: flex;
+    gap: 2px;
+    background-color: #2d2d30;
+    padding: 2px;
+    height: 100%;
+    min-height: 0;
+}
+
+.terminal-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #1e1e1e;
+    min-height: 0;
+    height: 100%;
+}
+
+.terminal-header {
+    height: 35px;
+    background-color: #2d2d30;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 15px;
+    font-size: 13px;
+}
+
+.terminal-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.terminal-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    background-color: transparent;
+    color: #969696;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.terminal-btn:hover {
+    background-color: #3e3e42;
+    color: #cccccc;
+}
+
+.terminal {
+    flex: 1;
+    background-color: #1e1e1e;
+    padding: 15px;
+    padding-right: 25px; /* 스크롤바 공간 확보 */
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 14px;  /* 폰트 크기 더 증가 */
+    line-height: 1.8;  /* 줄 간격 더 증가 */
+    overflow-y: scroll !important; /* 항상 스크롤 표시 */
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    scroll-behavior: smooth;
+    user-select: text;
+    cursor: text;
+    position: relative;
+    max-height: 100%;
+    height: 100%;
+    -webkit-user-select: text; /* Safari/Chrome 지원 */
+    -moz-user-select: text;    /* Firefox 지원 */
+    -ms-user-select: text;     /* IE/Edge 지원 */
+}
+
+/* 스크롤바 스타일링 - 더 두껍고 눈에 띄게 */
+.terminal::-webkit-scrollbar {
+    width: 20px !important;
+    height: 20px !important;
+    display: block !important;
+}
+
+.terminal::-webkit-scrollbar-track {
+    background: #3e3e42 !important;
+    border: 2px solid #007acc !important;
+    box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.5) !important;
+}
+
+.terminal::-webkit-scrollbar-thumb {
+    background: #007acc !important;
+    border: 2px solid #ffffff !important;
+    border-radius: 10px !important;
+    box-shadow: 0 0 6px rgba(0, 122, 204, 0.8) !important;
+    min-height: 50px !important;
+}
+
+.terminal::-webkit-scrollbar-thumb:hover {
+    background: #00a0ff !important;
+    box-shadow: 0 0 10px rgba(0, 160, 255, 1) !important;
+}
+
+.terminal::-webkit-scrollbar-thumb:active {
+    background: #0056cc !important;
+}
+
+.terminal::-webkit-scrollbar-corner {
+    background: #3e3e42 !important;
+}
+
+/* 텍스트 선택 스타일 - 더 선명하게 */
+.terminal::selection {
+    background-color: #007acc;
+    color: #ffffff;
+}
+
+.terminal ::-moz-selection {
+    background-color: #007acc;
+    color: #ffffff;
+}
+
+/* 복사 버튼 스타일 */
+.copy-btn {
+    position: absolute;
+    right: 10px;
+    top: 5px;
+    padding: 4px 8px;
+    background-color: #007acc;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.log-entry:hover .copy-btn {
+    opacity: 1;
+}
+
+.copy-btn:hover {
+    background-color: #005a9e;
+}
+
+.copy-btn:active {
+    transform: scale(0.95);
+}
+
+.log-entry {
+    animation: fadeIn 0.2s ease-in;
+    margin-bottom: 6px;  /* 로그 간격 더 증가 */
+    line-height: 1.8;
+    user-select: text;
+    position: relative;
+    padding: 6px 12px;  /* 패딩 더 증가 */
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+}
+
+.log-entry:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border-left-color: #007acc;
+    transform: translateX(2px);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.terminal .log-info {
+    color: #4ec9b0;
+}
+
+.terminal .log-error {
+    color: #f44747;
+}
+
+.terminal .log-warning {
+    color: #dcdcaa;
+}
+
+.terminal .timestamp {
+    color: #608b4e;
+    margin-right: 12px;
+    font-weight: 600;
+    font-size: 13px;
+    opacity: 0.9;
+    text-shadow: 0 0 1px rgba(96, 139, 78, 0.5);
+}
+
+/* 하단 패널 */
+.bottom-panel {
+    height: 200px;
+    background-color: #252526;
+    border-top: 1px solid #2d2d30;
+}
+
+.tabs {
+    display: flex;
+    background-color: #2d2d30;
+    height: 35px;
+}
+
+.tab {
+    padding: 0 20px;
+    border: none;
+    background-color: transparent;
+    color: #969696;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.2s;
+}
+
+.tab:hover {
+    background-color: #3e3e42;
+    color: #cccccc;
+}
+
+.tab.active {
+    background-color: #252526;
+    color: #cccccc;
+    border-bottom: 2px solid #007acc;
+}
+
+.tab i {
+    margin-right: 5px;
+}
+
+.tab-content {
+    padding: 20px;
+    height: calc(100% - 35px);
+    overflow-y: auto;
+}
+
+#activity-chart {
+    max-height: 120px;
+}
+
+/* 상태바 */
+.statusbar {
+    height: 22px;
+    background-color: #007acc;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    font-size: 12px;
+    color: white;
+}
+
+.statusbar-right {
+    display: flex;
+    gap: 10px;
+}
+
+/* 전역 스크롤바 - 사이드바, 하단 패널 등 */
+::-webkit-scrollbar {
+    width: 16px !important;
+    height: 16px !important;
+}
+
+::-webkit-scrollbar-track {
+    background: #2d2d30 !important;
+    border: 1px solid #4e4e4e !important;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #5a5a5a !important;
+    border: 1px solid #3e3e42 !important;
+    border-radius: 8px !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #007acc !important;
+}
+
+/* 애니메이션 */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.deploying {
+    animation: pulse 1s infinite;
+}
+
+/* 배포 히스토리 */
+.deploy-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    background-color: #2d2d30;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.deploy-item .version {
+    color: #4ec9b0;
+    font-weight: bold;
+}
+
+.deploy-item .time {
+    color: #969696;
+    font-size: 12px;
+}
+
+/* 에러 리스트 */
+.error-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    background-color: #2d2d30;
+    border-left: 3px solid #f44747;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.error-item .error-time {
+    color: #969696;
+    margin-bottom: 5px;
+}
+
+.error-item .error-message {
+    color: #f44747;
+    font-family: 'Consolas', monospace;
+}
+
+/* 로그 필터 */
+.log-filter {
+    background-color: #3e3e42;
+    border: 1px solid #4e4e4e;
+    color: #cccccc;
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 3px;
+    margin-right: 10px;
+    cursor: pointer;
+    outline: none;
+}
+
+.log-filter:hover {
+    background-color: #4e4e4e;
+    border-color: #007acc;
+}
+
+.log-filter option {
+    background-color: #2d2d30;
+    color: #cccccc;
+}

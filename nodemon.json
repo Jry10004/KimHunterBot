@@ -1,12 +1,10 @@
 {
-  "watch": ["*.js", ".env"],
-  "ext": "js,json,env",
-  "ignore": ["node_modules/*"],
+  "watch": ["index.js", "commands/", "data/", "models/", "services/", "database/", ".env"],
+  "ext": "js,json",
+  "ignore": ["node_modules/**", "logs/**", "backups/**", "prelaunchEventData*.json", "countdownState.json"],
   "delay": "1000",
+  "verbose": true,
   "env": {
     "NODE_ENV": "development"
-  },
-  "legacyWatch": true,
-  "polling": true,
-  "pollInterval": 1000
+  }
 }

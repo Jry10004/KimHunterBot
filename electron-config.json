@@ -1,0 +1,7 @@
+{
+  "webPreferences": {
+    "devTools": false,
+    "nodeIntegration": true,
+    "contextIsolation": false
+  }
+}

@@ -4,17 +4,21 @@ const fs = require('fs');
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, StringSelectMenuBuilder } = require('discord.js');
 const connectDB = require('./database/connection');
 const User = require('./models/User');
+const IPBan = require('./models/IPBan');
 const { generateVerificationCode, sendVerificationEmail } = require('./services/emailService');
+const { startWebServer, generateAuthToken } = require('./webServer');
 const { huntingAreas, DROP_ITEMS } = require('./data/huntingAreas');
 const STOCK_MARKET = require('./data/stockMarket');
 const RANDOM_EVENTS = require('./data/randomEvents');
 const shopItems = require('./data/shopItems');
 const MONSTER_BATTLE = require('./data/oddEvenGame');
 const MUSHROOM_GAME = require('./data/mushroomGame');
+const { mushroomItemSystem, reactionSystem, tournamentSystem, achievementSystem } = require('./data/mushroomGameEnhanced');
 const ARTIFACT_SYSTEM = require('./data/artifactSystem');
 const EXERCISE_SYSTEM = require('./data/exerciseSystem');
 const { QUEST_SYSTEM, checkQuestProgress } = require('./data/questSystem');
 const BOSS_SYSTEM = require('./data/bossSystem');
+const { WORD_LIST, ALL_WORDS, extractChosung, findWordsByChosung, findWordsByStartChar } = require('./data/wordList');
 const Jimp = require('jimp');
 
 // 아이템 경매장 시스템
@@ -26,32 +30,423 @@ const AUCTION_HOUSE = {
     events: []
 };
 
+// 프로페셔널 공지 시스템
+const NOTICE_SYSTEM = {
+    templates: {
+        basic: {
+            name: '기본 공지',
+            icon: '📢',
+            fields: ['title', 'category', 'priority', 'content', 'tags'],
+            style: 'simple'
+        },
+        maintenance: {
+            name: '점검 공지',
+            icon: '🔧',
+            fields: ['title', 'category', 'priority', 'startTime', 'endTime', 'content', 'compensation', 'tags'],
+            style: 'urgent'
+        },
+        event: {
+            name: '이벤트 공지',
+            icon: '🎉',
+            fields: ['title', 'category', 'priority', 'eventPeriod', 'content', 'rewards', 'howToJoin', 'tags'],
+            style: 'festive'
+        },
+        update: {
+            name: '업데이트 공지',
+            icon: '📋',
+            fields: ['title', 'category', 'priority', 'version', 'content', 'changes', 'fixes', 'tags'],
+            style: 'technical'
+        }
+    },
+    categories: {
+        notice: { name: '공지', emoji: '📌', color: '#0099ff' },
+        maintenance: { name: '점검', emoji: '🔧', color: '#ff9900' },
+        event: { name: '이벤트', emoji: '🎉', color: '#00ff00' },
+        update: { name: '업데이트', emoji: '📋', color: '#9900ff' },
+        important: { name: '중요', emoji: '⚠️', color: '#ff0000' }
+    },
+    priorities: {
+        low: { name: '일반', emoji: '🔵', color: '#0099ff' },
+        medium: { name: '중요', emoji: '🟡', color: '#ffcc00' },
+        high: { name: '긴급', emoji: '🔴', color: '#ff0000' },
+        critical: { name: '필독', emoji: '🚨', color: '#ff0000', blink: true }
+    },
+    savedNotices: new Map() // 공지 저장소
+};
+
 // 현재 시장 상황 저장소
 let currentMarketEvent = null;
 let lastMarketUpdate = 0;
 
+// 상태 파일 경로
+const COUNTDOWN_STATE_PATH = path.join(__dirname, 'countdownState.json');
+const PRELAUNCH_DATA_PATH = path.join(__dirname, 'prelaunchEventData.json');
+
+// 카운트다운 상태 불러오기
+function loadCountdownState() {
+    try {
+        if (fs.existsSync(COUNTDOWN_STATE_PATH)) {
+            const data = fs.readFileSync(COUNTDOWN_STATE_PATH, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('카운트다운 상태 로드 오류:', error);
+    }
+    return {
+        isActive: false,
+        launchTime: null,
+        channelId: null,
+        messageId: null,
+        startTime: null
+    };
+}
+
+// 카운트다운 상태 저장
+function saveCountdownState() {
+    const stateToSave = {
+        isActive: openCountdown.isActive,
+        launchTime: openCountdown.launchTime,
+        channelId: openCountdown.channelId,
+        messageId: openCountdown.messageId,
+        startTime: openCountdown.startTime
+    };
+    try {
+        fs.writeFileSync(COUNTDOWN_STATE_PATH, JSON.stringify(stateToSave, null, 2));
+    } catch (error) {
+        console.error('카운트다운 상태 저장 오류:', error);
+    }
+}
+
 // 오픈 카운트다운 시스템
 let openCountdown = {
-    isActive: false,
-    launchTime: null,
-    channelId: null,
-    messageId: null,
+    ...loadCountdownState(),
     interval: null,
-    totalTime: null,
-    startTime: null
+    totalTime: null
 };
+
+// 초기화 시 카운트다운 상태를 완전히 리셋
+openCountdown.isActive = false;
+openCountdown.interval = null;
+openCountdown.messageId = null;
+openCountdown.channelId = null;
+saveCountdownState();
+
+// 사전강화 이벤트 데이터 불러오기
+function loadPrelaunchData() {
+    try {
+        if (fs.existsSync(PRELAUNCH_DATA_PATH)) {
+            const data = fs.readFileSync(PRELAUNCH_DATA_PATH, 'utf8');
+            const parsedData = JSON.parse(data);
+            
+            // 데이터 마이그레이션: maxLevel을 999로 업데이트
+            let updated = false;
+            for (const userId in parsedData) {
+                if (parsedData[userId].currentItem && parsedData[userId].currentItem.maxLevel !== 999) {
+                    parsedData[userId].currentItem.maxLevel = 999;
+                    updated = true;
+                }
+            }
+            
+            if (updated) {
+                console.log('📊 사전강화 데이터 마이그레이션: maxLevel을 999로 업데이트');
+            }
+            
+            return parsedData;
+        }
+    } catch (error) {
+        console.error('사전강화 데이터 로드 오류:', error);
+    }
+    return {};
+}
+
+// 사전강화 이벤트 데이터 저장
+function savePrelaunchData() {
+    try {
+        const dataToSave = global.prelaunchEventData || {};
+        
+        // 데이터 무결성 검증
+        const criticalUsers = ['295980447849250817', '563406206362845224']; // 하연94, 클립
+        for (const userId of criticalUsers) {
+            if (dataToSave[userId]) {
+                const user = dataToSave[userId];
+                // 비정상적인 데이터 감지
+                if (user.points < 0 || user.currentLevel < 0 || user.currentLevel > 999) {
+                    console.error(`❌ 데이터 무결성 오류 감지: ${userId} - 저장 중단`);
+                    return;
+                }
+            }
+        }
+        
+        // 백업 생성 (시간별 폴더로 구분)
+        if (fs.existsSync(PRELAUNCH_DATA_PATH)) {
+            const now = new Date();
+            const dateFolder = `backups/${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const hourFolder = `${dateFolder}/${String(now.getHours()).padStart(2, '0')}시`;
+            
+            // 백업 폴더 생성
+            if (!fs.existsSync('backups')) fs.mkdirSync('backups');
+            if (!fs.existsSync(dateFolder)) fs.mkdirSync(dateFolder, { recursive: true });
+            if (!fs.existsSync(hourFolder)) fs.mkdirSync(hourFolder, { recursive: true });
+            
+            const backupPath = `${hourFolder}/prelaunchEventData_${Date.now()}.json`;
+            fs.copyFileSync(PRELAUNCH_DATA_PATH, backupPath);
+            
+            // 오래된 백업 정리 (7일 이상)
+            cleanOldBackups();
+        }
+        
+        // 중요 데이터 변경 로그
+        if (fs.existsSync(PRELAUNCH_DATA_PATH)) {
+            const oldData = JSON.parse(fs.readFileSync(PRELAUNCH_DATA_PATH, 'utf8'));
+            for (const userId of criticalUsers) {
+                if (oldData[userId] && dataToSave[userId]) {
+                    const oldPoints = oldData[userId].points;
+                    const newPoints = dataToSave[userId].points;
+                    const oldLevel = oldData[userId].currentLevel;
+                    const newLevel = dataToSave[userId].currentLevel;
+                    
+                    if (oldPoints !== newPoints || oldLevel !== newLevel) {
+                        console.log(`📝 중요 데이터 변경: ${userId} - 포인트: ${oldPoints} → ${newPoints}, 레벨: ${oldLevel} → ${newLevel}`);
+                    }
+                }
+            }
+        }
+        
+        // 저장
+        fs.writeFileSync(PRELAUNCH_DATA_PATH, JSON.stringify(dataToSave, null, 2) + '\n');
+        console.log(`💾 사전강화 데이터 저장 완료: ${Object.keys(dataToSave).length}명`);
+    } catch (error) {
+        console.error('사전강화 데이터 저장 오류:', error);
+    }
+}
+
+// 오래된 백업 파일 정리
+function cleanOldBackups() {
+    try {
+        const backupsDir = 'backups';
+        if (!fs.existsSync(backupsDir)) return;
+        
+        const now = Date.now();
+        const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+        
+        const dateFolders = fs.readdirSync(backupsDir);
+        for (const dateFolder of dateFolders) {
+            const folderPath = path.join(backupsDir, dateFolder);
+            const stats = fs.statSync(folderPath);
+            
+            if (stats.isDirectory() && stats.mtimeMs < sevenDaysAgo) {
+                fs.rmSync(folderPath, { recursive: true, force: true });
+                console.log(`🗑️ 오래된 백업 폴더 삭제: ${dateFolder}`);
+            }
+        }
+    } catch (error) {
+        console.error('백업 정리 오류:', error);
+    }
+}
+
+// 전역 사전강화 데이터 초기화
+global.prelaunchEventData = loadPrelaunchData();
+
+// 서버 오픈 상태 (기본값: false - 카운트다운 활성화)
+global.serverOpened = false;
+
+// 디버그: 로드된 데이터 확인
+console.log('📊 로드된 사전강화 데이터:');
+Object.entries(global.prelaunchEventData).forEach(([userId, data]) => {
+    if (userId === '295980447849250817' || userId === '563406206362845224') {
+        console.log(`  - ${userId}: ${data.points}점, 레벨 ${data.currentLevel}`);
+    }
+});
+
+// 저장 스케줄러
+let prelaunchSaveTimeout = null;
+let lastSaveTime = Date.now();
+
+// 지연 저장 함수 (1초 후 저장)
+function schedulePrelaunchSave() {
+    // 이미 예약된 저장이 있으면 취소
+    if (prelaunchSaveTimeout) {
+        clearTimeout(prelaunchSaveTimeout);
+    }
+    
+    // 1초 후 저장 예약
+    prelaunchSaveTimeout = setTimeout(() => {
+        savePrelaunchData();
+        lastSaveTime = Date.now();
+        prelaunchSaveTimeout = null;
+    }, 1000);
+}
+
+// 댕댕봇 이벤트 시스템
+const dogBotEvent = {
+    active: false,
+    currentProblem: null,
+    currentChannel: null,
+    currentUser: null,
+    timeout: null,
+    nextEventTime: null,
+    problemCount: 0,
+    spawnTime: null, // 댕댕봇이 출현한 시간
+    rememberedChannel: null // 댕댕봇이 기억하는 최신 채널 (1개만)
+};
+
+// 댕댕봇 수학 문제 생성
+function generateMathProblem() {
+    const operations = ['+', '-', '*'];
+    const operation = operations[Math.floor(Math.random() * operations.length)];
+    let a, b, answer;
+    
+    switch(operation) {
+        case '+':
+            a = Math.floor(Math.random() * 50) + 1;
+            b = Math.floor(Math.random() * 50) + 1;
+            answer = a + b;
+            break;
+        case '-':
+            a = Math.floor(Math.random() * 50) + 20;
+            b = Math.floor(Math.random() * a);
+            answer = a - b;
+            break;
+        case '*':
+            a = Math.floor(Math.random() * 15) + 1;
+            b = Math.floor(Math.random() * 15) + 1;
+            answer = a * b;
+            break;
+    }
+    
+    return {
+        question: `${a} ${operation} ${b}`,
+        answer: answer
+    };
+}
+
+// 댕댕봇 이벤트 시작
+async function startDogBotEvent() {
+    if (!isCountdownActive() || dogBotEvent.active) return;
+    
+    // 채널 선택: 기억된 채널 사용 (없으면 기본 채널)
+    let channelId;
+    if (dogBotEvent.rememberedChannel) {
+        channelId = dogBotEvent.rememberedChannel;
+    } else {
+        // 기억된 채널이 없으면 이벤트를 시작하지 않음
+        console.log('댕댕봇이 기억하는 채널이 없습니다.');
+        return;
+    }
+    
+    const channel = client.channels.cache.get(channelId);
+    
+    if (!channel) {
+        console.error('댕댕봇 이벤트 채널을 찾을 수 없습니다:', channelId);
+        return;
+    }
+    const problem = generateMathProblem();
+    
+    dogBotEvent.active = true;
+    dogBotEvent.currentProblem = problem;
+    dogBotEvent.currentChannel = channel.id;
+    dogBotEvent.problemCount++;
+    dogBotEvent.spawnTime = Date.now(); // 출현 시간 기록
+    
+    // 다양한 등장 메시지
+    const greetings = [
+        { title: '🐕 귀여운 천사 댕댕봇이 나타났멍! 👼', desc: '멍멍! 첫 번째로 정답을 맞추면 **강화 +1~+20 보너스**를 주겠멍! 🦴\n빨리 맞춰줘멍~ 🥺' },
+        { title: '🐶 못생긴 천사 댕댕봇이 들렸멍! 😇', desc: '왈왈! 못생겨도 착해멍! 문제 맞추면 **강화 +1~+20** 올려줄게멍!\n간식도 줘멍~ 🐾' },
+        { title: '🐕‍🦺 상큼한 물주먹 댕댕봇 출동했멍! 💦', desc: '멍! 물주먹이지만 수학은 잘해멍!\n정답 맞추면 **강화 +1~+20** 상큼하게 줄게멍! 🌊' },
+        { title: '🦮 안내견 댕댕봇이 왔멍! 🦯', desc: '끙끙! 길 잃은 문제를 찾아줄게멍!\n첫 정답자에게 **강화 +1~+20** 선물이멍! 🎁' },
+        { title: '🐩 멋쟁이 댕댕봇 등장이멍! ✨', desc: '컹컹! 오늘도 멋진 문제 가져왔멍!\n**강화 +1~+20** 보너스도 멋있게 줄게멍! 💅' },
+        { title: '🐕 배고픈 댕댕봇이 나타났멍! 🍖', desc: '꼬르륵... 문제 맞추면 **강화 +1~+20** 줄게멍!\n대신 간식도 달라멍~ 🥺' }
+    ];
+    
+    const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+    
+    const embed = new EmbedBuilder()
+        .setColor('#FFD700')
+        .setTitle(randomGreeting.title)
+        .setDescription(randomGreeting.desc)
+        .setThumbnail('attachment://dog_bot.png')
+        .addFields({
+            name: '🧮 문제멍!',
+            value: `\`\`\`${problem.question} = ?\`\`\``,
+            inline: false
+        })
+        .setFooter({ text: '3분 안에 답을 입력해줘멍! 🐶' })
+        .setTimestamp();
+    
+    // 프로필 이미지 첨부
+    const dogBotImagePath = path.join(__dirname, 'resource', 'dog_bot.png');
+    const files = [];
+    console.log('🐕 댕댕봇 이미지 경로:', dogBotImagePath);
+    console.log('🐕 파일 존재 여부:', fs.existsSync(dogBotImagePath));
+    
+    if (fs.existsSync(dogBotImagePath)) {
+        files.push(new AttachmentBuilder(dogBotImagePath, { name: 'dog_bot.png' }));
+        console.log('🐕 이미지 파일 첨부 완료');
+    }
+    
+    try {
+        await channel.send({ embeds: [embed], files });
+        
+        // 3분 타임아웃
+        dogBotEvent.timeout = setTimeout(() => {
+            if (dogBotEvent.active && dogBotEvent.currentChannel === channel.id) {
+                channel.send('🐕 흑흑... 아무도 답을 안 알려줬멍... 😢\n댕댕이는 다른 곳으로 가볼게멍... 다음엔 꼭 맞춰줘멍! 🐾');
+                dogBotEvent.active = false;
+                dogBotEvent.currentProblem = null;
+                dogBotEvent.currentChannel = null;
+                dogBotEvent.currentUser = null;
+                dogBotEvent.spawnTime = null;
+            }
+        }, 180000); // 3분 = 180초
+    } catch (error) {
+        console.error('댕댕봇 이벤트 오류:', error);
+        dogBotEvent.active = false;
+    }
+}
+
+// 댕댕봇 이벤트 스케줄러
+function scheduleDogBotEvent() {
+    if (!isCountdownActive()) return;
+    
+    // 1시간에 5번 = 평균 12분마다, 랜덤하게 8-16분 사이
+    const nextDelay = (8 + Math.random() * 8) * 60 * 1000;
+    dogBotEvent.nextEventTime = Date.now() + nextDelay;
+    
+    setTimeout(() => {
+        startDogBotEvent();
+        scheduleDogBotEvent(); // 다음 이벤트 스케줄
+    }, nextDelay);
+}
+
+// 댕댕봇 채널 기억 함수 (최신 채널 1개만 기억)
+function rememberDogChannel(channelId) {
+    dogBotEvent.rememberedChannel = channelId;
+    console.log(`🐕 댕댕봇이 새로운 채널을 기억했습니다: ${channelId}`);
+}
 
 // 카운트다운 체크 함수
 function isCountdownActive() {
-    if (!openCountdown.isActive) return false;
-    return Date.now() < openCountdown.launchTime;
+    // 서버가 오픈되지 않았으면 항상 카운트다운 상태
+    return !global.serverOpened;
 }
 
 // 카운트다운 메시지 반환
 function getCountdownMessage() {
-    if (!openCountdown.isActive) return null;
+    // 서버가 오픈되지 않았으면 카운트다운 메시지 표시
+    if (global.serverOpened) return null;
     
-    const remaining = openCountdown.launchTime - Date.now();
+    // launchTime이 문자열이면 Date 객체로 변환
+    const launchTime = typeof openCountdown.launchTime === 'string' 
+        ? new Date(openCountdown.launchTime) 
+        : openCountdown.launchTime;
+    
+    if (!launchTime) {
+        return `🚀 **강화왕 김헌터 RPG 오픈 준비중!**\n\n` +
+               `⏱️ **오픈 일정이 곧 공개됩니다!**\n\n` +
+               `💡 오픈 전까지 모든 게임 기능이 제한됩니다.`;
+    }
+    
+    const remaining = launchTime.getTime() - Date.now();
     const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
     const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
@@ -61,10 +456,93 @@ function getCountdownMessage() {
         ? `${days}일 ${hours}시간 ${minutes}분 ${seconds}초`
         : `${hours}시간 ${minutes}분 ${seconds}초`;
     
-    return `🚀 **김헌터 RPG 오픈 준비중!**\n\n` +
+    return `🚀 **강화왕 김헌터 RPG 오픈 준비중!**\n\n` +
            `⏱️ **남은 시간:** \`${timeDisplay}\`\n` +
-           `📅 **오픈 시간:** <t:${Math.floor(openCountdown.launchTime.getTime() / 1000)}:F>\n\n` +
+           `📅 **오픈 시간:** <t:${Math.floor(launchTime.getTime() / 1000)}:F>\n\n` +
            `💡 오픈 전까지 모든 게임 기능이 제한됩니다.`;
+}
+
+// 카운트다운 임베드 생성 함수
+function createCountdownEmbed() {
+    const remaining = openCountdown.launchTime - Date.now();
+    const remainingDays = Math.floor(remaining / (1000 * 60 * 60 * 24));
+    const remainingHours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const remainingMinutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    const remainingSeconds = Math.floor((remaining % (1000 * 60)) / 1000);
+    
+    let countdownDisplay;
+    if (remainingDays > 0) {
+        countdownDisplay = `${remainingDays}일 ${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+    } else {
+        countdownDisplay = `${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+    }
+    
+    const totalTime = openCountdown.totalTime || (openCountdown.launchTime - openCountdown.startTime);
+    const elapsed = Date.now() - openCountdown.startTime;
+    const progress = Math.max(0, Math.min(100, (elapsed / totalTime) * 100));
+    const barLength = 20;
+    const filledLength = Math.floor((progress / 100) * barLength);
+    const progressBar = `[${'█'.repeat(filledLength)}${'-'.repeat(barLength - filledLength)}]`;
+    
+    let embedColor = '#1a1a1a';
+    let statusText = 'MAINTENANCE MODE';
+    if (remaining < 60 * 60 * 1000) {
+        embedColor = '#2d2d2d';
+        statusText = 'PREPARING LAUNCH';
+    }
+    if (remaining < 10 * 60 * 1000) {
+        embedColor = '#ff6600';
+        statusText = 'FINAL CHECKS';
+    }
+    if (remaining < 60 * 1000) {
+        embedColor = '#00ff00';
+        statusText = 'LAUNCHING SOON';
+    }
+    
+    const embed = new EmbedBuilder()
+        .setColor(embedColor)
+        .setAuthor({ 
+            name: 'KimHunter RPG Launch System', 
+            iconURL: 'attachment://kim_main.png' 
+        })
+        .setTitle('SYSTEM > Launch Countdown Active')
+        .setDescription(`\`\`\`yaml\nStatus: ${statusText}\nEnvironment: Production\nBuild: v2.0.0-stable\nRegion: KR-Seoul\n\nAll features are currently locked during pre-launch maintenance.\nThank you for your patience.\n\`\`\``)
+        .addFields(
+            { 
+                name: 'SCHEDULED LAUNCH TIME', 
+                value: `\`\`\`\n${new Date(openCountdown.launchTime).toLocaleString('ko-KR', { 
+                    year: 'numeric',
+                    month: '2-digit', 
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                })} KST\n\`\`\``, 
+                inline: false 
+            },
+            { 
+                name: 'TIME REMAINING', 
+                value: `\`\`\`ansi\n\x1b[1;${remaining < 60000 ? '31' : '32'}m${countdownDisplay}\x1b[0m\n\`\`\``, 
+                inline: true 
+            },
+            { 
+                name: 'PROGRESS', 
+                value: `\`\`\`\n${progressBar} ${progress.toFixed(2)}%\n\`\`\``, 
+                inline: true 
+            },
+            {
+                name: 'SYSTEM INFO',
+                value: `\`\`\`fix\nServer: Online\nDatabase: Connected\nCache: Ready\nModules: Loaded\n\`\`\``,
+                inline: false
+            }
+        )
+        .setFooter({ 
+            text: `PID: ${process.pid} | Node: ${process.version} | Memory: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)}MB` 
+        })
+        .setTimestamp();
+    
+    return embed;
 }
 
 // 축하 이미지 생성
@@ -326,7 +804,7 @@ async function showGameMenu(interaction) {
     // 메인 메뉴 표시
     const categoryEmbed = new EmbedBuilder()
         .setColor('#0099ff')
-        .setTitle('🎮 김헌터 RPG 게임')
+        .setTitle('🎮 강화왕 김헌터 RPG 게임')
         .setDescription('원하시는 카테고리를 선택해주세요!')
         .setFooter({ text: '아래 메뉴에서 카테고리를 선택하세요' });
     
@@ -435,6 +913,2056 @@ let lastFortuneUpdate = 0;
 
 // 독버섯 게임 세션 관리
 const mushroomGameSessions = new Map();
+
+// 가위바위보 게임 시스템
+const RPS_GAME = {
+    choices: ['✊', '✌️', '✋'],
+    choiceNames: { '✊': '바위', '✌️': '가위', '✋': '보' },
+    winConditions: {
+        '✊': '✌️', // 바위는 가위를 이김
+        '✌️': '✋', // 가위는 보를 이김
+        '✋': '✊'  // 보는 바위를 이김
+    },
+    rewards: {
+        botWin: 500,      // 봇 대전 승리 보상
+        userWin: 1000,    // 유저 대전 승리 보상
+        draw: 100         // 무승부 보상
+    },
+    ticketRegen: 300000,  // 5분
+    maxTickets: 20,      // 최대 티켓 수
+    minBet: 100,        // 최소 베팅
+    maxBet: 100000      // 최대 베팅
+};
+
+// 김헌터 슬롯머신 시스템
+const SLOT_MACHINE = {
+    symbols: {
+        '🐕': { name: '김헌터', weight: 10, payout: 100 },
+        '💎': { name: '다이아몬드', weight: 20, payout: 50 },
+        '🌟': { name: '스타', weight: 30, payout: 20 },
+        '🍒': { name: '체리', weight: 40, payout: 10 },
+        '🍋': { name: '레몬', weight: 50, payout: 5 },
+        '🔔': { name: '벨', weight: 60, payout: 3 },
+        '7️⃣': { name: '럭키7', weight: 15, payout: 77 },
+        '💰': { name: '머니백', weight: 25, payout: 30 }
+    },
+    reels: 3,
+    betAmounts: [1000, 5000, 10000, 50000, 100000],
+    autoSpinDelays: [1000, 2000, 3000], // 자동 스핀 속도
+    jackpot: {
+        baseAmount: 1000000,
+        currentAmount: 1000000,
+        symbol: '🐕', // 김헌터 3개 = 잭팟
+        contribution: 0.01 // 베팅금의 1% 잭팟 기여
+    },
+    spinAnimation: {
+        duration: 2000,
+        frames: 10
+    }
+};
+
+// 슬롯머신 세션 관리
+const slotMachineSessions = new Map();
+const slotMachineHistory = new Map(); // 유저별 스핀 기록
+
+// 던전 탐험 시스템
+const DUNGEON_CRAWLER = {
+    floors: {
+        1: { 
+            name: '지하 1층 - 고블린 소굴', 
+            monsters: ['고블린', '슬라임', '좀비'],
+            bossChance: 0.1,
+            boss: { name: '고블린 왕', hp: 100, reward: 5000 },
+            baseReward: 100,
+            trapChance: 0.15
+        },
+        2: { 
+            name: '지하 2층 - 스켈레톤 묘지', 
+            monsters: ['스켈레톤', '유령', '좀비 개'],
+            bossChance: 0.15,
+            boss: { name: '리치', hp: 200, reward: 10000 },
+            baseReward: 200,
+            trapChance: 0.2
+        },
+        3: { 
+            name: '지하 3층 - 오크 병영', 
+            monsters: ['오크', '트롤', '미노타우로스'],
+            bossChance: 0.2,
+            boss: { name: '오크 족장', hp: 300, reward: 20000 },
+            baseReward: 500,
+            trapChance: 0.25
+        },
+        4: { 
+            name: '지하 4층 - 용암 지대', 
+            monsters: ['화염 정령', '마그마 골렘', '불타는 박쥐'],
+            bossChance: 0.25,
+            boss: { name: '화염 군주', hp: 500, reward: 50000 },
+            baseReward: 1000,
+            trapChance: 0.3
+        },
+        5: { 
+            name: '지하 5층 - 드래곤의 둥지', 
+            monsters: ['와이번', '드레이크', '용인족'],
+            bossChance: 0.3,
+            boss: { name: '고대 드래곤', hp: 1000, reward: 100000 },
+            baseReward: 2000,
+            trapChance: 0.35
+        }
+    },
+    items: {
+        health_potion: { name: '체력 포션', emoji: '🧪', effect: 'heal', value: 50, findChance: 0.3 },
+        attack_boost: { name: '공격력 증가', emoji: '⚔️', effect: 'attack', value: 20, findChance: 0.2 },
+        defense_boost: { name: '방어력 증가', emoji: '🛡️', effect: 'defense', value: 15, findChance: 0.2 },
+        escape_rope: { name: '탈출 로프', emoji: '🪢', effect: 'escape', value: 1, findChance: 0.1 },
+        treasure_key: { name: '보물 열쇠', emoji: '🗝️', effect: 'treasure', value: 1, findChance: 0.05 }
+    },
+    actions: {
+        fight: { name: '⚔️ 전투', description: '몬스터와 싸웁니다' },
+        item: { name: '🎒 아이템 사용', description: '인벤토리에서 아이템을 사용합니다' },
+        run: { name: '🏃 도망', description: '50% 확률로 도망칩니다' },
+        next: { name: '⬇️ 다음 층', description: '다음 층으로 내려갑니다' }
+    },
+    entryFee: 1000,
+    maxFloor: 5,
+    baseHp: 100,
+    baseAttack: 20,
+    baseDefense: 10
+};
+
+// 던전 탐험 세션 관리
+const dungeonSessions = new Map();
+
+// 파도타기 게임 설정
+const WAVE_SURFER = {
+    waves: {
+        heights: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], // 파도 높이 (미터)
+        types: {
+            normal: { name: '일반 파도', emoji: '🌊', multiplier: 1.0, probability: 0.6 },
+            whirlpool: { name: '소용돌이', emoji: '🌀', multiplier: 1.5, probability: 0.15 },
+            rainbow: { name: '무지개 파도', emoji: '🌈', multiplier: 2.0, probability: 0.1 },
+            lightning: { name: '번개 파도', emoji: '⚡', multiplier: 3.0, probability: 0.08 },
+            flower: { name: '꽃 파도', emoji: '🌸', multiplier: 5.0, probability: 0.07 }
+        }
+    },
+    betting: {
+        ranges: {
+            low: { name: '낮은 파도', range: [1, 3], multiplier: 3.0, emoji: '🏄‍♂️' },
+            medium: { name: '중간 파도', range: [4, 6], multiplier: 3.0, emoji: '🏄' },
+            high: { name: '높은 파도', range: [7, 9], multiplier: 3.0, emoji: '🏄‍♀️' },
+            extreme: { name: '극한 파도', range: [10, 10], multiplier: 10.0, emoji: '🌊' },
+            exact: { name: '정확한 예측', multiplier: 20.0, emoji: '🎯' }
+        },
+        minBet: 1000,
+        maxBet: 100000
+    },
+    surfing: {
+        baseScore: 100,
+        heightMultiplier: 1.5, // 파도 높이당 추가 배수
+        comboBonus: 0.2, // 연속 성공시 추가 보너스
+        tricks: {
+            '360도 회전': { difficulty: 0.7, scoreMultiplier: 1.5 },
+            '공중제비': { difficulty: 0.5, scoreMultiplier: 2.0 },
+            '튜브 라이딩': { difficulty: 0.3, scoreMultiplier: 3.0 },
+            '에어리얼': { difficulty: 0.2, scoreMultiplier: 4.0 }
+        }
+    },
+    weather: {
+        sunny: { name: '맑음', emoji: '☀️', surfMultiplier: 1.0 },
+        cloudy: { name: '흐림', emoji: '☁️', surfMultiplier: 0.9 },
+        windy: { name: '바람', emoji: '💨', surfMultiplier: 1.2 },
+        stormy: { name: '폭풍', emoji: '🌩️', surfMultiplier: 1.5 }
+    },
+    boards: {
+        basic: { name: '기본 서핑보드', successRate: 0.6, priceG: 0 },
+        pro: { name: '프로 서핑보드', successRate: 0.75, priceG: 50000 },
+        legendary: { name: '전설의 서핑보드', successRate: 0.9, priceG: 200000 }
+    }
+};
+
+// 파도타기 세션 관리
+const waveSurfSessions = new Map();
+
+// 가위바위보 게임 대기열
+const rpsMatchQueue = new Map(); // 유저 대전 대기열
+const rpsGameSessions = new Map(); // 진행중인 게임 세션
+
+// 초성게임 & 끝말잇기 시스템
+const WORD_GAME = {
+    초성게임: {
+        초성목록: ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'],
+        난이도별초성: {
+            쉬움: [['ㅅ', 'ㄹ'], ['ㄱ', 'ㅁ'], ['ㅂ', 'ㅅ']], // 2글자
+            보통: [['ㅅ', 'ㅎ', 'ㅂ'], ['ㄱ', 'ㅅ', 'ㅈ'], ['ㅁ', 'ㄹ', 'ㅇ']], // 3글자
+            어려움: [['ㅎ', 'ㄱ', 'ㅅ', 'ㅈ'], ['ㅂ', 'ㄹ', 'ㅁ', 'ㅊ']] // 4글자
+        },
+        timeLimit: 15000, // 15초
+        rewards: { 1: 10000, 2: 3000, 3: 1000 }
+    },
+    끝말잇기: {
+        startWords: ['사과', '바나나', '컴퓨터', '김치', '한국', '게임', '친구', '학교', '음악', '영화'],
+        timeLimit: 10000, // 10초
+        한방단어: ['슘', '듐', '퀸', '틴', '늄'], // 끝나는 글자
+        rewards: { 1: 10000, 2: 3000, 3: 1000 }
+    },
+    maxPlayers: 5,
+    minPlayers: 2
+};
+
+// 워드게임 세션 관리
+const wordGameSessions = new Map();
+const wordGameQueues = new Map(); // 대기열
+
+// 임시 채널 관리
+const tempGameChannels = new Map();
+
+// 세션 정리 함수
+function cleanupGameSession(gameId) {
+    const session = wordGameSessions.get(gameId);
+    if (session) {
+        // 타이머 정리
+        if (session.turnTimer) clearTimeout(session.turnTimer);
+        if (session.roundTimer) clearTimeout(session.roundTimer);
+        
+        // 임시 채널 삭제
+        if (session.gameChannel && !session.gameChannel.deleted) {
+            session.gameChannel.delete('게임 종료').catch(console.error);
+        }
+        
+        // 세션 삭제
+        wordGameSessions.delete(gameId);
+        tempGameChannels.delete(session.gameChannel?.id);
+        
+        console.log(`[게임 세션 정리] ${gameId} 세션 정리 완료`);
+    }
+}
+
+// 만료된 세션 자동 정리 (5분마다)
+setInterval(() => {
+    const now = Date.now();
+    for (const [gameId, session] of wordGameSessions) {
+        // 30분 이상된 세션 정리
+        if (session.createdAt && now - session.createdAt > 30 * 60 * 1000) {
+            console.log(`[세션 만료] ${gameId} - 30분 초과`);
+            cleanupGameSession(gameId);
+        }
+    }
+}, 5 * 60 * 1000);
+
+// 매크로 방지 시스템
+const ANTI_MACRO = {
+    // 사용자별 행동 패턴 추적
+    userPatterns: new Map(),
+    // 현재 진행 중인 검증
+    activeVerifications: new Map(),
+    // 사용자별 제재 기록
+    penaltyHistory: new Map(),
+    
+    // 의심스러운 행동 기준
+    suspiciousThresholds: {
+        minResponseTime: 500, // 최소 반응 시간 (ms) - 인간적인 반응 시간
+        maxActionsPerMinute: 20, // 분당 최대 액션 수
+        repeatActionThreshold: 5, // 동일 행동 반복 임계값
+        patternSimilarity: 0.85, // 패턴 유사도 임계값
+        rapidClickThreshold: 3, // 연속 빠른 클릭 임계값
+        timeWindowMs: 60000 // 패턴 분석 시간 창 (1분)
+    },
+    
+    // 검증 시스템 설정
+    verificationConfig: {
+        responseTimeSeconds: 20, // 응답 제한 시간 (20초로 변경)
+        codeLength: 6, // 인증 코드 길이
+        codeCharacters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', // 사용할 문자
+        imageWidth: 500, // 너비 늘림
+        imageHeight: 200,
+        fontColors: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'], // 무작위 색상
+        backgroundPatterns: ['dots', 'lines', 'grid', 'noise'], // 배경 패턴
+        distortionLevel: 0.3 // 이미지 왜곡 수준
+    },
+    
+    // 8단계 제재 시스템
+    penaltyTiers: [
+        { level: 1, duration: 5 * 60 * 1000, name: '경고', message: '⚠️ 첫 번째 경고: 5분 타임아웃' },
+        { level: 2, duration: 10 * 60 * 1000, name: '주의', message: '⏰ 두 번째 경고: 10분 타임아웃' },
+        { level: 3, duration: 30 * 60 * 1000, name: '경계', message: '🚨 세 번째 경고: 30분 타임아웃' },
+        { level: 4, duration: 60 * 60 * 1000, name: '위험', message: '🔥 네 번째 경고: 1시간 타임아웃' },
+        { level: 5, duration: 3 * 60 * 60 * 1000, name: '심각', message: '💀 다섯 번째 경고: 3시간 타임아웃' },
+        { level: 6, duration: 24 * 60 * 60 * 1000, name: '위기', message: '🚫 여섯 번째 경고: 24시간 타임아웃' },
+        { level: 7, duration: 30 * 24 * 60 * 60 * 1000, name: '최종경고', message: '⛔ 일곱 번째 경고: 30일 타임아웃' },
+        { level: 8, duration: null, name: '영구정지', message: '🔨 영구 정지: 서비스 이용이 금지되었습니다' }
+    ],
+    
+    // 탐지 가중치 (각 행동별 의심도 점수)
+    detectionWeights: {
+        tooFastResponse: 30, // 너무 빠른 응답
+        identicalTiming: 25, // 동일한 타이밍 반복
+        noVariation: 20, // 행동 패턴 변화 없음
+        rapidActions: 15, // 급속한 연속 행동
+        impossiblePattern: 40 // 불가능한 패턴 (예: 0.001초 반응)
+    },
+    
+    // 화이트리스트 (검증된 사용자)
+    whitelist: new Set(),
+    
+    // 임시 면제 (일시적 검증 면제)
+    temporaryExemptions: new Map()
+};
+
+// 매크로 방지 시스템 함수들
+
+// 사용자 행동 기록
+function recordUserAction(userId, actionType, timestamp = Date.now()) {
+    if (!ANTI_MACRO.userPatterns.has(userId)) {
+        ANTI_MACRO.userPatterns.set(userId, {
+            actions: [],
+            suspicionScore: 0,
+            lastCheck: timestamp
+        });
+    }
+    
+    const userPattern = ANTI_MACRO.userPatterns.get(userId);
+    userPattern.actions.push({ type: actionType, timestamp });
+    
+    // 시간 창을 벗어난 오래된 행동 제거
+    const cutoffTime = timestamp - ANTI_MACRO.suspiciousThresholds.timeWindowMs;
+    userPattern.actions = userPattern.actions.filter(action => action.timestamp > cutoffTime);
+    
+    // 패턴 분석
+    analyzeUserPattern(userId);
+}
+
+// 사용자 패턴 분석
+function analyzeUserPattern(userId) {
+    const userPattern = ANTI_MACRO.userPatterns.get(userId);
+    if (!userPattern || userPattern.actions.length < 5) return;
+    
+    let suspicionScore = 0;
+    const actions = userPattern.actions;
+    
+    // 1. 반응 시간 분석
+    const reactionTimes = [];
+    for (let i = 1; i < actions.length; i++) {
+        const timeDiff = actions[i].timestamp - actions[i-1].timestamp;
+        reactionTimes.push(timeDiff);
+        
+        if (timeDiff < ANTI_MACRO.suspiciousThresholds.minResponseTime) {
+            suspicionScore += ANTI_MACRO.detectionWeights.tooFastResponse;
+        }
+    }
+    
+    // 2. 동일한 타이밍 패턴 감지
+    const timingCounts = {};
+    reactionTimes.forEach(time => {
+        const roundedTime = Math.round(time / 100) * 100; // 100ms 단위로 반올림
+        timingCounts[roundedTime] = (timingCounts[roundedTime] || 0) + 1;
+    });
+    
+    const maxTimingCount = Math.max(...Object.values(timingCounts));
+    if (maxTimingCount >= ANTI_MACRO.suspiciousThresholds.repeatActionThreshold) {
+        suspicionScore += ANTI_MACRO.detectionWeights.identicalTiming;
+    }
+    
+    // 3. 행동 다양성 분석
+    const actionTypes = new Set(actions.map(a => a.type));
+    if (actionTypes.size === 1 && actions.length > 10) {
+        suspicionScore += ANTI_MACRO.detectionWeights.noVariation;
+    }
+    
+    // 4. 분당 행동 수 체크
+    const timeRange = actions[actions.length - 1].timestamp - actions[0].timestamp;
+    const actionsPerMinute = (actions.length / timeRange) * 60000;
+    if (actionsPerMinute > ANTI_MACRO.suspiciousThresholds.maxActionsPerMinute) {
+        suspicionScore += ANTI_MACRO.detectionWeights.rapidActions;
+    }
+    
+    // 5. 불가능한 패턴 감지 (0.1초 미만 반응)
+    const impossibleReactions = reactionTimes.filter(time => time < 100);
+    if (impossibleReactions.length > 0) {
+        suspicionScore += ANTI_MACRO.detectionWeights.impossiblePattern * impossibleReactions.length;
+    }
+    
+    userPattern.suspicionScore = suspicionScore;
+    
+    // 임계값 초과 시 검증 트리거
+    if (suspicionScore >= 50 && !ANTI_MACRO.activeVerifications.has(userId)) {
+        triggerVerification(userId);
+    }
+}
+
+// 검증 코드 이미지 생성 (레이싱 게임 기술 활용)
+async function generateVerificationImage(code) {
+    const { imageWidth, imageHeight, fontColors, backgroundPatterns } = ANTI_MACRO.verificationConfig;
+    
+    // 기본 이미지 생성
+    const image = new Jimp(imageWidth, imageHeight, '#FFFFFF');
+    
+    // 배경 패턴 추가
+    const pattern = backgroundPatterns[Math.floor(Math.random() * backgroundPatterns.length)];
+    await addBackgroundPattern(image, pattern);
+    
+    // 폰트 로드
+    const font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK);
+    
+    // 각 문자를 개별적으로 그리기 (색상과 위치 변형)
+    const charWidth = imageWidth / (code.length + 1);
+    for (let i = 0; i < code.length; i++) {
+        const char = code[i];
+        const color = fontColors[Math.floor(Math.random() * fontColors.length)];
+        
+        // 문자별 이미지 생성
+        const charImage = new Jimp(100, 100, '#00000000');
+        charImage.print(font, 0, 0, char);
+        
+        // 색상 변경
+        charImage.scan(0, 0, charImage.bitmap.width, charImage.bitmap.height, function(x, y, idx) {
+            if (this.bitmap.data[idx + 3] > 0) { // 알파값이 있는 픽셀만
+                const hex = Jimp.intToRGBA(Jimp.cssColorToHex(color));
+                this.bitmap.data[idx] = hex.r;
+                this.bitmap.data[idx + 1] = hex.g;
+                this.bitmap.data[idx + 2] = hex.b;
+            }
+        });
+        
+        // 회전 및 크기 변형
+        const rotation = (Math.random() - 0.5) * 30; // -15 ~ +15도
+        const scale = 0.8 + Math.random() * 0.4; // 0.8 ~ 1.2배
+        charImage.rotate(rotation);
+        charImage.scale(scale);
+        
+        // 위치 계산 (중앙 정렬 개선)
+        const x = charWidth * i + charWidth / 2 + (Math.random() - 0.5) * 10; // 랜덤성 감소
+        const y = imageHeight / 2 + (Math.random() - 0.5) * 10;
+        
+        // 이미지에 합성 - 더 중앙으로 이동
+        image.composite(charImage, Math.max(20, x - 20), y - 50); // 왼쪽 여백 더 확보
+    }
+    
+    // 노이즈 추가
+    await addNoise(image, ANTI_MACRO.verificationConfig.distortionLevel);
+    
+    // 왜곡 효과
+    await addDistortion(image);
+    
+    return image;
+}
+
+// 배경 패턴 추가
+async function addBackgroundPattern(image, pattern) {
+    const { width, height } = image.bitmap;
+    
+    switch (pattern) {
+        case 'dots':
+            for (let i = 0; i < 100; i++) {
+                const x = Math.random() * width;
+                const y = Math.random() * height;
+                const size = Math.random() * 3 + 1;
+                const color = `#${Math.floor(Math.random() * 0x333333 + 0xCCCCCC).toString(16)}`;
+                const dot = new Jimp(size * 2, size * 2, color);
+                dot.circle();
+                image.composite(dot, x - size, y - size);
+            }
+            break;
+            
+        case 'lines':
+            for (let i = 0; i < 20; i++) {
+                const y = Math.random() * height;
+                const color = `#${Math.floor(Math.random() * 0x333333 + 0xCCCCCC).toString(16)}`;
+                const line = new Jimp(width, 1, color);
+                image.composite(line, 0, y);
+            }
+            break;
+            
+        case 'grid':
+            const gridSize = 20;
+            for (let x = 0; x < width; x += gridSize) {
+                const vLine = new Jimp(1, height, '#EEEEEE');
+                image.composite(vLine, x, 0);
+            }
+            for (let y = 0; y < height; y += gridSize) {
+                const hLine = new Jimp(width, 1, '#EEEEEE');
+                image.composite(hLine, 0, y);
+            }
+            break;
+            
+        case 'noise':
+            // 노이즈는 별도 함수에서 처리
+            break;
+    }
+}
+
+// 노이즈 추가
+async function addNoise(image, level) {
+    image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
+        if (Math.random() < level) {
+            const noise = Math.random() * 50 - 25;
+            this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + noise));
+            this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + noise));
+            this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + noise));
+        }
+    });
+}
+
+// 왜곡 효과
+async function addDistortion(image) {
+    const { width, height } = image.bitmap;
+    const clone = image.clone();
+    
+    // 파도 효과
+    for (let x = 0; x < width; x++) {
+        const offset = Math.sin(x / 30) * 5;
+        for (let y = 0; y < height; y++) {
+            const srcY = Math.max(0, Math.min(height - 1, y + offset));
+            const color = clone.getPixelColor(x, srcY);
+            image.setPixelColor(color, x, y);
+        }
+    }
+}
+
+// 검증 트리거
+async function triggerVerification(userId) {
+    // 검증 코드 생성
+    const code = generateMacroVerificationCode();
+    
+    // 검증 정보 저장
+    ANTI_MACRO.activeVerifications.set(userId, {
+        code: code,
+        timestamp: Date.now(),
+        attempts: 0
+    });
+    
+    // 이미지 생성
+    const verificationImage = await generateVerificationImage(code);
+    
+    return {
+        code: code,
+        image: verificationImage,
+        timeLimit: ANTI_MACRO.verificationConfig.responseTimeSeconds
+    };
+}
+
+// 매크로 검증 코드 생성
+function generateMacroVerificationCode() {
+    const { codeLength, codeCharacters } = ANTI_MACRO.verificationConfig;
+    let code = '';
+    
+    for (let i = 0; i < codeLength; i++) {
+        code += codeCharacters.charAt(Math.floor(Math.random() * codeCharacters.length));
+    }
+    
+    return code;
+}
+
+// 검증 응답 처리
+async function handleVerificationResponse(userId, response) {
+    const verification = ANTI_MACRO.activeVerifications.get(userId);
+    if (!verification) return { success: false, reason: 'no_active_verification' };
+    
+    const currentTime = Date.now();
+    const timeElapsed = (currentTime - verification.timestamp) / 1000;
+    
+    // 시간 초과 체크
+    if (timeElapsed > ANTI_MACRO.verificationConfig.responseTimeSeconds) {
+        ANTI_MACRO.activeVerifications.delete(userId);
+        await applyPenalty(userId);
+        return { success: false, reason: 'timeout' };
+    }
+    
+    // 응답 확인
+    if (response.toUpperCase() === verification.code) {
+        ANTI_MACRO.activeVerifications.delete(userId);
+        // 의심 점수 초기화
+        if (ANTI_MACRO.userPatterns.has(userId)) {
+            ANTI_MACRO.userPatterns.get(userId).suspicionScore = 0;
+        }
+        return { success: true };
+    } else {
+        verification.attempts++;
+        if (verification.attempts >= 3) {
+            ANTI_MACRO.activeVerifications.delete(userId);
+            await applyPenalty(userId);
+            return { success: false, reason: 'max_attempts' };
+        }
+        return { success: false, reason: 'incorrect', attemptsLeft: 3 - verification.attempts };
+    }
+}
+
+// 제재 적용
+async function applyPenalty(userId) {
+    // 제재 기록 가져오기 또는 생성
+    if (!ANTI_MACRO.penaltyHistory.has(userId)) {
+        ANTI_MACRO.penaltyHistory.set(userId, {
+            level: 0,
+            lastPenalty: null,
+            totalViolations: 0
+        });
+    }
+    
+    const history = ANTI_MACRO.penaltyHistory.get(userId);
+    history.level = Math.min(history.level + 1, ANTI_MACRO.penaltyTiers.length);
+    history.lastPenalty = Date.now();
+    history.totalViolations++;
+    
+    const penalty = ANTI_MACRO.penaltyTiers[history.level - 1];
+    
+    return {
+        level: penalty.level,
+        duration: penalty.duration,
+        name: penalty.name,
+        message: penalty.message,
+        isPermanent: penalty.duration === null
+    };
+}
+
+// 제재 상태 확인
+function checkPenaltyStatus(userId) {
+    const history = ANTI_MACRO.penaltyHistory.get(userId);
+    if (!history || !history.lastPenalty) return { restricted: false };
+    
+    const penalty = ANTI_MACRO.penaltyTiers[history.level - 1];
+    if (penalty.duration === null) {
+        return { restricted: true, reason: 'permanent_ban', message: penalty.message };
+    }
+    
+    const timeElapsed = Date.now() - history.lastPenalty;
+    if (timeElapsed < penalty.duration) {
+        const timeLeft = penalty.duration - timeElapsed;
+        return { 
+            restricted: true, 
+            reason: 'timeout', 
+            timeLeft: timeLeft,
+            message: penalty.message 
+        };
+    }
+    
+    return { restricted: false };
+}
+
+// 매크로 검증 메시지 전송
+async function sendMacroVerification(interaction, userId) {
+    try {
+        // 검증 생성
+        const verification = await triggerVerification(userId);
+        
+        // 이미지를 버퍼로 변환
+        const imageBuffer = await verification.image.getBufferAsync(Jimp.MIME_PNG);
+        
+        // police.png 파일 경로
+        const policePath = path.join(__dirname, 'resource', 'police.png');
+        
+        // 검증 임베드 생성
+        const verifyEmbed = new EmbedBuilder()
+            .setTitle('🚨 매크로 방지 시스템')
+            .setDescription(`**비정상적인 활동이 감지되었습니다!**\n\n아래 이미지에 표시된 **6자리 코드**를 ${verification.timeLimit}초 내에 입력해주세요.\n\n⚠️ 3회 실패 또는 시간 초과 시 제재가 적용됩니다.`)
+            .setColor('#FF0000')
+            .setImage('attachment://verification.png')
+            .setThumbnail('attachment://police.png')
+            .setFooter({ text: '김헌터 보안 시스템', iconURL: 'attachment://police.png' })
+            .setTimestamp();
+            
+        // 현재 제재 레벨 표시
+        const penaltyHistory = ANTI_MACRO.penaltyHistory.get(userId);
+        if (penaltyHistory && penaltyHistory.level > 0) {
+            verifyEmbed.addFields({
+                name: '⚠️ 현재 경고 단계',
+                value: `${penaltyHistory.level}단계 / 8단계`,
+                inline: true
+            });
+        }
+        
+        // 파일 첨부
+        const files = [
+            { attachment: imageBuffer, name: 'verification.png' },
+            { attachment: policePath, name: 'police.png' }
+        ];
+        
+        // 특정 유저에게만 보이도록 전송 (ephemeral 옵션 사용)
+        const targetUser = await client.users.fetch(userId);
+        
+        // DM으로 전송하거나 ephemeral 메시지로 처리
+        if (interaction.user.id === userId) {
+            // 본인에게 테스트하는 경우
+            const message = await interaction.followUp({
+                content: `매크로 검증이 필요합니다!`,
+                embeds: [verifyEmbed],
+                files: files,
+                ephemeral: true
+            });
+        } else {
+            // 다른 유저에게 테스트하는 경우 DM으로 전송
+            try {
+                await targetUser.send({
+                    content: `🚨 매크로 검증이 필요합니다!`,
+                    embeds: [verifyEmbed],
+                    files: files
+                });
+                
+                await interaction.followUp({
+                    content: `✅ <@${userId}>에게 매크로 검증을 전송했습니다.`,
+                    ephemeral: true
+                });
+            } catch (error) {
+                await interaction.followUp({
+                    content: `❌ <@${userId}>에게 DM을 보낼 수 없습니다. 채널에서 검증을 진행합니다.`,
+                    ephemeral: true
+                });
+                
+                // DM 실패 시 채널에 전송
+                const message = await interaction.channel.send({
+                    content: `<@${userId}> 매크로 검증이 필요합니다!`,
+                    embeds: [verifyEmbed],
+                    files: files
+                });
+            }
+        }
+        
+        // 메시지 수집기 생성
+        const filter = m => m.author.id === userId;
+        const collector = interaction.channel.createMessageCollector({
+            filter,
+            time: verification.timeLimit * 1000,
+            max: 3
+        });
+        
+        collector.on('collect', async (m) => {
+            const result = await handleVerificationResponse(userId, m.content);
+            
+            if (result.success) {
+                const successEmbed = new EmbedBuilder()
+                    .setTitle('✅ 검증 성공')
+                    .setDescription('정상 사용자로 확인되었습니다. 계속 이용해주세요!')
+                    .setColor('#00FF00')
+                    .setThumbnail('attachment://police.png');
+                    
+                await interaction.channel.send({
+                    embeds: [successEmbed],
+                    files: [{ attachment: policePath, name: 'police.png' }]
+                });
+                
+                collector.stop('verified');
+            } else if (result.reason === 'incorrect' && result.attemptsLeft > 0) {
+                await m.reply(`❌ 잘못된 코드입니다. 남은 시도: ${result.attemptsLeft}회`);
+            } else if (result.reason === 'max_attempts') {
+                collector.stop('failed');
+            }
+        });
+        
+        collector.on('end', async (collected, reason) => {
+            if (reason === 'time') {
+                // 시간 초과
+                const penalty = await applyPenalty(userId);
+                await sendPenaltyNotification(interaction, userId, penalty);
+            } else if (reason === 'failed') {
+                // 최대 시도 횟수 초과
+                const penalty = await applyPenalty(userId);
+                await sendPenaltyNotification(interaction, userId, penalty);
+            }
+        });
+        
+    } catch (error) {
+        console.error('매크로 검증 전송 실패:', error);
+    }
+}
+
+// 제재 알림 전송
+async function sendPenaltyNotification(interaction, userId, penalty) {
+    const policePath = path.join(__dirname, 'resource', 'police.png');
+    
+    const penaltyEmbed = new EmbedBuilder()
+        .setTitle('🔨 제재 조치')
+        .setDescription(penalty.message)
+        .setColor('#FF0000')
+        .setThumbnail('attachment://police.png')
+        .addFields(
+            { name: '제재 단계', value: `${penalty.level}단계`, inline: true },
+            { name: '제재 유형', value: penalty.name, inline: true }
+        )
+        .setFooter({ text: '김헌터 보안 시스템', iconURL: 'attachment://police.png' })
+        .setTimestamp();
+        
+    if (!penalty.isPermanent) {
+        const duration = penalty.duration / 1000 / 60; // 분 단위
+        const durationText = duration >= 60 ? `${Math.floor(duration / 60)}시간` : `${duration}분`;
+        penaltyEmbed.addFields({ name: '제재 기간', value: durationText, inline: true });
+    }
+    
+    await interaction.channel.send({
+        embeds: [penaltyEmbed],
+        files: [{ attachment: policePath, name: 'police.png' }]
+    });
+    
+    // Discord 타임아웃 적용 (가능한 경우)
+    try {
+        const member = await interaction.guild.members.fetch(userId);
+        if (!penalty.isPermanent && penalty.duration <= 28 * 24 * 60 * 60 * 1000) { // 28일 이하
+            await member.timeout(penalty.duration, '매크로 사용 의심');
+        } else if (penalty.isPermanent) {
+            // 영구 정지는 역할로 처리하거나 봇 차단 목록에 추가
+            // 이 부분은 서버 설정에 따라 구현
+        }
+    } catch (error) {
+        console.error('Discord 타임아웃 적용 실패:', error);
+    }
+}
+
+// 임시 채널 설정
+const TEMP_CHANNEL_CONFIG = {
+    category: '1167093547438305290', // 임시 채널 카테고리 ID
+    deleteDelay: 30000, // 채널 삭제 대기 시간 (30초)
+    maxChannels: 50, // 최대 임시 채널 수
+    permissions: {
+        viewChannel: true,
+        sendMessages: true,
+        readMessageHistory: true,
+        addReactions: true,
+        useApplicationCommands: true
+    }
+};
+
+// 사전 API 설정 (환경변수에 API 키 저장 필요)
+const DICT_API = {
+    naver: {
+        clientId: process.env.NAVER_CLIENT_ID || '',
+        clientSecret: process.env.NAVER_CLIENT_SECRET || '',
+        url: 'https://openapi.naver.com/v1/search/encyc.json'
+    },
+    // 우리말샘 API
+    urimal: {
+        url: 'https://opendict.korean.go.kr/api/search',
+        key: process.env.URIMAL_API_KEY || ''
+    }
+};
+
+// 단어 검증 함수
+async function validateWord(word, mode = '일반') {
+    // 기본 검증
+    if (!word || word.length < 2) return false;
+    if (!/^[가-힣]+$/.test(word)) return false;
+    
+    // 욕설 필터
+    const bannedWords = ['시발', '씨발', '개새끼', '병신', '좆', '지랄', '미친', '애미', '애비'];
+    if (bannedWords.some(banned => word.includes(banned))) return false;
+    
+    // 모드별 검증
+    if (mode === '자유') return true;
+    
+    // 로컬 단어 목록 확인 (빠른 검증)
+    if (ALL_WORDS.has(word)) return true;
+    
+    // API를 통한 추가 검증 (로컬에 없는 경우)
+    try {
+        // 우리말샘 API 우선 시도
+        if (DICT_API.urimal.key) {
+            const urimalUrl = `${DICT_API.urimal.url}?key=${DICT_API.urimal.key}&q=${encodeURIComponent(word)}&type1=word`;
+            const response = await fetch(urimalUrl);
+            const text = await response.text();
+            
+            // XML 파싱 (간단한 방법)
+            if (text.includes('<total>') && !text.includes('<total>0</total>')) {
+                return true;
+            }
+        }
+        
+        // 네이버 사전 API 시도
+        if (DICT_API.naver.clientId) {
+            const response = await fetch(`${DICT_API.naver.url}?query=${encodeURIComponent(word)}&display=1`, {
+                headers: {
+                    'X-Naver-Client-Id': DICT_API.naver.clientId,
+                    'X-Naver-Client-Secret': DICT_API.naver.clientSecret
+                }
+            });
+            
+            const data = await response.json();
+            if (data.items && data.items.length > 0) return true;
+        }
+        
+        // 일반 모드에서는 API가 없어도 기본 단어는 통과
+        return mode === '일반' && word.length >= 2;
+        
+    } catch (error) {
+        console.error('단어 검증 API 오류:', error);
+        // API 오류시 일반 모드는 통과, 엄격 모드는 실패
+        return mode === '일반';
+    }
+}
+
+// 초성 추출 함수
+function getChosung(str) {
+    const cho = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+    let result = '';
+    
+    for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i) - 44032;
+        if (code > -1 && code < 11172) {
+            result += cho[Math.floor(code / 588)];
+        }
+    }
+    
+    return result;
+}
+
+// 게임 봇 생성 함수
+function createGameBot(name, difficulty = '보통') {
+    return {
+        id: `bot_${Date.now()}_${Math.random()}`,
+        name: name,
+        isBot: true,
+        difficulty: difficulty,
+        responseTime: { min: 2000, max: 8000 }, // 2-8초
+        errorRate: difficulty === '쉬움' ? 0.3 : difficulty === '보통' ? 0.2 : 0.1,
+        vocabulary: WORD_LIST.botWords[difficulty] || WORD_LIST.botWords['보통']
+    };
+}
+
+// 매크로 방지 함수들
+function trackUserAction(userId, actionType) {
+    if (!ANTI_MACRO.userPatterns.has(userId)) {
+        ANTI_MACRO.userPatterns.set(userId, {
+            actions: [],
+            lastAction: Date.now(),
+            suspicionLevel: 0,
+            captchaAttempts: 0,
+            penalties: []
+        });
+    }
+    
+    const pattern = ANTI_MACRO.userPatterns.get(userId);
+    const now = Date.now();
+    const timeSinceLastAction = now - pattern.lastAction;
+    
+    // 행동 기록
+    pattern.actions.push({
+        type: actionType,
+        timestamp: now,
+        responseTime: timeSinceLastAction
+    });
+    
+    // 최근 1분간의 행동만 유지
+    pattern.actions = pattern.actions.filter(a => now - a.timestamp < 60000);
+    
+    // 의심스러운 패턴 체크
+    const suspiciousScore = calculateSuspicionScore(pattern);
+    pattern.suspicionLevel = suspiciousScore;
+    pattern.lastAction = now;
+    
+    return suspiciousScore;
+}
+
+function calculateSuspicionScore(pattern) {
+    let score = 0;
+    
+    // 1. 너무 빠른 반응 속도
+    const tooFastActions = pattern.actions.filter(a => 
+        a.responseTime < ANTI_MACRO.suspiciousThresholds.minResponseTime
+    );
+    score += tooFastActions.length * 10;
+    
+    // 2. 너무 많은 액션
+    if (pattern.actions.length > ANTI_MACRO.suspiciousThresholds.maxActionsPerMinute) {
+        score += (pattern.actions.length - ANTI_MACRO.suspiciousThresholds.maxActionsPerMinute) * 5;
+    }
+    
+    // 3. 일정한 패턴 감지
+    if (pattern.actions.length >= 5) {
+        const intervals = [];
+        for (let i = 1; i < pattern.actions.length; i++) {
+            intervals.push(pattern.actions[i].timestamp - pattern.actions[i-1].timestamp);
+        }
+        
+        // 표준편차 계산
+        const avg = intervals.reduce((a, b) => a + b) / intervals.length;
+        const variance = intervals.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / intervals.length;
+        const stdDev = Math.sqrt(variance);
+        
+        // 표준편차가 너무 낮으면 (일정한 간격) 의심
+        if (stdDev < 100) {
+            score += 30;
+        }
+    }
+    
+    return score;
+}
+
+// 캡차 생성 함수
+function generateCaptcha(type = 'math') {
+    const captchaGenerators = {
+        math: () => {
+            const a = Math.floor(Math.random() * 50) + 1;
+            const b = Math.floor(Math.random() * 50) + 1;
+            const operators = ['+', '-', '*'];
+            const op = operators[Math.floor(Math.random() * operators.length)];
+            let answer;
+            
+            switch(op) {
+                case '+': answer = a + b; break;
+                case '-': answer = a - b; break;
+                case '*': answer = a * b; break;
+            }
+            
+            return {
+                question: `${a} ${op} ${b} = ?`,
+                answer: answer.toString(),
+                type: 'math'
+            };
+        },
+        emoji: () => {
+            const emojis = ['🍎', '🍌', '🍇', '🍊', '🥝', '🍓', '🍑', '🥭'];
+            const target = emojis[Math.floor(Math.random() * emojis.length)];
+            const count = Math.floor(Math.random() * 5) + 3;
+            
+            let display = '';
+            let actualCount = 0;
+            
+            for (let i = 0; i < 20; i++) {
+                if (Math.random() < 0.3 && actualCount < count) {
+                    display += target;
+                    actualCount++;
+                } else {
+                    display += emojis[Math.floor(Math.random() * emojis.length)];
+                }
+            }
+            
+            return {
+                question: `${display}\n\n${target} 이모지가 몇 개 있나요?`,
+                answer: actualCount.toString(),
+                type: 'emoji'
+            };
+        },
+        color: () => {
+            const colors = {
+                '빨간색': '🔴', '파란색': '🔵', '노란색': '🟡',
+                '초록색': '🟢', '보라색': '🟣', '주황색': '🟠'
+            };
+            const colorNames = Object.keys(colors);
+            const targetColor = colorNames[Math.floor(Math.random() * colorNames.length)];
+            
+            return {
+                question: `다음 중 ${targetColor}을 선택하세요:\n1️⃣ ${colors[colorNames[0]]}\n2️⃣ ${colors[colorNames[1]]}\n3️⃣ ${colors[colorNames[2]]}`,
+                answer: (colorNames.indexOf(targetColor) + 1).toString(),
+                type: 'color'
+            };
+        }
+    };
+    
+    return captchaGenerators[type]();
+}
+
+// 임시 채널 생성 함수
+async function createTempGameChannel(guild, userId, gameName) {
+    try {
+        const existingChannel = Array.from(tempGameChannels.values()).find(ch => 
+            ch.userId === userId && ch.gameName === gameName
+        );
+        
+        if (existingChannel) {
+            return existingChannel.channel;
+        }
+        
+        const channel = await guild.channels.create({
+            name: `🎮-${gameName}-${userId.slice(-4)}`,
+            type: 0, // GUILD_TEXT
+            parent: TEMP_CHANNEL_CONFIG.category,
+            permissionOverwrites: [
+                {
+                    id: guild.id,
+                    deny: ['ViewChannel']
+                },
+                {
+                    id: userId,
+                    allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
+                },
+                {
+                    id: guild.members.me.id,
+                    allow: ['ViewChannel', 'SendMessages', 'ManageChannels']
+                }
+            ]
+        });
+        
+        const channelInfo = {
+            channel,
+            userId,
+            gameName,
+            createdAt: Date.now()
+        };
+        
+        tempGameChannels.set(channel.id, channelInfo);
+        
+        // 자동 삭제 예약
+        setTimeout(async () => {
+            await deleteTempChannel(channel.id);
+        }, 600000); // 10분 후 자동 삭제
+        
+        return channel;
+    } catch (error) {
+        console.error('임시 채널 생성 오류:', error);
+        return null;
+    }
+}
+
+// 임시 채널 삭제 함수
+async function deleteTempChannel(channelId) {
+    try {
+        const channelInfo = tempGameChannels.get(channelId);
+        if (!channelInfo) return;
+        
+        const { channel } = channelInfo;
+        
+        // 종료 메시지
+        const endEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('🏁 게임 종료')
+            .setDescription('이 채널은 30초 후 자동으로 삭제됩니다.')
+            .setFooter({ text: '다시 플레이하려면 메인 채널에서 게임을 시작하세요!' });
+        
+        await channel.send({ embeds: [endEmbed] });
+        
+        // 30초 후 삭제
+        setTimeout(async () => {
+            try {
+                await channel.delete();
+                tempGameChannels.delete(channelId);
+            } catch (err) {
+                console.error('채널 삭제 오류:', err);
+            }
+        }, TEMP_CHANNEL_CONFIG.deleteDelay);
+        
+    } catch (error) {
+        console.error('임시 채널 삭제 오류:', error);
+    }
+}
+
+// 가위바위보 티켓 재생성 함수
+async function regenerateRpsTickets(user) {
+    const now = Date.now();
+    
+    // 봇 대전 티켓 재생성
+    const timeSinceLastBotRegen = now - new Date(user.rpsGameData.lastBotTicketRegen).getTime();
+    const botTicketsToRegen = Math.floor(timeSinceLastBotRegen / RPS_GAME.ticketRegen);
+    
+    if (botTicketsToRegen > 0 && user.rpsGameData.botTickets < 20) {
+        user.rpsGameData.botTickets = Math.min(20, user.rpsGameData.botTickets + botTicketsToRegen);
+        user.rpsGameData.lastBotTicketRegen = new Date(new Date(user.rpsGameData.lastBotTicketRegen).getTime() + (botTicketsToRegen * RPS_GAME.ticketRegen));
+    }
+    
+    // 유저 대전 티켓 재생성
+    const timeSinceLastUserRegen = now - new Date(user.rpsGameData.lastUserTicketRegen).getTime();
+    const userTicketsToRegen = Math.floor(timeSinceLastUserRegen / RPS_GAME.ticketRegen);
+    
+    if (userTicketsToRegen > 0 && user.rpsGameData.userTickets < 20) {
+        user.rpsGameData.userTickets = Math.min(20, user.rpsGameData.userTickets + userTicketsToRegen);
+        user.rpsGameData.lastUserTicketRegen = new Date(new Date(user.rpsGameData.lastUserTicketRegen).getTime() + (userTicketsToRegen * RPS_GAME.ticketRegen));
+    }
+    
+    await user.save();
+}
+
+// 슬롯머신 스핀 실행 함수
+async function executeSlotSpin(user, betAmount) {
+    // 골드 차감
+    user.gold -= betAmount;
+    
+    // 잭팟에 기여
+    SLOT_MACHINE.jackpot.currentAmount += Math.floor(betAmount * SLOT_MACHINE.jackpot.contribution);
+    
+    // 심볼 가중치 계산
+    const symbolWeights = [];
+    const symbols = [];
+    
+    for (const [symbol, data] of Object.entries(SLOT_MACHINE.symbols)) {
+        symbols.push(symbol);
+        symbolWeights.push(data.weight);
+    }
+    
+    // 가중치 기반 랜덤 선택
+    function getRandomSymbol() {
+        const totalWeight = symbolWeights.reduce((a, b) => a + b, 0);
+        let random = Math.random() * totalWeight;
+        
+        for (let i = 0; i < symbols.length; i++) {
+            random -= symbolWeights[i];
+            if (random <= 0) {
+                return symbols[i];
+            }
+        }
+        return symbols[symbols.length - 1];
+    }
+    
+    // 3개의 릴 결과 생성
+    const reelResults = [];
+    for (let i = 0; i < SLOT_MACHINE.reels; i++) {
+        reelResults.push(getRandomSymbol());
+    }
+    
+    // 당첨 계산
+    let winAmount = 0;
+    let isJackpot = false;
+    
+    // 3개 모두 같은 경우
+    if (reelResults[0] === reelResults[1] && reelResults[1] === reelResults[2]) {
+        const symbol = reelResults[0];
+        const symbolData = SLOT_MACHINE.symbols[symbol];
+        
+        if (symbol === SLOT_MACHINE.jackpot.symbol) {
+            // 잭팟!
+            winAmount = SLOT_MACHINE.jackpot.currentAmount;
+            isJackpot = true;
+            SLOT_MACHINE.jackpot.currentAmount = SLOT_MACHINE.jackpot.baseAmount;
+        } else {
+            winAmount = betAmount * symbolData.payout;
+        }
+    }
+    // 2개가 같은 경우 (부분 당첨)
+    else if (reelResults[0] === reelResults[1] || reelResults[1] === reelResults[2] || reelResults[0] === reelResults[2]) {
+        // 2개 매칭시 베팅금의 50% 반환
+        winAmount = Math.floor(betAmount * 0.5);
+    }
+    
+    // 골드 지급
+    if (winAmount > 0) {
+        user.gold += winAmount;
+    }
+    
+    // 통계 업데이트
+    user.slotStats.totalSpins++;
+    user.slotStats.totalBet += betAmount;
+    user.slotStats.totalWon += winAmount;
+    user.slotStats.lastSpin = new Date();
+    
+    if (winAmount > 0) {
+        user.slotStats.currentStreak++;
+        if (user.slotStats.currentStreak > user.slotStats.bestStreak) {
+            user.slotStats.bestStreak = user.slotStats.currentStreak;
+        }
+        if (winAmount > user.slotStats.biggestWin) {
+            user.slotStats.biggestWin = winAmount;
+        }
+        if (isJackpot) {
+            user.slotStats.jackpotWins++;
+        }
+    } else {
+        user.slotStats.currentStreak = 0;
+    }
+    
+    await user.save();
+    
+    // 스핀 기록 저장
+    const spinHistory = slotMachineHistory.get(user.discordId) || [];
+    spinHistory.push({
+        symbols: reelResults,
+        bet: betAmount,
+        win: winAmount,
+        isJackpot: isJackpot,
+        time: new Date()
+    });
+    if (spinHistory.length > 100) {
+        spinHistory.shift(); // 최대 100개만 유지
+    }
+    slotMachineHistory.set(user.discordId, spinHistory);
+    
+    return {
+        symbols: reelResults,
+        win: winAmount,
+        isJackpot: isJackpot
+    };
+}
+
+// 던전 층 시작 함수
+async function startDungeonFloor(interaction, session, floor) {
+    const floorData = DUNGEON_CRAWLER.floors[floor];
+    
+    // 함정 확인
+    if (Math.random() < floorData.trapChance) {
+        const trapDamage = Math.floor(Math.random() * 20) + 10;
+        session.hp -= trapDamage;
+        
+        if (session.hp <= 0) {
+            await interaction.editReply({ 
+                content: `💀 함정에 걸려 ${trapDamage}의 피해를 입고 쓰러졌습니다...`, 
+                embeds: [], 
+                components: [] 
+            });
+            await endDungeonRun(interaction, session, false);
+            return;
+        }
+        
+        await interaction.editReply({ 
+            content: `🪤 함정에 걸렸습니다! ${trapDamage}의 피해를 입었습니다. (HP: ${session.hp}/${session.maxHp})`,
+            embeds: [],
+            components: []
+        });
+        
+        // 2초 후 계속
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    
+    // 아이템 발견 확인
+    for (const [itemId, item] of Object.entries(DUNGEON_CRAWLER.items)) {
+        if (Math.random() < item.findChance) {
+            session.inventory.push(itemId);
+            await interaction.editReply({ 
+                content: `${item.emoji} ${item.name}을(를) 발견했습니다!`,
+                embeds: [],
+                components: []
+            });
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            break;
+        }
+    }
+    
+    // 보스 또는 일반 몬스터 결정
+    const isBoss = Math.random() < floorData.bossChance;
+    const monster = isBoss ? floorData.boss : {
+        name: floorData.monsters[Math.floor(Math.random() * floorData.monsters.length)],
+        hp: 50 + (floor * 20),
+        reward: floorData.baseReward
+    };
+    
+    const dungeonEmbed = new EmbedBuilder()
+        .setColor(isBoss ? '#FF0000' : '#8B4513')
+        .setTitle(floorData.name)
+        .setDescription(isBoss ? `⚠️ **보스 출현!** ${monster.name}` : `${monster.name}이(가) 나타났다!`)
+        .addFields(
+            { name: '👤 내 HP', value: `${session.hp}/${session.maxHp}`, inline: true },
+            { name: '⚔️ 공격력', value: `${session.attack}`, inline: true },
+            { name: '🛡️ 방어력', value: `${session.defense}`, inline: true },
+            { name: '👹 몬스터 HP', value: `${monster.hp}`, inline: true },
+            { name: '💰 처치 보상', value: `${monster.reward.toLocaleString()}G`, inline: true },
+            { name: '🎒 아이템', value: `${session.inventory.length}개`, inline: true }
+        )
+        .setFooter({ text: `${floor}층 | 획득 골드: ${session.goldEarned.toLocaleString()}G` });
+    
+    const actionButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('dungeon_fight')
+                .setLabel('⚔️ 전투')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('dungeon_item')
+                .setLabel(`🎒 아이템 (${session.inventory.length})`)
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(session.inventory.length === 0),
+            new ButtonBuilder()
+                .setCustomId('dungeon_run')
+                .setLabel('🏃 도망 (50%)')
+                .setStyle(ButtonStyle.Primary)
+        );
+    
+    // 현재 몬스터 정보를 세션에 저장
+    session.currentMonster = monster;
+    session.isBoss = isBoss;
+    
+    await interaction.editReply({ embeds: [dungeonEmbed], components: [actionButtons] });
+}
+
+// 던전 전투 실행 함수
+async function executeDungeonBattle(interaction, session) {
+    const monster = session.currentMonster;
+    if (!monster) {
+        await interaction.reply({ content: '몬스터 정보를 찾을 수 없습니다.', flags: 64 });
+        return;
+    }
+    
+    await interaction.deferUpdate();
+    
+    // 전투 진행
+    let battleLog = [];
+    let monsterHp = monster.hp;
+    let turn = 1;
+    
+    while (session.hp > 0 && monsterHp > 0) {
+        // 플레이어 공격
+        const playerDamage = Math.floor(Math.random() * session.attack) + Math.floor(session.attack / 2);
+        monsterHp -= playerDamage;
+        battleLog.push(`⚔️ 턴 ${turn}: ${playerDamage}의 피해를 입혔습니다!`);
+        
+        if (monsterHp <= 0) break;
+        
+        // 몬스터 공격
+        const monsterAttack = 10 + (session.floor * 5);
+        const monsterDamage = Math.max(1, Math.floor(Math.random() * monsterAttack) - session.defense);
+        session.hp -= monsterDamage;
+        battleLog.push(`👹 ${monster.name}의 공격! ${monsterDamage}의 피해를 입었습니다!`);
+        
+        turn++;
+        if (turn > 10) break; // 최대 10턴
+    }
+    
+    // 전투 결과
+    if (session.hp <= 0) {
+        // 패배
+        const defeatEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle('💀 전투 패배!')
+            .setDescription(battleLog.slice(-5).join('\n'))
+            .addFields(
+                { name: '결과', value: '던전 탐험에 실패했습니다...', inline: false }
+            );
+        
+        await interaction.editReply({ embeds: [defeatEmbed], components: [] });
+        await endDungeonRun(interaction, session, false);
+    } else {
+        // 승리
+        session.goldEarned += monster.reward;
+        session.monstersDefeated++;
+        if (session.isBoss) {
+            const user = await getUser(interaction.user.id);
+            user.dungeonStats.bossKills++;
+            await user.save();
+        }
+        
+        const victoryEmbed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('⚔️ 전투 승리!')
+            .setDescription(battleLog.slice(-5).join('\n'))
+            .addFields(
+                { name: '💰 보상', value: `${monster.reward.toLocaleString()}G`, inline: true },
+                { name: '👤 남은 HP', value: `${session.hp}/${session.maxHp}`, inline: true }
+            );
+        
+        const nextButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('dungeon_next')
+                    .setLabel('⬇️ 다음 층')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(session.floor >= DUNGEON_CRAWLER.maxFloor),
+                new ButtonBuilder()
+                    .setCustomId('dungeon_item')
+                    .setLabel(`🎒 아이템 사용 (${session.inventory.length})`)
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(session.inventory.length === 0),
+                new ButtonBuilder()
+                    .setCustomId('dungeon_escape')
+                    .setLabel('🏃 던전 탈출')
+                    .setStyle(ButtonStyle.Primary)
+            );
+        
+        await interaction.editReply({ embeds: [victoryEmbed], components: [nextButtons] });
+    }
+}
+
+// 던전 탐험 종료 함수
+async function endDungeonRun(interaction, session, success) {
+    const user = await getUser(session.userId);
+    
+    // 통계 업데이트
+    user.dungeonStats.totalRuns++;
+    user.dungeonStats.totalGoldEarned += session.goldEarned;
+    user.dungeonStats.itemsFound += session.inventory.length;
+    user.dungeonStats.lastRun = new Date();
+    
+    if (success) {
+        if (session.floor > user.dungeonStats.maxFloor) {
+            user.dungeonStats.maxFloor = session.floor;
+        }
+        user.gold += session.goldEarned;
+    } else {
+        user.dungeonStats.totalDeaths++;
+        // 실패시 획득 골드의 50%만 지급
+        user.gold += Math.floor(session.goldEarned * 0.5);
+    }
+    
+    await user.save();
+    
+    // 세션 삭제
+    dungeonSessions.delete(session.userId);
+    
+    const resultEmbed = new EmbedBuilder()
+        .setColor(success ? '#00FF00' : '#FF0000')
+        .setTitle(success ? '🎉 던전 클리어!' : '💀 던전 탐험 실패')
+        .setDescription(success ? '축하합니다! 던전을 성공적으로 클리어했습니다!' : '아쉽게도 던전에서 쓰러졌습니다...')
+        .addFields(
+            { name: '🏰 도달 층', value: `${session.floor}층`, inline: true },
+            { name: '💰 획득 골드', value: `${(success ? session.goldEarned : Math.floor(session.goldEarned * 0.5)).toLocaleString()}G`, inline: true },
+            { name: '⚔️ 처치한 몬스터', value: `${session.monstersDefeated}마리`, inline: true },
+            { name: '🎒 발견한 아이템', value: `${session.inventory.length}개`, inline: true }
+        )
+        .setFooter({ text: '다시 도전해보세요!' });
+    
+    const menuButton = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('dungeon_menu')
+                .setLabel('🏰 던전 메뉴')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('back_to_game_menu')
+                .setLabel('🎮 게임 메뉴')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    
+    setTimeout(() => {
+        interaction.editReply({ embeds: [resultEmbed], components: [menuButton] });
+    }, 1000);
+}
+
+// 초성게임 시작 함수
+async function startChosungGame(channel, players) {
+    const gameId = 'chosung_' + channel.id;
+    
+    // 봇 플레이어 추가 (최소 인원 채우기)
+    while (players.length < WORD_GAME.minPlayers) {
+        const botNames = ['김봇이', '이봇순', '박봇남', '최봇희', '정봇민'];
+        const botName = botNames[Math.floor(Math.random() * botNames.length)];
+        players.push(createGameBot(botName, '보통'));
+    }
+    
+    // 게임 세션 생성
+    const session = {
+        id: gameId,
+        type: 'chosung',
+        channel: channel,
+        createdAt: Date.now(), // 생성 시간 추가
+        players: players.map((p, idx) => ({
+            ...p,
+            score: 0,
+            eliminated: false,
+            order: idx
+        })),
+        currentRound: 1,
+        maxRounds: 5,
+        currentWord: null,
+        usedWords: new Set(),
+        turnTimer: null,
+        state: 'starting'
+    };
+    
+    wordGameSessions.set(gameId, session);
+    
+    // 임시 채널 생성
+    try {
+        const tempChannel = await channel.guild.channels.create({
+            name: `초성게임-${Date.now()}`,
+            type: 0, // 텍스트 채널
+            parent: channel.parent,
+            permissionOverwrites: [
+                {
+                    id: channel.guild.id,
+                    deny: ['SendMessages'], // 모든 사람 메시지 금지
+                    allow: ['ViewChannel'] // 관람은 가능
+                },
+                ...players.filter(p => !p.isBot).map(p => ({
+                    id: p.id,
+                    allow: ['SendMessages', 'ViewChannel'] // 참가자는 메시지 가능
+                }))
+            ]
+        });
+        
+        session.gameChannel = tempChannel;
+        tempGameChannels.set(tempChannel.id, gameId);
+        
+        // 30분 후 자동 삭제 타이머 설정
+        setTimeout(async () => {
+            try {
+                if (tempChannel && !tempChannel.deleted) {
+                    await tempChannel.delete('게임 시간 초과 - 자동 정리');
+                    console.log(`[임시 채널 자동 삭제] ${tempChannel.name}`);
+                }
+            } catch (error) {
+                console.error('[임시 채널 삭제 실패]', error);
+            }
+        }, 30 * 60 * 1000);
+        
+        // 게임 시작 메시지
+        const startEmbed = new EmbedBuilder()
+            .setColor('#4169e1')
+            .setTitle('🎮 초성게임 시작!')
+            .setDescription('잠시 후 첫 번째 초성이 제시됩니다.')
+            .addFields(
+                { name: '참가자', value: players.map(p => p.name).join(', '), inline: false },
+                { name: '라운드', value: `${session.maxRounds} 라운드`, inline: true },
+                { name: '제한시간', value: '15초', inline: true }
+            );
+        
+        await tempChannel.send({ embeds: [startEmbed] });
+        
+        // 3초 후 첫 라운드 시작
+        setTimeout(() => startChosungRound(session), 3000);
+        
+    } catch (error) {
+        console.error('초성게임 채널 생성 실패:', error);
+        wordGameSessions.delete(gameId);
+        await channel.send('❌ 게임 시작에 실패했습니다. 다시 시도해주세요.');
+    }
+}
+
+// 끝말잇기 시작 함수
+async function startWordchainGame(channel, players) {
+    const gameId = 'wordchain_' + channel.id;
+    
+    // 봇 플레이어 추가 (최소 인원 채우기)
+    while (players.length < WORD_GAME.minPlayers) {
+        const botNames = ['김봇이', '이봇순', '박봇남', '최봇희', '정봇민'];
+        const botName = botNames[Math.floor(Math.random() * botNames.length)];
+        players.push(createGameBot(botName, '보통'));
+    }
+    
+    // 게임 세션 생성
+    const session = {
+        id: gameId,
+        type: 'wordchain',
+        channel: channel,
+        createdAt: Date.now(), // 생성 시간 추가
+        players: players.map((p, idx) => ({
+            ...p,
+            eliminated: false,
+            order: idx,
+            lastWord: null
+        })),
+        currentPlayerIndex: 0,
+        currentWord: WORD_GAME.끝말잇기.startWords[Math.floor(Math.random() * WORD_GAME.끝말잇기.startWords.length)],
+        usedWords: new Set(),
+        turnTimer: null,
+        state: 'starting'
+    };
+    
+    wordGameSessions.set(gameId, session);
+    
+    // 임시 채널 생성
+    try {
+        const tempChannel = await channel.guild.channels.create({
+            name: `끝말잇기-${Date.now()}`,
+            type: 0, // 텍스트 채널
+            parent: channel.parent,
+            permissionOverwrites: [
+                {
+                    id: channel.guild.id,
+                    deny: ['SendMessages'], // 모든 사람 메시지 금지
+                    allow: ['ViewChannel'] // 관람은 가능
+                },
+                ...players.filter(p => !p.isBot).map(p => ({
+                    id: p.id,
+                    allow: ['SendMessages', 'ViewChannel'] // 참가자는 메시지 가능
+                }))
+            ]
+        });
+        
+        session.gameChannel = tempChannel;
+        tempGameChannels.set(tempChannel.id, gameId);
+        
+        // 30분 후 자동 삭제 타이머 설정
+        setTimeout(async () => {
+            try {
+                if (tempChannel && !tempChannel.deleted) {
+                    await tempChannel.delete('게임 시간 초과 - 자동 정리');
+                    console.log(`[임시 채널 자동 삭제] ${tempChannel.name}`);
+                }
+            } catch (error) {
+                console.error('[임시 채널 삭제 실패]', error);
+            }
+        }, 30 * 60 * 1000);
+        
+        // 게임 시작 메시지
+        const startEmbed = new EmbedBuilder()
+            .setColor('#00bfff')
+            .setTitle('🎮 끝말잇기 시작!')
+            .setDescription(`시작 단어: **${session.currentWord}**`)
+            .addFields(
+                { name: '참가자', value: players.map((p, idx) => `${idx + 1}. ${p.name}`).join('\n'), inline: false },
+                { name: '순서', value: `첫 번째 차례: **${players[0].name}**`, inline: true },
+                { name: '제한시간', value: '10초', inline: true }
+            );
+        
+        await tempChannel.send({ embeds: [startEmbed] });
+        
+        // 첫 단어 사용된 것으로 표시
+        session.usedWords.add(session.currentWord);
+        
+        // 3초 후 첫 턴 시작
+        setTimeout(() => startWordchainTurn(session), 3000);
+        
+    } catch (error) {
+        console.error('끝말잇기 채널 생성 실패:', error);
+        wordGameSessions.delete(gameId);
+        await channel.send('❌ 게임 시작에 실패했습니다. 다시 시도해주세요.');
+    }
+}
+
+// 초성게임 라운드 시작
+async function startChosungRound(session) {
+    if (session.currentRound > session.maxRounds || session.players.filter(p => !p.eliminated).length < 2) {
+        // 게임 종료
+        await endWordGame(session);
+        return;
+    }
+    
+    // 난이도 선택 (라운드가 높을수록 어려움)
+    const difficulty = session.currentRound <= 2 ? '쉬움' : session.currentRound <= 4 ? '보통' : '어려움';
+    const chosungList = WORD_GAME.초성게임.난이도별초성[difficulty];
+    const selectedChosung = chosungList[Math.floor(Math.random() * chosungList.length)];
+    
+    session.currentWord = selectedChosung.join('');
+    session.roundAnswers = new Map(); // 라운드별 답변 저장
+    
+    const roundEmbed = new EmbedBuilder()
+        .setColor('#4169e1')
+        .setTitle(`📝 라운드 ${session.currentRound}`)
+        .setDescription(`다음 초성에 맞는 단어를 입력하세요!`)
+        .addFields(
+            { name: '초성', value: `**${session.currentWord}**`, inline: false },
+            { name: '제한시간', value: '15초', inline: true },
+            { name: '난이도', value: difficulty, inline: true }
+        );
+    
+    await session.gameChannel.send({ embeds: [roundEmbed] });
+    
+    // 봇 플레이어들의 답변 처리
+    session.players.forEach(player => {
+        if (player.isBot && !player.eliminated) {
+            const botThinkTime = Math.random() * (player.responseTime.max - player.responseTime.min) + player.responseTime.min;
+            
+            setTimeout(async () => {
+                // 봇이 아직 답하지 않았다면
+                if (!session.roundAnswers.has(player.id) && !player.eliminated) {
+                    // 실수 확률
+                    if (Math.random() < player.errorRate) {
+                        // 봇이 답을 못함
+                        return;
+                    }
+                    
+                    // 초성에 맞는 단어 찾기
+                    const possibleWords = findWordsByChosung(session.currentWord);
+                    const botWords = possibleWords.filter(w => 
+                        player.vocabulary.초성.includes(w) || 
+                        (player.difficulty !== '쉬움' && ALL_WORDS.has(w))
+                    );
+                    
+                    if (botWords.length > 0) {
+                        const botAnswer = botWords[Math.floor(Math.random() * botWords.length)];
+                        session.roundAnswers.set(player.id, {
+                            word: botAnswer,
+                            time: Date.now()
+                        });
+                        player.score += 100;
+                        await session.gameChannel.send(`🤖 ${player.name}: ${botAnswer} ✅`);
+                        
+                        // 모든 생존자가 답을 제출했으면 라운드 종료
+                        const alivePlayers = session.players.filter(p => !p.eliminated);
+                        if (session.roundAnswers.size === alivePlayers.length) {
+                            collector.stop('allAnswered');
+                        }
+                    }
+                }
+            }, botThinkTime);
+        }
+    });
+    
+    // 메시지 수집기 시작
+    const filter = m => session.players.some(p => p.id === m.author.id && !p.eliminated && !p.isBot);
+    const collector = session.gameChannel.createMessageCollector({ 
+        filter, 
+        time: WORD_GAME.초성게임.timeLimit 
+    });
+    
+    collector.on('collect', async (message) => {
+        const player = session.players.find(p => p.id === message.author.id);
+        if (!player || player.eliminated) return;
+        
+        const word = message.content.trim();
+        
+        // 초성이 맞는지 확인
+        if (getChosung(word) === session.currentWord) {
+            // 단어 검증
+            const isValid = await validateWord(word, '일반');
+            
+            if (isValid && !session.roundAnswers.has(player.id)) {
+                session.roundAnswers.set(player.id, {
+                    word: word,
+                    time: Date.now()
+                });
+                
+                player.score += 100;
+                await message.react('✅');
+                
+                // 모든 생존자가 답을 제출했으면 라운드 종료
+                const alivePlayers = session.players.filter(p => !p.eliminated);
+                if (session.roundAnswers.size === alivePlayers.length) {
+                    collector.stop('allAnswered');
+                }
+            } else if (!isValid) {
+                player.score -= 10;
+                await message.react('❌');
+            }
+        }
+    });
+    
+    collector.on('end', async (collected, reason) => {
+        // 라운드 결과 표시
+        const resultEmbed = new EmbedBuilder()
+            .setColor('#4169e1')
+            .setTitle(`라운드 ${session.currentRound} 결과`)
+            .setDescription(`정답 초성: **${session.currentWord}**`);
+        
+        const results = [];
+        session.players.forEach(player => {
+            if (!player.eliminated) {
+                const answer = session.roundAnswers.get(player.id);
+                if (answer) {
+                    results.push(`✅ ${player.name}: ${answer.word} (+100점)`);
+                } else {
+                    results.push(`❌ ${player.name}: 시간 초과 (0점)`);
+                }
+            }
+        });
+        
+        resultEmbed.addFields(
+            { name: '결과', value: results.join('\n'), inline: false },
+            { name: '현재 점수', value: session.players
+                .filter(p => !p.eliminated)
+                .sort((a, b) => b.score - a.score)
+                .map((p, idx) => `${idx + 1}. ${p.name}: ${p.score}점`)
+                .join('\n'), 
+                inline: false 
+            }
+        );
+        
+        await session.gameChannel.send({ embeds: [resultEmbed] });
+        
+        // 다음 라운드
+        session.currentRound++;
+        setTimeout(() => startChosungRound(session), 3000);
+    });
+}
+
+// 끝말잇기 턴 시작
+async function startWordchainTurn(session) {
+    const currentPlayer = session.players[session.currentPlayerIndex];
+    
+    // 탈락자는 건너뛰기
+    if (currentPlayer.eliminated) {
+        session.currentPlayerIndex = (session.currentPlayerIndex + 1) % session.players.length;
+        return startWordchainTurn(session);
+    }
+    
+    const turnEmbed = new EmbedBuilder()
+        .setColor('#00bfff')
+        .setTitle(`🎯 ${currentPlayer.name}님의 차례`)
+        .setDescription(`**${session.currentWord}**\n\n'${session.currentWord[session.currentWord.length - 1]}'(으)로 시작하는 단어를 입력하세요!`)
+        .addFields(
+            { name: '제한시간', value: '10초', inline: true },
+            { name: '생존자', value: `${session.players.filter(p => !p.eliminated).length}명`, inline: true }
+        );
+    
+    await session.gameChannel.send({ embeds: [turnEmbed] });
+    
+    // 봇 플레이어인 경우
+    if (currentPlayer.isBot) {
+        const botThinkTime = Math.random() * 3000 + 2000; // 2-5초
+        setTimeout(async () => {
+            // 봇이 단어를 생성
+            const lastChar = session.currentWord[session.currentWord.length - 1];
+            
+            // 봇의 난이도에 따른 단어 선택
+            const possibleWords = findWordsByStartChar(lastChar, session.usedWords);
+            
+            // 실수 확률 적용
+            if (Math.random() < currentPlayer.errorRate) {
+                // 봇 실수 (탈락)
+                currentPlayer.eliminated = true;
+                await session.gameChannel.send(`❌ ${currentPlayer.name}: 음... 모르겠어요! (탈락)`);
+                checkWordchainGameEnd(session);
+                return;
+            }
+            
+            // 난이도에 맞는 단어 선택
+            let botWord = null;
+            if (currentPlayer.difficulty === '쉬움' && possibleWords.length > 0) {
+                // 쉬운 단어 우선 선택
+                botWord = possibleWords.find(w => WORD_LIST.끝말잇기.common.includes(w)) || possibleWords[0];
+            } else if (currentPlayer.difficulty === '어려움' && possibleWords.length > 0) {
+                // 어려운 단어 우선 선택
+                botWord = possibleWords.find(w => WORD_LIST.끝말잇기.hard.includes(w)) || 
+                         possibleWords[Math.floor(Math.random() * possibleWords.length)];
+            } else if (possibleWords.length > 0) {
+                // 보통 난이도: 랜덤 선택
+                botWord = possibleWords[Math.floor(Math.random() * Math.min(5, possibleWords.length))];
+            }
+            
+            if (botWord) {
+                session.currentWord = botWord;
+                session.usedWords.add(botWord);
+                await session.gameChannel.send(`🤖 ${currentPlayer.name}: ${botWord}`);
+                
+                // 다음 플레이어
+                session.currentPlayerIndex = (session.currentPlayerIndex + 1) % session.players.length;
+                setTimeout(() => startWordchainTurn(session), 1000);
+            } else {
+                // 봇 탈락
+                currentPlayer.eliminated = true;
+                await session.gameChannel.send(`❌ ${currentPlayer.name}님이 탈락했습니다!`);
+                checkWordchainGameEnd(session);
+            }
+        }, botThinkTime);
+        return;
+    }
+    
+    // 메시지 수집기
+    const filter = m => m.author.id === currentPlayer.id;
+    const collector = session.gameChannel.createMessageCollector({ 
+        filter, 
+        max: 1,
+        time: WORD_GAME.끝말잇기.timeLimit 
+    });
+    
+    collector.on('collect', async (message) => {
+        const word = message.content.trim();
+        const lastChar = session.currentWord[session.currentWord.length - 1];
+        
+        // 조건 확인
+        if (word.length < 2) {
+            await message.react('❌');
+            await session.gameChannel.send('❌ 2글자 이상이어야 합니다!');
+            currentPlayer.eliminated = true;
+        } else if (!word.startsWith(lastChar)) {
+            await message.react('❌');
+            await session.gameChannel.send(`❌ '${lastChar}'(으)로 시작해야 합니다!`);
+            currentPlayer.eliminated = true;
+        } else if (session.usedWords.has(word)) {
+            await message.react('❌');
+            await session.gameChannel.send('❌ 이미 사용된 단어입니다!');
+            currentPlayer.eliminated = true;
+        } else {
+            // 단어 검증
+            const isValid = await validateWord(word, '일반');
+            
+            if (isValid) {
+                await message.react('✅');
+                session.currentWord = word;
+                session.usedWords.add(word);
+                
+                // 한방단어 체크
+                const lastCharOfWord = word[word.length - 1];
+                if (WORD_GAME.끝말잇기.한방단어.includes(lastCharOfWord)) {
+                    await session.gameChannel.send(`💣 한방단어! 다음 사람은 3초 내에 대답해야 합니다!`);
+                    // 다음 턴은 3초 제한
+                    session.isHanbang = true;
+                }
+                
+                // 다음 플레이어
+                session.currentPlayerIndex = (session.currentPlayerIndex + 1) % session.players.length;
+                setTimeout(() => startWordchainTurn(session), 1000);
+            } else {
+                await message.react('❌');
+                await session.gameChannel.send('❌ 유효하지 않은 단어입니다!');
+                currentPlayer.eliminated = true;
+            }
+        }
+        
+        if (currentPlayer.eliminated) {
+            checkWordchainGameEnd(session);
+        }
+    });
+    
+    collector.on('end', async (collected, reason) => {
+        if (reason === 'time') {
+            await session.gameChannel.send(`⏰ 시간 초과! ${currentPlayer.name}님이 탈락했습니다.`);
+            currentPlayer.eliminated = true;
+            checkWordchainGameEnd(session);
+        }
+    });
+}
+
+// 끝말잇기 게임 종료 체크
+async function checkWordchainGameEnd(session) {
+    const alivePlayers = session.players.filter(p => !p.eliminated);
+    
+    if (alivePlayers.length <= 1) {
+        await endWordGame(session);
+    } else {
+        // 다음 플레이어 찾기
+        let nextIndex = session.currentPlayerIndex;
+        do {
+            nextIndex = (nextIndex + 1) % session.players.length;
+        } while (session.players[nextIndex].eliminated);
+        
+        session.currentPlayerIndex = nextIndex;
+        setTimeout(() => startWordchainTurn(session), 2000);
+    }
+}
+
+// 워드게임 종료 처리
+async function endWordGame(session) {
+    const gameChannel = session.gameChannel;
+    
+    // 결과 계산
+    let winners;
+    if (session.type === 'chosung') {
+        // 초성게임: 점수 기준
+        winners = session.players
+            .filter(p => !p.eliminated)
+            .sort((a, b) => b.score - a.score);
+    } else {
+        // 끝말잇기: 생존자
+        winners = session.players.filter(p => !p.eliminated);
+    }
+    
+    // 보상 지급 및 통계 업데이트
+    const rewards = WORD_GAME[session.type === 'chosung' ? '초성게임' : '끝말잇기'].rewards;
+    for (let i = 0; i < Math.min(3, winners.length); i++) {
+        const winner = winners[i];
+        if (!winner.isBot) {
+            const user = await User.findOne({ discordId: winner.id });
+            if (user) {
+                const reward = rewards[i + 1] || 0;
+                user.gold += reward;
+                
+                // 미니게임 통계 업데이트
+                if (!user.gameStats) {
+                    user.gameStats = {};
+                }
+                
+                const statKey = session.type === 'chosung' ? 'chosung' : 'wordchain';
+                if (!user.gameStats[statKey]) {
+                    user.gameStats[statKey] = { played: 0, won: 0 };
+                }
+                
+                user.gameStats[statKey].played++;
+                if (i === 0) { // 1등만 승리로 카운트
+                    user.gameStats[statKey].won++;
+                }
+                
+                await user.save();
+            }
+        }
+    }
+    
+    // 결과 임베드
+    const resultEmbed = new EmbedBuilder()
+        .setColor('#ffd700')
+        .setTitle(`🏆 ${session.type === 'chosung' ? '초성게임' : '끝말잇기'} 종료!`)
+        .setDescription('게임이 종료되었습니다!')
+        .addFields(
+            { 
+                name: '🥇 결과', 
+                value: winners.slice(0, 3).map((w, idx) => {
+                    const medal = ['🥇', '🥈', '🥉'][idx];
+                    const reward = rewards[idx + 1] || 0;
+                    return `${medal} ${w.name}${session.type === 'chosung' ? ` (${w.score}점)` : ''} - ${reward.toLocaleString()}G`;
+                }).join('\n') || '승자 없음',
+                inline: false 
+            }
+        );
+    
+    if (session.type === 'wordchain' && session.usedWords.size > 0) {
+        resultEmbed.addFields({
+            name: '📝 사용된 단어',
+            value: `총 ${session.usedWords.size}개의 단어가 사용되었습니다.`,
+            inline: false
+        });
+    }
+    
+    await gameChannel.send({ embeds: [resultEmbed] });
+    
+    // 10초 후 채널 삭제
+    setTimeout(async () => {
+        try {
+            await gameChannel.delete();
+            tempGameChannels.delete(gameChannel.id);
+            wordGameSessions.delete(session.id);
+        } catch (error) {
+            console.error('게임 채널 삭제 실패:', error);
+        }
+    }, 10000);
+}
 
 // 독버섯 게임 생성 함수 (라운드별)
 function generateMushroomGameRound(round) {
@@ -792,14 +3320,43 @@ const MENU_DEFINITIONS = {
         emoji: '🎲',
         category: 'minigame'
     },
+    rps: {
+        label: '✊ 가위바위보',
+        description: '봇 또는 유저와 가위바위보 대결',
+        emoji: '✊',
+        category: 'minigame'
+    },
+    slot: {
+        label: '🎰 슬롯머신',
+        description: '김헌터 슬롯머신 - 잭팟에 도전하세요!',
+        emoji: '🎰',
+        category: 'minigame'
+    },
+    dungeon: {
+        label: '🏰 던전 탐험',
+        description: '5층 던전을 탐험하고 보물을 찾으세요!',
+        emoji: '🏰',
+        category: 'minigame'
+    },
+    chosung: {
+        label: '🔤 초성게임',
+        description: '제시된 초성에 맞는 단어 맞추기',
+        emoji: '🔤',
+        category: 'minigame'
+    },
+    wordchain: {
+        label: '🔗 끝말잇기',
+        description: '이어지는 단어로 대결하기',
+        emoji: '🔗',
+        category: 'minigame'
+    },
     // 경제 (Economy)
-    // shop은 빠른 접근 버튼으로만 제공 (경제 카테고리에서 제거)
-    /*shop: {
+    shop: {
         label: '🛒 상점',
         description: '아이템 구매 및 판매',
         emoji: '🛒',
         category: 'economy'
-    },*/
+    },
     stocks: {
         label: '📈 주식거래소',
         description: '환상 지역 기업 주식 거래',
@@ -891,8 +3448,9 @@ const ADMIN_MENUS = {
 
 // 관리자 ID 목록 (환경변수에서 읽어오거나 하드코딩)
 const ADMIN_IDS = [
-    '1036681976354160670', // 기본 관리자 ID
-    '424480594542592009'   // 추가 관리자
+    '424480594542592009',   // 요리
+    '295980447849250817',   // 하연94
+    '592659577384730645'    // 해물파전
 ];
 
 // 데이터 저장/로드 시스템
@@ -1018,6 +3576,332 @@ function createCategoryMenu() {
         .setCustomId('category_menu')
         .setPlaceholder('🎮 원하는 카테고리를 선택하세요!')
         .addOptions(categoryOptions);
+}
+
+// 카테고리별 상세 정보 임베드 생성
+async function createCategoryEmbed(category, userId) {
+    const user = await getUser(userId);
+    const categoryInfo = MENU_CATEGORIES[category];
+    
+    const embed = new EmbedBuilder()
+        .setColor(categoryInfo.color)
+        .setTitle(`${categoryInfo.emoji} ${categoryInfo.name}`)
+        .setTimestamp();
+    
+    switch(category) {
+        case 'character':
+            // 캐릭터 정보
+            const level = user.level || 1;
+            const maxExp = level * 100;
+            const expProgress = Math.floor((user.exp / maxExp) * 100);
+            const attack = user.attack || 10;
+            const defense = user.defense || 10;
+            const health = user.health || 100;
+            const totalPower = attack + defense + health;
+            
+            // 고급 경험치바 생성
+            const expBar = createAdvancedProgressBar(expProgress);
+            
+            embed.setDescription(`## 📊 캐릭터 상태\n\n**경험치 진행도**\n${expBar}`)
+                .addFields(
+                    { name: '⭐ 레벨', value: `\`\`\`Lv.${level}\`\`\``, inline: true },
+                    { name: '✨ 경험치', value: `\`\`\`${user.exp}/${maxExp}\`\`\``, inline: true },
+                    { name: '⚔️ 전투력', value: `\`\`\`${totalPower}\`\`\``, inline: true },
+                    { name: '💪 공격력', value: `\`\`\`${attack}\`\`\``, inline: true },
+                    { name: '🛡️ 방어력', value: `\`\`\`${defense}\`\`\``, inline: true },
+                    { name: '❤️ 체력', value: `\`\`\`${health}\`\`\``, inline: true },
+                    { name: '🏅 칭호', value: `\`\`\`${getUserTitle(user)}\`\`\``, inline: false }
+                )
+                .setImage('attachment://kim_character.png')
+                .setFooter({ text: '캐릭터를 강화하고 성장시켜보세요!' });
+            break;
+            
+        case 'daily':
+            // 일일 활동 정보
+            const today = new Date().toDateString();
+            const attendanceStatus = user.lastDaily === today ? '✅ 완료' : '❌ 미완료';
+            const weeklyProgress = user.weeklyAttendance ? user.weeklyAttendance.filter(x => x).length : 0;
+            const attendanceStreak = attendanceStatus === '✅ 완료' ? user.attendanceStreak || 1 : user.attendanceStreak || 0;
+            
+            // 일일 미션 실데이터
+            const dailyMissions = user.dailyMissions || {
+                hunting: { current: 0, target: 5, completed: false },
+                enhance: { current: 0, target: 3, completed: false },
+                shop: { current: 0, target: 1, completed: false },
+                exercise: { current: 0, target: 1, completed: false },
+                fragment: { current: 0, target: 1, completed: false }
+            };
+            
+            const missionText = [
+                `${dailyMissions.hunting.completed ? '✅' : '❌'} 사냥 ${dailyMissions.hunting.current}/${dailyMissions.hunting.target}회`,
+                `${dailyMissions.enhance.completed ? '✅' : '❌'} 강화 시도 ${dailyMissions.enhance.current}/${dailyMissions.enhance.target}회`,
+                `${dailyMissions.shop.completed ? '✅' : '❌'} 상점 구매 ${dailyMissions.shop.current}/${dailyMissions.shop.target}회`,
+                `${dailyMissions.exercise.completed ? '✅' : '❌'} 운동하기 ${dailyMissions.exercise.current}/${dailyMissions.exercise.target}회`,
+                `${dailyMissions.fragment.completed ? '✅' : '❌'} 조각 융합 ${dailyMissions.fragment.current}/${dailyMissions.fragment.target}회`
+            ].join('\n');
+            
+            // 운동 진행 상황
+            const exerciseProgress = user.exerciseData ? 
+                `${user.exerciseData.currentReps || 0}/${user.exerciseData.targetReps || 10}회` : '0/10회';
+            
+            // 조각 보유 현황
+            const fragments = user.fragments || { normal: 0, rare: 0, epic: 0 };
+            const fragmentText = `일반: ${fragments.normal}, 레어: ${fragments.rare}, 에픽: ${fragments.epic}`;
+            
+            embed.setDescription('## 📅 오늘의 활동\n매일 다양한 보상을 받아보세요!')
+                .addFields(
+                    { name: '🎁 일일 보상', value: `\`\`\`${attendanceStatus}\`\`\``, inline: true },
+                    { name: '📊 연속 출석', value: `\`\`\`${attendanceStreak}일\`\`\``, inline: true },
+                    { name: '📅 주간 출석', value: `\`\`\`${weeklyProgress}/7일\`\`\``, inline: true },
+                    { name: '🎯 일일 미션', value: `\`\`\`${missionText}\`\`\``, inline: false },
+                    { name: '💪 운동 진행', value: `\`\`\`${exerciseProgress}\`\`\``, inline: true },
+                    { name: '🧩 조각 보유', value: `\`\`\`${fragmentText}\`\`\``, inline: true },
+                    { name: '🎖️ 주간 보상', value: `${createProgressBar(Math.floor(weeklyProgress * 100 / 7))} **${weeklyProgress}/7**`, inline: false }
+                )
+                .setImage('attachment://kim_daily.png')
+                .setFooter({ text: '매일 접속하여 특별한 보상을 받으세요!' });
+            break;
+            
+        case 'battle':
+            // 전투 콘텐츠 정보
+            const huntingTickets = user.huntingTickets || 20;
+            const pvpTickets = user.pvpTickets || 20;
+            const pvpWins = user.pvpWins || 0;
+            const pvpLosses = user.pvpLosses || 0;
+            const winRate = pvpWins + pvpLosses > 0 ? Math.floor((pvpWins / (pvpWins + pvpLosses)) * 100) : 0;
+            
+            // 사냥권 재생성 시간
+            const huntingNextTime = getNextTicketRegenTime(user) || '5분';
+            // PvP 티켓 재생성 시간
+            const pvpNextTime = user.lastPvpTicketRegen ? 
+                getTimeUntilNextPvpTicket(user.lastPvpTicketRegen) : '5분';
+            
+            embed.setDescription('## ⚔️ 전투 통계\n강력한 적을 물리치고 보상을 획득하세요!')
+                .addFields(
+                    { name: '🎫 사냥권', value: `\`\`\`${huntingTickets}/20\`\`\``, inline: true },
+                    { name: '⏰', value: `\`\`\`${huntingNextTime}\`\`\``, inline: true },
+                    { name: '\u200B', value: '\u200B', inline: true },
+                    { name: '🎯 PvP 티켓', value: `\`\`\`${pvpTickets}/20\`\`\``, inline: true },
+                    { name: '⏰', value: `\`\`\`${pvpNextTime}\`\`\``, inline: true },
+                    { name: '\u200B', value: '\u200B', inline: true },
+                    { name: '🏆 PvP 승리', value: `\`\`\`${pvpWins}회\`\`\``, inline: true },
+                    { name: '📊 승률', value: `\`\`\`${winRate}%\`\`\``, inline: true },
+                    { name: '🗺️ 해금된 지역', value: `\`\`\`${user.unlockedAreas ? user.unlockedAreas.length : 1}개\`\`\``, inline: true },
+                    { name: '👹 보스 처치', value: `\`\`\`${user.bossKills || 0}회\`\`\``, inline: true }
+                )
+                .setImage('attachment://kim_battle.png')
+                .setFooter({ text: '전투에서 승리하여 강해지세요!' });
+            break;
+            
+        case 'minigame':
+            // 미니게임 정보
+            const gameStats = user.gameStats || {
+                dice: { played: 0, won: 0 },
+                slot: { played: 0, won: 0 },
+                rps: { played: 0, won: 0 },
+                quiz: { played: 0, won: 0 },
+                blackjack: { played: 0, won: 0 }
+            };
+            
+            // 총 게임 수와 총 획득 골드 계산
+            const totalGames = Object.values(gameStats).reduce((sum, game) => sum + game.played, 0);
+            const totalWins = Object.values(gameStats).reduce((sum, game) => sum + game.won, 0);
+            const gameWinRate = totalGames > 0 ? Math.floor((totalWins / totalGames) * 100) : 0;
+            
+            // 가장 많이 플레이한 게임 순위
+            const sortedGames = Object.entries(gameStats)
+                .sort((a, b) => b[1].played - a[1].played)
+                .slice(0, 3)
+                .map(([game, stats], index) => {
+                    const gameNames = {
+                        dice: '🎲 주사위',
+                        slot: '🎰 슬롯머신',
+                        rps: '✊ 가위바위보',
+                        quiz: '❓ 퀴즈',
+                        blackjack: '🃏 블랙잭'
+                    };
+                    return `${index + 1}. ${gameNames[game]} (${stats.played}회)`;
+                })
+                .join('\n');
+            
+            embed.setDescription('## 🎮 미니게임 통계\n다양한 게임으로 골드를 획득하세요!')
+                .addFields(
+                    { name: '🎯 총 게임 수', value: `\`\`\`${totalGames}회\`\`\``, inline: true },
+                    { name: '💰 총 획득 골드', value: `\`\`\`${(user.totalWinnings || 0).toLocaleString()}\`\`\``, inline: true },
+                    { name: '📊 승률', value: `\`\`\`${gameWinRate}%\`\`\``, inline: true },
+                    { name: '🎪 인기 게임', value: `\`\`\`${sortedGames || '아직 플레이 기록이 없습니다'}\`\`\``, inline: false }
+                )
+                .setImage('attachment://kim_minigame.png')
+                .setFooter({ text: '운과 실력으로 대박을 터뜨려보세요!' });
+            break;
+            
+        case 'economy':
+            // 경제 정보
+            const currentGold = user.gold || 0;
+            
+            // 주식 총 가치 계산
+            const stockValue = user.stocks ? 
+                Object.entries(user.stocks).reduce((total, [stockId, amount]) => {
+                    const stock = stockData[stockId];
+                    return total + (stock ? stock.price * amount : 0);
+                }, 0) : 0;
+            
+            // 유물 총 가치 계산
+            const relicsValue = user.inventory ? 
+                user.inventory.reduce((total, item) => {
+                    // 유물 가격 추정 (레어도에 따라)
+                    const rarityPrices = {
+                        '일반': 1000,
+                        '고급': 5000,
+                        '레어': 20000,
+                        '에픽': 80000,
+                        '레전드리': 300000
+                    };
+                    return total + (rarityPrices[item.rarity] || 0);
+                }, 0) : 0;
+            
+            // 유물 개수
+            const relicsCount = user.inventory ? user.inventory.length : 0;
+            
+            // 총 자산 = 보유 골드 + 주식 가치 + 유물 가치
+            const totalAssets = currentGold + stockValue + relicsValue;
+            
+            embed.setDescription('## 💰 경제 현황\n현명한 투자로 부를 축적하세요!')
+                .addFields(
+                    { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `\`\`\`${currentGold.toLocaleString()}\`\`\``, inline: true },
+                    { name: '📈 주식 가치', value: `\`\`\`${stockValue.toLocaleString()}\`\`\``, inline: true },
+                    { name: '💎 총 자산', value: `\`\`\`${totalAssets.toLocaleString()}\`\`\``, inline: true },
+                    { name: '🏺 보유 유물', value: `\`\`\`${relicsCount}개\`\`\``, inline: true },
+                    { name: '💍 유물 가치', value: `\`\`\`${relicsValue.toLocaleString()}\`\`\``, inline: true },
+                    { name: '\u200B', value: '\u200B', inline: true }
+                )
+                .setImage('attachment://kim_economy.png')
+                .setFooter({ text: '상점은 경제 카테고리에서 이용할 수 있습니다!' });
+            break;
+            
+        case 'ranking':
+            // 랭킹 정보
+            const userRank = await getUserRank(userId);
+            
+            embed.setDescription('## 🏆 랭킹 정보\n다른 플레이어들과 경쟁하세요!')
+                .addFields(
+                    { name: '🏅 레벨 순위', value: `\`\`\`${userRank.level || '-'}위\`\`\``, inline: true },
+                    { name: '💰 골드 순위', value: `\`\`\`${userRank.gold || '-'}위\`\`\``, inline: true },
+                    { name: '⚔️ 전투력 순위', value: `\`\`\`${userRank.power || '-'}위\`\`\``, inline: true },
+                    { name: '💖 인기도', value: `\`\`\`${user.popularity || 0}\`\`\``, inline: true },
+                    { name: '🏆 주간 랭킹', value: `\`\`\`${userRank.weekly || '-'}위\`\`\``, inline: true },
+                    { name: '👑 명예 점수', value: `\`\`\`${user.honor || 0}\`\`\``, inline: true }
+                )
+                .setImage('attachment://kim_ranking.png')
+                .setFooter({ text: '최강자의 자리에 도전하세요!' });
+            break;
+    }
+    
+    return embed;
+}
+
+// 진행률 바 생성 함수
+function createProgressBar(percentage) {
+    const filled = Math.floor(percentage / 10);
+    const empty = 10 - filled;
+    return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
+// 고급 경험치바 생성 함수
+function createAdvancedProgressBar(percentage) {
+    const totalLength = 20;
+    const filled = Math.floor((percentage / 100) * totalLength);
+    const empty = totalLength - filled;
+    
+    let bar = '';
+    
+    // 색상 구분을 위한 특수 문자 사용
+    if (percentage < 25) {
+        bar += '🟥'.repeat(filled) + '⬜'.repeat(empty);
+    } else if (percentage < 50) {
+        bar += '🟧'.repeat(filled) + '⬜'.repeat(empty);
+    } else if (percentage < 75) {
+        bar += '🟨'.repeat(filled) + '⬜'.repeat(empty);
+    } else {
+        bar += '🟩'.repeat(filled) + '⬜'.repeat(empty);
+    }
+    
+    bar += ' ┃ ' + percentage + '%';
+    
+    return bar;
+}
+
+// PvP 티켓 재생성 시간 계산
+function getTimeUntilNextPvpTicket(lastRegen) {
+    const now = Date.now();
+    const timeSinceLastRegen = now - lastRegen;
+    const timeUntilNext = 300000 - (timeSinceLastRegen % 300000); // 5분
+    
+    const minutes = Math.floor(timeUntilNext / 60000);
+    const seconds = Math.floor((timeUntilNext % 60000) / 1000);
+    
+    return `${minutes}분 ${seconds}초`;
+}
+
+// PvP 티켓 재생성 처리
+async function regeneratePvpTickets(user) {
+    const now = Date.now();
+    const timeSinceLastRegen = now - new Date(user.lastPvpTicketRegen).getTime();
+    const ticketsToRegen = Math.floor(timeSinceLastRegen / 300000); // 5분마다 1장
+    
+    if (ticketsToRegen > 0 && user.pvpTickets < 20) {
+        user.pvpTickets = Math.min(20, user.pvpTickets + ticketsToRegen);
+        user.lastPvpTicketRegen = new Date(new Date(user.lastPvpTicketRegen).getTime() + (ticketsToRegen * 300000));
+        await user.save();
+    }
+    
+    return user.pvpTickets;
+}
+
+// 사용자 랭킹 조회 함수
+async function getUserRank(userId) {
+    // 실제 구현시 DB에서 랭킹 조회
+    return {
+        level: Math.floor(Math.random() * 100) + 1,
+        gold: Math.floor(Math.random() * 100) + 1,
+        power: Math.floor(Math.random() * 100) + 1,
+        weekly: Math.floor(Math.random() * 50) + 1
+    };
+}
+
+// 일일미션 업데이트 함수
+async function updateDailyMission(userId, missionType) {
+    const user = await getUser(userId);
+    const today = new Date().toDateString();
+    
+    // 일일 리셋 체크
+    if (!user.dailyMissions || user.dailyMissions.lastReset !== today) {
+        user.dailyMissions = {
+            hunting: { current: 0, target: 5, completed: false, reward: { gold: 1000, exp: 100 } },
+            enhance: { current: 0, target: 3, completed: false, reward: { gold: 1500, exp: 150 } },
+            shop: { current: 0, target: 1, completed: false, reward: { gold: 500, exp: 50 } },
+            exercise: { current: 0, target: 1, completed: false, reward: { gold: 800, exp: 80 } },
+            fragment: { current: 0, target: 1, completed: false, reward: { gold: 2000, exp: 200 } },
+            lastReset: today
+        };
+    }
+    
+    const mission = user.dailyMissions[missionType];
+    if (!mission || mission.completed) return false;
+    
+    mission.current++;
+    
+    // 미션 완료 체크
+    if (mission.current >= mission.target && !mission.completed) {
+        mission.completed = true;
+        user.gold += mission.reward.gold;
+        user.exp += mission.reward.exp;
+        await user.save();
+        return { completed: true, reward: mission.reward };
+    }
+    
+    await user.save();
+    return { completed: false };
 }
 
 // 카테고리별 메뉴 생성
@@ -2104,7 +4988,69 @@ const SHOP_CATEGORIES = {
         emoji: '⚒️',
         gif: 'kim_shop_examples.gif',
         items: [
-            // 주문서 아이템 추가 예정
+            // 강화 확률 증가 주문서
+            {
+                id: 'enhance_scroll_10',
+                name: '강화 주문서 10%',
+                rarity: '일반',
+                price: 5000,
+                type: 'enhancement',
+                level: 1,
+                description: '장비 강화 시 성공률을 10% 증가시킵니다.',
+                effect: { successRateBonus: 10 },
+                stackable: true,
+                maxStack: 99
+            },
+            {
+                id: 'enhance_scroll_20',
+                name: '강화 주문서 20%',
+                rarity: '고급',
+                price: 15000,
+                type: 'enhancement',
+                level: 20,
+                description: '장비 강화 시 성공률을 20% 증가시킵니다.',
+                effect: { successRateBonus: 20 },
+                stackable: true,
+                maxStack: 99
+            },
+            {
+                id: 'enhance_scroll_30',
+                name: '강화 주문서 30%',
+                rarity: '레어',
+                price: 50000,
+                type: 'enhancement',
+                level: 40,
+                description: '장비 강화 시 성공률을 30% 증가시킵니다.',
+                effect: { successRateBonus: 30 },
+                stackable: true,
+                maxStack: 99
+            },
+            // 파괴 방지 주문서
+            {
+                id: 'protection_scroll',
+                name: '파괴 방지 주문서',
+                rarity: '에픽',
+                price: 100000,
+                type: 'enhancement',
+                level: 60,
+                description: '장비 강화 실패 시 장비가 파괴되지 않습니다.',
+                effect: { preventDestruction: true },
+                stackable: true,
+                maxStack: 50
+            },
+            // 축복의 주문서
+            {
+                id: 'blessing_scroll',
+                name: '축복의 주문서',
+                rarity: '레전드리',
+                price: 300000,
+                type: 'enhancement',
+                level: 80,
+                description: '장비 강화 성공 시 +2 강화됩니다.',
+                effect: { bonusEnhancement: 2 },
+                stackable: true,
+                maxStack: 20
+            }
         ]
     },
     coin: {
@@ -2592,7 +5538,7 @@ function triggerMarketEvent(eventId) {
     });
     
     // 글로벌 채널에 뉴스 발송 (나중에 구현)
-    console.log(`📰 마켓 뉴스: ${event.title}`);
+    // console.log(`📰 마켓 뉴스: ${event.title}`);
     
     return event;
 }
@@ -3008,7 +5954,7 @@ async function executeExploration(interaction, user, companyId, investmentAmount
                 .addFields(
                     { name: `${artifact.emoji} 발견한 유물`, value: `**${artifact.name}**\n${artifact.description}`, inline: false },
                     { name: '💎 등급', value: getRarityText(result.rarity), inline: true },
-                    { name: '💰 추정 가치', value: `${artifact.value.toLocaleString()}G`, inline: true },
+                    { name: '💰 추정 가치', value: `${artifactValue.toLocaleString()}G`, inline: true },
                     { name: '📍 발견 지역', value: `${company.emoji} ${company.region}`, inline: true }
                 )
                 .setFooter({ text: '유물을 상점에 판매하거나 보관할 수 있습니다!' });
@@ -3241,15 +6187,13 @@ updateChartData();
 
 // 임시: 차트 데이터 빠르게 채우기 (개발용) - 메모리 최적화
 function fillChartDataForDevelopment() {
-    console.log('차트 데이터 초기화 중...');
+    console.log('📊 차트 데이터 초기화 중...');
     // 최근 60분 데이터를 시뮬레이션 (5분 간격으로 12개)
     for (let i = 0; i < 12; i++) {
         updateStockPrices();
         updateChartData();
     }
-    console.log('차트 데이터 초기화 완료!');
-    console.log('타임스탬프:', STOCK_MARKET.chart_history.timestamps.length);
-    console.log('시장 지수:', STOCK_MARKET.chart_history.market_index.length);
+    console.log(`📊 차트 초기화 완료! (데이터: ${STOCK_MARKET.chart_history.timestamps.length}개)`);
 }
 
 // 봇 시작시 차트 데이터 채우기
@@ -3501,6 +6445,49 @@ function getFatigueBar(fatigue) {
     return bar;
 }
 
+// 일일 미션 업데이트 헬퍼 함수
+async function updateDailyMission(user, missionType, amount = 1) {
+    const today = new Date().toDateString();
+    
+    // 일일 미션 리셋 체크
+    if (user.dailyMissions.lastReset !== today) {
+        // 모든 미션 초기화
+        for (const mission of ['hunting', 'enhance', 'shop', 'exercise', 'fragment']) {
+            user.dailyMissions[mission].current = 0;
+            user.dailyMissions[mission].completed = false;
+        }
+        user.dailyMissions.lastReset = today;
+    }
+    
+    // 미션이 이미 완료되었으면 리턴
+    if (user.dailyMissions[missionType].completed) {
+        return false;
+    }
+    
+    // 미션 진행도 업데이트
+    user.dailyMissions[missionType].current += amount;
+    
+    // 미션 완료 체크
+    if (user.dailyMissions[missionType].current >= user.dailyMissions[missionType].target) {
+        user.dailyMissions[missionType].completed = true;
+        
+        // 보상 지급
+        const reward = user.dailyMissions[missionType].reward;
+        user.gold += reward.gold;
+        user.exp += reward.exp;
+        
+        await user.save();
+        
+        return {
+            completed: true,
+            reward: reward
+        };
+    }
+    
+    await user.save();
+    return false;
+}
+
 // 운동 완료 처리
 async function completeExercise(user) {
     const exerciseType = user.fitness.currentExercise.type;
@@ -3612,6 +6599,9 @@ async function completeExercise(user) {
     const remainingFatigue = Math.floor(exercise.fatigueRate * minutes * 0.5 * fatigueReduction);
     user.fitness.fatigue = Math.min(100, user.fitness.fatigue + remainingFatigue);
     
+    // 일일 미션 업데이트 (운동하기)
+    await updateDailyMission(user, 'exercise', 1);
+    
     await user.save();
 }
 
@@ -3683,6 +6673,11 @@ async function showRankingMenu(interaction, page = 0) {
             id: 'oddeven',
             name: '🎲 홀짝 랭킹',
             description: '홀짝게임 마스터'
+        },
+        {
+            id: 'mushroom',
+            name: '🍄 버섯사냥 랭킹',
+            description: '독버섯 회피 마스터'
         },
         {
             id: 'artifact',
@@ -3804,6 +6799,19 @@ async function showRankingMenu(interaction, page = 0) {
                     const winRate = user.oddEvenStats.totalGames > 0 ?
                         ((user.oddEvenStats.wins / user.oddEvenStats.totalGames) * 100).toFixed(1) : 0;
                     return `${medal} **${user.nickname}**\n　　총 ${user.oddEvenStats.totalWinnings.toLocaleString()}G 획득 (승률 ${winRate}%)`;
+                });
+                break;
+                
+            case 'mushroom':
+                rankingData = await User.find({ 'mushroomStats.totalGames': { $gt: 0 } })
+                    .sort({ 'mushroomStats.wins': -1, 'mushroomStats.highestRound': -1 })
+                    .limit(10);
+                    
+                fields = rankingData.map((user, index) => {
+                    const medal = getMedalEmoji(index);
+                    const winRate = user.mushroomStats.totalGames > 0 ?
+                        ((user.mushroomStats.wins / user.mushroomStats.totalGames) * 100).toFixed(1) : 0;
+                    return `${medal} **${user.nickname}**\n　　${user.mushroomStats.wins}회 우승 | 최고 R${user.mushroomStats.highestRound} (승률 ${winRate}%)`;
                 });
                 break;
                 
@@ -5141,8 +8149,50 @@ class BettingRaceSystem {
             const players = Array.from(this.waitingPlayers.values());
             const totalPot = this.getTotalPot();
             
+            // 임시 채널 생성
+            let raceChannel = channel;
+            let tempChannelCreated = false;
+            
+            if (channel && channel.guild) {
+                try {
+                    const tempChannel = await channel.guild.channels.create({
+                        name: `🏁레이싱-${Date.now()}`,
+                        type: 0, // 텍스트 채널
+                        parent: channel.parent,
+                        permissionOverwrites: [
+                            {
+                                id: channel.guild.id,
+                                deny: ['SendMessages'], // 모든 사람 메시지 금지
+                                allow: ['ViewChannel'] // 관람은 가능
+                            },
+                            ...players.filter(p => !p.isBot).map(p => ({
+                                id: p.userId,
+                                allow: ['SendMessages', 'ViewChannel'] // 참가자는 메시지 가능
+                            }))
+                        ]
+                    });
+                    
+                    raceChannel = tempChannel;
+                    tempChannelCreated = true;
+                    
+                    // 참가자들에게 임시 채널 안내
+                    const moveEmbed = new EmbedBuilder()
+                        .setColor('#00ff00')
+                        .setTitle('🏁 레이스장으로 이동!')
+                        .setDescription(`레이스가 ${tempChannel} 채널에서 진행됩니다!\n\n클릭하여 이동하세요!`)
+                        .setTimestamp();
+                    
+                    await channel.send({ embeds: [moveEmbed] });
+                    
+                } catch (error) {
+                    console.error('임시 채널 생성 실패:', error);
+                    // 실패시 기존 채널 사용
+                    raceChannel = channel;
+                }
+            }
+            
             // 레이스 시작 알림
-            if (channel) {
+            if (raceChannel) {
                 const startEmbed = new EmbedBuilder()
                     .setColor('#FF6B6B')
                     .setTitle('🏁 레이스 준비중!')
@@ -5153,7 +8203,7 @@ class BettingRaceSystem {
                     )
                     .setFooter({ text: '🎲 완전 운빨! 누가 이길까요?' });
                 
-                const startMsg = await channel.send({ embeds: [startEmbed] });
+                const startMsg = await raceChannel.send({ embeds: [startEmbed] });
                 
             }
 
@@ -5184,7 +8234,7 @@ class BettingRaceSystem {
             const winner = players[0];
             
             // 레이싱 GIF 생성 및 표시
-            if (channel) {
+            if (raceChannel) {
                 try {
                     // 레이싱 애니메이션 GIF 생성 (실제 레이스 데이터 사용)
                     const raceGifBuffer = await this.createRaceGIF(players, false, raceFrames);
@@ -5195,7 +8245,7 @@ class BettingRaceSystem {
                         
                         try {
                             // 임베드 없이 직접 GIF 전송 (더 크게 보임)
-                            const sentMessage = await channel.send({ 
+                            const sentMessage = await raceChannel.send({ 
                                 content: '🏁 **레이스 진행중!** 🏁\n실시간 레이싱 진행 상황을 확인하세요!',
                                 files: [raceAttachment] 
                             });
@@ -5216,7 +8266,7 @@ class BettingRaceSystem {
                     
                     // GIF 실패 시 텍스트만 전송
                     try {
-                        await channel.send('❌ 레이스 애니메이션 생성에 실패했습니다. 결과만 표시합니다.');
+                        await raceChannel.send('❌ 레이스 애니메이션 생성에 실패했습니다. 결과만 표시합니다.');
                     } catch (e) {
                         console.error('텍스트 전송도 실패:', e);
                     }
@@ -5227,7 +8277,7 @@ class BettingRaceSystem {
             const actualWinner = await this.awardPrize(winner, totalPot, players);
             
             // 결과 발표
-            if (channel) {
+            if (raceChannel) {
                 const isWinnerBot = winner.isBot;
                 const displayWinner = actualWinner || winner;
                 
@@ -5272,7 +8322,26 @@ class BettingRaceSystem {
                     messageOptions.files = [resultAttachment];
                 }
                 
-                await channel.send(messageOptions);
+                await raceChannel.send(messageOptions);
+            }
+
+            // 임시 채널 정리
+            if (tempChannelCreated && raceChannel) {
+                setTimeout(async () => {
+                    try {
+                        await raceChannel.send('🏁 레이스가 종료되었습니다. 10초 후 채널이 삭제됩니다.');
+                        setTimeout(async () => {
+                            try {
+                                await raceChannel.delete();
+                                console.log('임시 레이싱 채널 삭제 완료');
+                            } catch (deleteError) {
+                                console.error('임시 채널 삭제 실패:', deleteError);
+                            }
+                        }, 10000); // 10초 후 삭제
+                    } catch (error) {
+                        console.error('채널 정리 메시지 전송 실패:', error);
+                    }
+                }, 5000); // 결과 표시 후 5초 대기
             }
 
             // 레이싱 데이터 반환
@@ -5443,8 +8512,9 @@ class MonsterBattleSystem {
                 '🐲 **강한 몬스터** (51~100레벨) - 보상 1.95배\n' +
                 '🍀 **세븐 배수 레벨** (7,14,21...) - 보상 13.0배\n' +
                 '💎 **정확한 레벨 예측** (1~100레벨) - 보상 99.0배\n\n' +
-                '**⚔️ 예시:** 레벨 42 오크가 등장!\n' +
-                '✅ 짝수 레벨 적중! ✅ 약한 몬스터 적중! ✅ 세븐 배수 적중!')
+                '**🗡️ 등장 몬스터:**\n' +
+                '약한: 🟢슬라임 👺고블린 🐺늑대 🐗오크 👹트롤\n' +
+                '강한: 👾오우거 🦅와이번 🐃미노타우로스 💀리치 🐉드래곤')
             .addFields(
                 { name: '💰 현재 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
                 { name: '🎯 승률', value: `${winRate}%`, inline: true },
@@ -5453,7 +8523,8 @@ class MonsterBattleSystem {
                 { name: '💎 최대 보상', value: `${(stats.biggestWin || 0).toLocaleString()}G`, inline: true },
                 { name: '📈 총 수익', value: `${((stats.totalWinnings || 0) - (stats.totalBets || 0)).toLocaleString()}G`, inline: true }
             )
-            .setColor('#FFD700');
+            .setColor('#FFD700')
+            .setImage('attachment://kim_battle_start.gif');
 
         // 최근 몬스터 등장 기록
         if (this.gameStats.recentNumbers.length > 0) {
@@ -5608,6 +8679,9 @@ class MonsterBattleSystem {
     // 개별 베팅 추가
     async addBet(interaction, betType, betAmount, specificNumber = null) {
         const user = await User.findOne({ discordId: interaction.user.id });
+        
+        // 매크로 감지 시스템 기록
+        recordUserAction(interaction.user.id, 'oddeven_bet', Date.now());
         
         // 최소 베팅 금액 확인
         if (betAmount < MONSTER_BATTLE.betLimits.min) {
@@ -5976,15 +9050,21 @@ class MonsterBattleSystem {
         const isOdd = resultNumber % 2 === 1;
         const isSmall = resultNumber <= 50;
         
+        // 몬스터 결정
+        const monsterList = isSmall ? MONSTER_BATTLE.monsters.weak : MONSTER_BATTLE.monsters.strong;
+        const eligibleMonsters = monsterList.filter(m => resultNumber >= m.minLevel && resultNumber <= m.maxLevel);
+        const monster = eligibleMonsters[Math.floor(Math.random() * eligibleMonsters.length)] || monsterList[0];
+        
         const embed = new EmbedBuilder()
-            .setTitle('🎲 홀짝 게임 결과 🎲')
-            .setDescription(`**결과 숫자: \`${resultNumber}\`**\n${isOdd ? '🔥 홀' : '❄️ 짝'} | ${isSmall ? '🔻 소' : '🔺 대'}`)
+            .setTitle('⚔️ 몬스터 배틀 아레나 결과 ⚔️')
+            .setDescription(`**${monster.emoji} Lv.${resultNumber} ${monster.name} 등장!**\n\n${isOdd ? '⚡ 홀수 레벨' : '🌙 짝수 레벨'} | ${isSmall ? '🐛 약한 몬스터' : '🐲 강한 몬스터'}`)
             .addFields(
                 { name: '🎯 베팅', value: `${MONSTER_BATTLE.betOptions[betType]?.name || betType} - ${betAmount.toLocaleString()}G`, inline: true },
-                { name: '📊 결과', value: won ? '🎉 당첨!' : '😭 꽝!', inline: true },
+                { name: '📊 결과', value: won ? '🎉 승리!' : '💀 패배!', inline: true },
                 { name: '💰 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
             )
-            .setColor(won ? '#00FF00' : '#FF0000');
+            .setColor(won ? '#00FF00' : '#FF0000')
+            .setThumbnail(`attachment://${won ? 'kim_battle_victory.gif' : 'kim_battle_defeat.gif'}`);
 
         if (won) {
             embed.addFields(
@@ -6095,15 +9175,21 @@ class MonsterBattleSystem {
         const isSmall = resultNumber <= 50;
         const isLucky7 = resultNumber % 7 === 0;
         
+        // 몬스터 결정
+        const monsterList = isSmall ? MONSTER_BATTLE.monsters.weak : MONSTER_BATTLE.monsters.strong;
+        const eligibleMonsters = monsterList.filter(m => resultNumber >= m.minLevel && resultNumber <= m.maxLevel);
+        const monster = eligibleMonsters[Math.floor(Math.random() * eligibleMonsters.length)] || monsterList[0];
+        
         const embed = new EmbedBuilder()
-            .setTitle('🎲 홀짝 게임 결과 (중복 베팅) 🎲')
-            .setDescription(`**결과 숫자: \`${resultNumber}\`**\n${isOdd ? '🔥 홀' : '❄️ 짝'} | ${isSmall ? '🔻 소' : '🔺 대'} | ${isLucky7 ? '🍀 7배수' : ''}`)
+            .setTitle('⚔️ 몬스터 배틀 아레나 결과 (중복 베팅) ⚔️')
+            .setDescription(`**${monster.emoji} Lv.${resultNumber} ${monster.name} 등장!**\n\n${isOdd ? '⚡ 홀수' : '🌙 짝수'} | ${isSmall ? '🐛 약한' : '🐲 강한'} | ${isLucky7 ? '🍀 7배수' : ''}`)
             .addFields(
                 { name: '💰 총 베팅금', value: `${totalBetAmount.toLocaleString()}G`, inline: true },
                 { name: '💎 총 당첨금', value: `${totalPayout.toLocaleString()}G`, inline: true },
                 { name: '📈 수익', value: `${(totalPayout - totalBetAmount).toLocaleString()}G`, inline: true }
             )
-            .setColor(totalPayout > 0 ? '#00FF00' : '#FF0000');
+            .setColor(totalPayout > 0 ? '#00FF00' : '#FF0000')
+            .setThumbnail(`attachment://${totalPayout > 0 ? 'kim_battle_victory.gif' : 'kim_battle_defeat.gif'}`);
 
         // 각 베팅별 결과 표시
         let betResultText = '';
@@ -6171,6 +9257,9 @@ class MushroomGameSystem {
     async startGame(interaction, user, difficulty) {
         const userId = interaction.user.id;
         
+        // 매크로 감지 시스템 기록
+        recordUserAction(userId, 'mushroom_start', Date.now());
+        
         // 이미 진행 중인 게임이나 매칭 중인지 확인
         if (this.sessions.has(userId) || mushroomMatchmakingQueue.has(userId)) {
             await interaction.reply({ 
@@ -6183,6 +9272,9 @@ class MushroomGameSystem {
         if (difficulty === 'pvp') {
             // 유저와 대결: 매칭 시스템 사용
             await this.startMatchmaking(interaction, user);
+        } else if (difficulty === 'multiplayer') {
+            // 멀티플레이어 모드: 대기실 생성
+            await this.createMultiplayerLobby(interaction, user);
         } else {
             // 혼자 플레이 또는 봇과 대결: 바로 게임 시작
             await this.createGameSession(interaction, user, difficulty);
@@ -6425,18 +9517,18 @@ class MushroomGameSystem {
             .setImage(`attachment://${MUSHROOM_GAME.backgrounds.mushroomSelect}`)
             .setFooter({ text: `생존 라운드: ${session.survivedRounds} | 획득 골드: ${session.totalReward}G` });
 
-        // 버섯 선택 버튼들
+        // 버섯 선택 버튼들 (12개 - 3x4 그리드)
         const mushroomButtons = [];
-        for (let i = 0; i < 2; i++) {
+        for (let i = 0; i < 3; i++) {
             const row = new ActionRowBuilder();
-            for (let j = 0; j < 3; j++) {
-                const num = i * 3 + j + 1;
+            for (let j = 0; j < 4; j++) {
+                const num = i * 4 + j + 1;
                 row.addComponents(
                     new ButtonBuilder()
                         .setCustomId(`mushroom_select_${userId}_${num}`)
-                        .setLabel(`${num}️⃣ 신비한 버섯`)
+                        .setLabel(`${num}`)
                         .setStyle(ButtonStyle.Secondary)
-                        .setEmoji('❓')
+                        .setEmoji('🍄')
                 );
             }
             mushroomButtons.push(row);
@@ -6456,24 +9548,44 @@ class MushroomGameSystem {
         }
     }
 
-    // 버섯 생성
+    // 버섯 생성 (12개)
     generateMushrooms(poisonCount) {
         const mushrooms = [];
         const types = Object.keys(MUSHROOM_GAME.mushroomTypes);
+        const mushroomCount = MUSHROOM_GAME.gameSettings.mushroomsPerRound;
         
-        // 6개 위치 중 독버섯 위치 선택
+        // 12개 위치 중 독버섯 위치 선택
         const poisonPositions = new Set();
         while (poisonPositions.size < poisonCount) {
-            poisonPositions.add(Math.floor(Math.random() * 6));
+            poisonPositions.add(Math.floor(Math.random() * mushroomCount));
+        }
+
+        // 특수 버섯 위치 선택 (황금, 미스터리)
+        const specialPositions = new Set();
+        for (let i = 0; i < mushroomCount; i++) {
+            if (!poisonPositions.has(i) && Math.random() < MUSHROOM_GAME.gameSettings.specialMushroomChance) {
+                specialPositions.add(i);
+            }
         }
 
         // 버섯 배치
-        for (let i = 0; i < 6; i++) {
-            const randomType = types[Math.floor(Math.random() * types.length)];
+        for (let i = 0; i < mushroomCount; i++) {
+            let mushroomType;
+            
+            if (specialPositions.has(i)) {
+                // 특수 버섯 중 하나 선택
+                mushroomType = Math.random() < 0.7 ? 'golden' : 'mystery';
+            } else {
+                // 일반 버섯 중 하나 선택
+                const normalTypes = types.filter(t => !['golden', 'mystery'].includes(t));
+                mushroomType = normalTypes[Math.floor(Math.random() * normalTypes.length)];
+            }
+            
             mushrooms.push({
-                type: randomType,
+                type: mushroomType,
                 isPoisonous: poisonPositions.has(i),
-                position: i + 1
+                position: i + 1,
+                isSpecial: specialPositions.has(i)
             });
         }
 
@@ -6511,13 +9623,27 @@ class MushroomGameSystem {
         } else {
             // 안전한 버섯 선택
             session.survivedRounds++;
-            const roundReward = MUSHROOM_GAME.gameSettings.baseReward + (session.currentRound - 1) * MUSHROOM_GAME.gameSettings.survivalBonus;
+            let roundReward = MUSHROOM_GAME.gameSettings.baseReward + (session.currentRound - 1) * MUSHROOM_GAME.gameSettings.survivalBonus;
+            
+            // 특수 버섯 효과 적용
+            let specialMessage = '';
+            if (selectedMushroom.isSpecial) {
+                if (selectedMushroom.type === 'golden') {
+                    roundReward += MUSHROOM_GAME.gameSettings.goldenBonus;
+                    specialMessage = `\n\n✨ **황금버섯 보너스!** +${MUSHROOM_GAME.gameSettings.goldenBonus}G`;
+                } else if (selectedMushroom.type === 'mystery') {
+                    const mysteryBonus = Math.floor(Math.random() * MUSHROOM_GAME.gameSettings.mysteryBonus) + 500;
+                    roundReward += mysteryBonus;
+                    specialMessage = `\n\n❓ **미스터리 보너스!** +${mysteryBonus}G`;
+                }
+            }
+            
             session.totalReward += roundReward;
 
             resultEmbed = new EmbedBuilder()
                 .setColor('#00ff00')
                 .setTitle(MUSHROOM_GAME.messages.safeSelected)
-                .setDescription(`${mushroomType.emoji} **${mushroomType.name}**\n\n${mushroomType.safeDesc}`)
+                .setDescription(`${mushroomType.emoji} **${mushroomType.name}**\n\n${mushroomType.safeDesc}${specialMessage}`)
                 .setImage(`attachment://${mushroomType.safeGif}`)
                 .setThumbnail(`attachment://${MUSHROOM_GAME.effects.safeSparkle}`)
                 .addFields(
@@ -6700,6 +9826,480 @@ class MushroomGameSystem {
         this.sessions.delete(userId);
     }
 
+    // 멀티플레이어 대기실 생성
+    async createMultiplayerLobby(interaction, user) {
+        const userId = interaction.user.id;
+        const lobbyId = `mushroom_multi_${Date.now()}`;
+        
+        // 임시 채널 생성
+        let tempChannel = null;
+        try {
+            if (interaction.channel && interaction.channel.guild) {
+                tempChannel = await interaction.channel.guild.channels.create({
+                    name: `🍄버섯사냥-${user.nickname || user.username}`,
+                    type: 0, // 텍스트 채널
+                    parent: interaction.channel.parent,
+                    permissionOverwrites: [
+                        {
+                            id: interaction.channel.guild.id,
+                            deny: ['SendMessages'],
+                            allow: ['ViewChannel']
+                        },
+                        {
+                            id: userId,
+                            allow: ['SendMessages', 'ViewChannel']
+                        }
+                    ]
+                });
+            }
+        } catch (error) {
+            console.error('임시 채널 생성 실패:', error);
+        }
+
+        // 멀티플레이어 세션 생성
+        const multiSession = {
+            lobbyId: lobbyId,
+            hostId: userId,
+            hostName: user.nickname || user.username,
+            players: new Map([[userId, {
+                userId: userId,
+                userName: user.nickname || user.username,
+                ready: true,
+                isHost: true,
+                totalReward: 0,
+                survivedRounds: 0,
+                isAlive: true,
+                items: [],
+                shields: 0,
+                streak: 0
+            }]]),
+            tempChannel: tempChannel,
+            tempChannelId: tempChannel?.id,
+            currentRound: 0,
+            gameStarted: false,
+            totalPot: 0,
+            waitingTimer: null,
+            roundTimer: null,
+            itemsUsedThisRound: new Map()
+        };
+
+        // 각 플레이어에 세션 연결
+        this.sessions.set(userId, multiSession);
+
+        const lobbyEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('🍄 버섯 사냥 멀티플레이어 대기실')
+            .setDescription(`호스트: ${user.nickname || user.username}\n\n참가비: ${MUSHROOM_GAME.gameSettings.entryFee}G\n최대 인원: ${MUSHROOM_GAME.gameSettings.maxPlayers}명`)
+            .addFields(
+                { name: '📋 참가자', value: `1. ${user.nickname || user.username} (호스트) ✅`, inline: false }
+            )
+            .setFooter({ text: '30초 후 자동 시작됩니다' });
+
+        const lobbyButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`mushroom_join_${lobbyId}`)
+                    .setLabel('🎮 참가하기')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId(`mushroom_start_multi_${lobbyId}`)
+                    .setLabel('🚀 게임 시작')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(true), // 2명 이상일 때 활성화
+                new ButtonBuilder()
+                    .setCustomId(`mushroom_leave_${lobbyId}`)
+                    .setLabel('🚪 나가기')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+        const replyOptions = {
+            embeds: [lobbyEmbed],
+            components: [lobbyButtons]
+        };
+
+        // 임시 채널이 생성되었다면 안내
+        if (tempChannel) {
+            const channelEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setDescription(`🍄 버섯 사냥 대기실이 ${tempChannel}에 생성되었습니다!`);
+            
+            await interaction.reply({ embeds: [channelEmbed] });
+            await tempChannel.send(replyOptions);
+        } else {
+            await interaction.reply(replyOptions);
+        }
+
+        // 30초 후 자동 시작 타이머
+        multiSession.waitingTimer = setTimeout(async () => {
+            if (multiSession.players.size >= MUSHROOM_GAME.gameSettings.minPlayers && !multiSession.gameStarted) {
+                await this.startMultiplayerGame(tempChannel || interaction.channel, lobbyId);
+            } else if (multiSession.players.size < MUSHROOM_GAME.gameSettings.minPlayers) {
+                // 인원 부족으로 취소
+                const cancelEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ 게임 취소')
+                    .setDescription('참가 인원이 부족하여 게임이 취소되었습니다.');
+                
+                if (tempChannel) {
+                    await tempChannel.send({ embeds: [cancelEmbed] });
+                    setTimeout(() => tempChannel.delete().catch(console.error), 5000);
+                }
+                
+                // 세션 정리
+                multiSession.players.forEach((player, id) => {
+                    this.sessions.delete(id);
+                });
+            }
+        }, 30000);
+    }
+
+    // 멀티플레이어 게임 시작
+    async startMultiplayerGame(channel, lobbyId) {
+        const session = Array.from(this.sessions.values()).find(s => s.lobbyId === lobbyId);
+        if (!session || session.gameStarted) return;
+
+        session.gameStarted = true;
+        session.currentRound = 1;
+        
+        // 참가비 계산
+        session.totalPot = session.players.size * MUSHROOM_GAME.gameSettings.entryFee;
+
+        // 각 플레이어의 참가비 차감
+        for (const [playerId, playerData] of session.players) {
+            const user = await User.findOne({ discordId: playerId });
+            if (user) {
+                user.gold -= MUSHROOM_GAME.gameSettings.entryFee;
+                await user.save();
+            }
+        }
+
+        const startEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('🍄 버섯 사냥 시작!')
+            .setDescription(`총 ${session.players.size}명의 플레이어가 참가했습니다!\n총 상금: ${session.totalPot}G`)
+            .setFooter({ text: '곧 첫 번째 라운드가 시작됩니다!' });
+
+        await channel.send({ embeds: [startEmbed] });
+
+        // 첫 라운드 시작
+        setTimeout(() => this.startMultiplayerRound(channel, lobbyId), 3000);
+    }
+
+    // 멀티플레이어 라운드 시작
+    async startMultiplayerRound(channel, lobbyId) {
+        const session = Array.from(this.sessions.values()).find(s => s.lobbyId === lobbyId);
+        if (!session) return;
+
+        const roundInfo = MUSHROOM_GAME.difficultyByRound[session.currentRound];
+        const mushrooms = this.generateMushrooms(roundInfo.poisonCount);
+        session.currentMushrooms = mushrooms;
+        session.playerChoices = new Map();
+
+        // 생존한 플레이어 수 확인
+        const alivePlayers = Array.from(session.players.values()).filter(p => p.isAlive);
+        
+        // 아이템 사용 초기화
+        session.itemsUsedThisRound.clear();
+        
+        const roundEmbed = new EmbedBuilder()
+            .setColor('#9b59b6')
+            .setTitle(`🍄 라운드 ${session.currentRound}`)
+            .setDescription(`${roundInfo.message}\n\n생존자: ${alivePlayers.length}명`)
+            .addFields(
+                { name: '💰 현재 상금', value: `${session.totalPot}G`, inline: true },
+                { name: '⏱️ 제한시간', value: '15초', inline: true },
+                { name: '🎯 특수 효과', value: `${this.getActiveEffects(session)}`, inline: true }
+            );
+
+        // 12개 버섯 버튼 생성
+        const mushroomButtons = [];
+        for (let i = 0; i < 3; i++) {
+            const row = new ActionRowBuilder();
+            for (let j = 0; j < 4; j++) {
+                const num = i * 4 + j + 1;
+                row.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_multi_select_${lobbyId}_${num}`)
+                        .setLabel(`${num}`)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🍄')
+                );
+            }
+            mushroomButtons.push(row);
+        }
+
+        await channel.send({
+            embeds: [roundEmbed],
+            components: mushroomButtons
+        });
+
+        // 15초 후 자동 선택
+        setTimeout(() => this.processMultiplayerRoundEnd(channel, lobbyId), 15000);
+    }
+
+    // 멀티플레이어 라운드 종료 처리
+    async processMultiplayerRoundEnd(channel, lobbyId) {
+        const session = Array.from(this.sessions.values()).find(s => s.lobbyId === lobbyId);
+        if (!session) return;
+
+        // 선택하지 않은 플레이어는 랜덤 선택
+        const alivePlayers = Array.from(session.players.values()).filter(p => p.isAlive);
+        for (const player of alivePlayers) {
+            if (!session.playerChoices.has(player.userId)) {
+                const randomChoice = Math.floor(Math.random() * 12) + 1;
+                session.playerChoices.set(player.userId, randomChoice);
+            }
+        }
+
+        // 결과 처리
+        const resultEmbed = new EmbedBuilder()
+            .setColor('#ff9900')
+            .setTitle(`🍄 라운드 ${session.currentRound} 결과`);
+
+        let resultText = '';
+        const eliminatedPlayers = [];
+
+        for (const [playerId, choice] of session.playerChoices) {
+            const player = session.players.get(playerId);
+            if (!player || !player.isAlive) continue;
+
+            const mushroom = session.currentMushrooms[choice - 1];
+            const mushroomType = MUSHROOM_GAME.mushroomTypes[mushroom.type];
+
+            if (mushroom.isPoisonous) {
+                // 보호막 확인
+                if (player.shields > 0) {
+                    player.shields--;
+                    resultText += `🛡️ ${player.userName}: ${mushroomType.emoji} 독버섯! (보호막으로 방어)\n`;
+                    player.survivedRounds++;
+                    player.streak++;
+                } else {
+                    player.isAlive = false;
+                    player.streak = 0;
+                    eliminatedPlayers.push(player.userName);
+                    resultText += `❌ ${player.userName}: ${mushroomType.emoji} 독버섯!\n`;
+                    
+                    // 탈락 반응 추가
+                    const reaction = reactionSystem.addReaction(lobbyId, playerId, 'fear');
+                    if (reaction) resultText += `   ${reaction} "${player.userName}님이 탈락했습니다!"\n`;
+                }
+            } else {
+                player.survivedRounds++;
+                player.streak++;
+                let reward = MUSHROOM_GAME.gameSettings.baseReward;
+                
+                // 연승 보너스
+                if (player.streak >= 3) {
+                    const streakBonus = MUSHROOM_GAME.gameSettings.streakBonus * (player.streak - 2);
+                    reward += streakBonus;
+                    resultText += `🔥 연승 보너스! (+${streakBonus}G)\n`;
+                }
+                
+                // 특수 아이템 획득 확률
+                if (Math.random() < MUSHROOM_GAME.gameSettings.sabotageItemChance) {
+                    const item = mushroomItemSystem.grantRandomItem(playerId);
+                    player.items.push(item.name);
+                    resultText += `🎁 ${player.userName}: ${item.emoji} ${item.name} 획득!\n`;
+                }
+                
+                if (mushroom.isSpecial) {
+                    if (mushroom.type === 'golden') {
+                        reward += MUSHROOM_GAME.gameSettings.goldenBonus;
+                        resultText += `✨ ${player.userName}: ${mushroomType.emoji} 황금버섯! (+${MUSHROOM_GAME.gameSettings.goldenBonus}G)\n`;
+                        
+                        // 축하 반응
+                        const reaction = reactionSystem.addReaction(lobbyId, playerId, 'celebrate');
+                        if (reaction) resultText += `   ${reaction}\n`;
+                    } else if (mushroom.type === 'mystery') {
+                        const bonus = Math.floor(Math.random() * MUSHROOM_GAME.gameSettings.mysteryBonus) + 500;
+                        reward += bonus;
+                        resultText += `❓ ${player.userName}: ${mushroomType.emoji} 미스터리! (+${bonus}G)\n`;
+                    }
+                } else {
+                    resultText += `✅ ${player.userName}: ${mushroomType.emoji} 안전!\n`;
+                }
+                
+                player.totalReward += reward;
+            }
+        }
+
+        resultEmbed.setDescription(resultText);
+
+        const survivingPlayers = Array.from(session.players.values()).filter(p => p.isAlive);
+        
+        if (eliminatedPlayers.length > 0) {
+            resultEmbed.addFields({
+                name: '💀 탈락자',
+                value: eliminatedPlayers.join(', '),
+                inline: false
+            });
+        }
+
+        await channel.send({ embeds: [resultEmbed] });
+
+        // 게임 종료 조건 확인
+        if (survivingPlayers.length <= 1 || session.currentRound >= MUSHROOM_GAME.gameSettings.maxRounds) {
+            await this.endMultiplayerGame(channel, lobbyId);
+        } else {
+            // 다음 라운드
+            session.currentRound++;
+            setTimeout(() => this.startMultiplayerRound(channel, lobbyId), 3000);
+        }
+    }
+
+    // 멀티플레이어 게임 종료
+    async endMultiplayerGame(channel, lobbyId) {
+        const session = Array.from(this.sessions.values()).find(s => s.lobbyId === lobbyId);
+        if (!session) return;
+
+        const survivors = Array.from(session.players.values())
+            .filter(p => p.isAlive)
+            .sort((a, b) => b.survivedRounds - a.survivedRounds);
+
+        // 상금 분배
+        const distribution = MUSHROOM_GAME.rewardDistribution[session.players.size] || [1];
+        let totalReward = session.totalPot;
+
+        const resultEmbed = new EmbedBuilder()
+            .setColor('#ffff00')
+            .setTitle('🏆 게임 종료!')
+            .setDescription('버섯 사냥이 끝났습니다!');
+
+        let rankText = '';
+        for (let i = 0; i < survivors.length; i++) {
+            const player = survivors[i];
+            const rewardPercent = distribution[i] || 0;
+            const reward = Math.floor(totalReward * rewardPercent);
+            
+            rankText += `${i + 1}위: ${player.userName} - ${reward}G (생존 ${player.survivedRounds}라운드)\n`;
+
+            // 상금 지급
+            const user = await User.findOne({ discordId: player.userId });
+            if (user) {
+                user.gold += reward;
+                
+                // 버섯 게임 통계 업데이트
+                if (!user.mushroomStats) {
+                    user.mushroomStats = {
+                        totalGames: 0,
+                        wins: 0,
+                        totalRounds: 0,
+                        totalEarnings: 0,
+                        highestRound: 0
+                    };
+                }
+                
+                user.mushroomStats.totalGames++;
+                if (i === 0) user.mushroomStats.wins++;
+                user.mushroomStats.totalRounds += player.survivedRounds;
+                user.mushroomStats.totalEarnings += reward;
+                user.mushroomStats.highestRound = Math.max(user.mushroomStats.highestRound, player.survivedRounds);
+                
+                await user.save();
+            }
+        }
+
+        resultEmbed.addFields({
+            name: '🏅 최종 순위',
+            value: rankText || '생존자가 없습니다',
+            inline: false
+        });
+
+        await channel.send({ embeds: [resultEmbed] });
+
+        // 임시 채널 정리
+        if (session.tempChannel) {
+            setTimeout(async () => {
+                try {
+                    await session.tempChannel.send('🍄 10초 후 채널이 삭제됩니다.');
+                    setTimeout(() => {
+                        session.tempChannel.delete().catch(console.error);
+                    }, 10000);
+                } catch (error) {
+                    console.error('채널 정리 실패:', error);
+                }
+            }, 5000);
+        }
+
+        // 세션 정리
+        session.players.forEach((player, id) => {
+            this.sessions.delete(id);
+        });
+    }
+
+    // 활성 효과 가져오기
+    getActiveEffects(session) {
+        const effects = [];
+        
+        // 생존자 수에 따른 효과
+        const alivePlayers = Array.from(session.players.values()).filter(p => p.isAlive);
+        if (alivePlayers.length <= 2) {
+            effects.push('⚡ 최종 결전');
+        }
+        
+        // 라운드별 특수 효과
+        if (session.currentRound >= 4) {
+            effects.push('🌟 극한 모드');
+        }
+        
+        return effects.length > 0 ? effects.join(' | ') : '없음';
+    }
+
+    // 아이템 사용 버튼 추가
+    createItemButtons(playerId, items) {
+        if (!items || items.length === 0) return null;
+        
+        const row = new ActionRowBuilder();
+        const availableItems = items.slice(0, 3); // 최대 3개 표시
+        
+        for (const itemName of availableItems) {
+            const item = Object.values(MUSHROOM_GAME.specialItems).find(i => i.name === itemName);
+            if (item) {
+                row.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_use_item_${playerId}_${item.name}`)
+                        .setLabel(`${item.emoji} ${item.name}`)
+                        .setStyle(ButtonStyle.Primary)
+                );
+            }
+        }
+        
+        return row;
+    }
+
+    // 토너먼트 모드 시작
+    async startTournamentMode(interaction, user) {
+        const tournament = tournamentSystem.createTournament(user.discordId);
+        
+        const tournamentEmbed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🏆 독버섯 토너먼트')
+            .setDescription(`호스트: ${user.nickname}\n참가비: ${MUSHROOM_GAME.tournamentSettings.entryFee}G\n\n최소 4명, 최대 8명이 참가할 수 있습니다.`)
+            .addFields(
+                { name: '📋 참가자', value: `1. ${user.nickname} (호스트)`, inline: false },
+                { name: '💰 현재 상금', value: `${tournament.prizePool}G`, inline: true }
+            );
+        
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`mushroom_tournament_join_${tournament.id}`)
+                    .setLabel('🎮 참가하기')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId(`mushroom_tournament_start_${tournament.id}`)
+                    .setLabel('🚀 토너먼트 시작')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(true)
+            );
+        
+        await interaction.reply({
+            embeds: [tournamentEmbed],
+            components: [buttons]
+        });
+    }
+
+
     // 게임 종료
     async endGame(interaction, userId) {
         const session = this.sessions.get(userId);
@@ -6756,20 +10356,41 @@ const mushroomGame = new MushroomGameSystem();
 function getEquippedItem(user, equipmentType) {
     const slotIndex = user.equipment[equipmentType];
     
-    // ObjectId나 잘못된 데이터 타입인 경우 null 반환
-    if (slotIndex === -1 || slotIndex === null || slotIndex === undefined || typeof slotIndex === 'object') {
+    // ObjectId나 잘못된 데이터 타입인 경우 null 반환 및 정리
+    if (slotIndex === -1 || slotIndex === null || slotIndex === undefined || 
+        typeof slotIndex === 'object' || isNaN(Number(slotIndex))) {
+        // 잘못된 데이터가 있으면 정리
+        if (slotIndex !== -1 && slotIndex !== null && slotIndex !== undefined) {
+            console.log(`[장비 오류] ${user.nickname}의 ${equipmentType} 슬롯에 잘못된 데이터 타입: ${typeof slotIndex}`);
+            user.equipment[equipmentType] = -1;
+        }
         return null;
     }
     
+    // 숫자로 변환
+    const slotNumber = Number(slotIndex);
+    
     // inventorySlot으로 아이템 찾기
-    const item = user.inventory.find(item => item.inventorySlot === slotIndex);
+    const item = user.inventory.find(item => item.inventorySlot === slotNumber);
+    
+    // 아이템을 찾지 못한 경우 equipment 슬롯 정리
+    if (!item) {
+        console.log(`[장비 오류] ${user.nickname}의 ${equipmentType} 슬롯 ${slotNumber}에 아이템이 없음`);
+        user.equipment[equipmentType] = -1;
+        return null;
+    }
     
     // 아이템을 찾았지만 타입이 맞지 않는 경우 데이터 정리
-    if (item && item.type !== equipmentType) {
+    if (item.type !== equipmentType) {
         console.log(`[장비 오류] ${user.nickname}의 ${equipmentType} 슬롯에 잘못된 타입의 아이템: ${item.type}`);
         user.equipment[equipmentType] = -1;
         item.equipped = false;
         return null;
+    }
+    
+    // equipped 상태 동기화
+    if (!item.equipped) {
+        item.equipped = true;
     }
     
     return item;
@@ -8312,12 +11933,21 @@ function validateAndFixInventory(user) {
     equipmentSlots.forEach(slot => {
         const slotIndex = user.equipment[slot];
         
+        // ObjectId 타입이거나 잘못된 타입인 경우 초기화
+        if (typeof slotIndex === 'object' || (slotIndex !== -1 && slotIndex !== null && slotIndex !== undefined && isNaN(Number(slotIndex)))) {
+            console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯에 잘못된 데이터 타입: ${typeof slotIndex}`);
+            user.equipment[slot] = -1;
+            needsFix = true;
+            return;
+        }
+        
         if (slotIndex !== -1 && slotIndex !== null && slotIndex !== undefined) {
-            const item = user.inventory.find(i => i.inventorySlot === slotIndex);
+            const slotNumber = Number(slotIndex);
+            const item = user.inventory.find(i => i.inventorySlot === slotNumber);
             
             if (!item) {
                 // 장착된 슬롯에 아이템이 없음
-                console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯 초기화: ${slotIndex} -> -1`);
+                console.log(`[장비 복구] ${user.nickname}의 ${slot} 슬롯 초기화: ${slotNumber} -> -1`);
                 user.equipment[slot] = -1;
                 needsFix = true;
             } else if (item.type !== slot) {
@@ -8378,17 +12008,17 @@ function equipItem(user, inventorySlot, equipmentType) {
     const item = user.inventory.find(item => item.inventorySlot === slotNumber);
     if (!item) {
         console.log(`[장비 오류] inventorySlot ${slotNumber}에 아이템을 찾을 수 없음`);
-        return { success: false, error: '아이템을 찾을 수 없습니다!', message: '아이템을 찾을 수 없습니다!' };
+        return { success: false, message: '아이템을 찾을 수 없습니다!' };
     }
     
     // 아이템 타입 확인
     if (item.type !== equipmentType) {
-        return { success: false, error: `이 아이템은 ${equipmentType} 슬롯에 장착할 수 없습니다!`, message: `이 아이템은 ${equipmentType} 슬롯에 장착할 수 없습니다!` };
+        return { success: false, message: `이 아이템은 ${equipmentType} 슬롯에 장착할 수 없습니다!` };
     }
     
     // 레벨 체크
     if (user.level < item.level) {
-        return { success: false, error: `레벨이 부족합니다! (필요: Lv.${item.level})`, message: `레벨이 부족합니다! (필요: Lv.${item.level})` };
+        return { success: false, message: `레벨이 부족합니다! (필요: Lv.${item.level})` };
     }
     
     // 이전 장비 해제
@@ -8545,11 +12175,15 @@ const client = new Client({
 // 봇 토큰 (환경변수에서 가져오거나 직접 입력)
 const TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
-const DEV_CHANNEL_IDS = ['1380684353998426122', '1371885860143890564', '1381614153399140412'];
+const DEV_CHANNEL_IDS = process.env.DEV_CHANNEL_IDS ? process.env.DEV_CHANNEL_IDS.split(',').map(id => id.trim()) : [];
 const GAME_CHANNEL_ID = process.env.GAME_CHANNEL_ID;
 const DEV_MODE = process.env.DEV_MODE === 'true';
 const DEVELOPER_ID = process.env.DEVELOPER_ID;
 const POPULAR_KING_ROLE_NAME = '👑 인기왕';
+const PRODUCTION_TEST_CHANNEL_ID = '1387483613913944145'; // 본서버 테스트 채널
+
+// 관리자 설정
+const ADMIN_CHANNEL_ID = '1387483613913944145'; // 관리자 전용 채널 ID - 설정 시 해당 채널에서는 모든 명령어 사용 가능
 
 // 클로즈베타 설정
 const BETA_MODE = process.env.BETA_MODE === 'true';
@@ -8566,9 +12200,52 @@ function isBetaChannel(channelId) {
     return BETA_CHANNEL_IDS.includes(channelId) || DEV_CHANNEL_IDS.includes(channelId);
 }
 
+// 관리자 전용 채널 확인 함수
+function isAdminChannel(channelId) {
+    return ADMIN_CHANNEL_ID && channelId === ADMIN_CHANNEL_ID;
+}
+
+// 카운트다운 상태 확인 함수 (항상 true 반환하도록 수정)
+function isCountdownActive() {
+    // 서버 오픈 전까지는 항상 카운트다운 활성화
+    return !global.serverOpened; // 서버가 오픈되지 않았다면 항상 true
+}
+
 // 개발자 체크 함수
 function isDeveloper(userId) {
     return DEVELOPER_ID && userId === DEVELOPER_ID;
+}
+
+// 본서버 테스트 채널에서 사용 가능한지 확인
+function canUseInProductionTest(interaction) {
+    // 개발자는 항상 허용
+    if (isDeveloper(interaction.user.id)) return true;
+    
+    // 본서버 테스트 채널에서만 허용
+    if (interaction.channelId === PRODUCTION_TEST_CHANNEL_ID) {
+        // 특정 사용자만 허용하려면 여기에 조건 추가
+        return true;
+    }
+    
+    return false;
+}
+
+// 미니게임 채널 확인 함수
+function isMinigameChannel(channelId) {
+    return channelId === PRODUCTION_TEST_CHANNEL_ID;
+}
+
+// 희귀도별 이모지 반환 함수
+function getRarityEmoji(rarity) {
+    const rarityEmojis = {
+        '일반': '⚪',
+        '고급': '🟢',
+        '레어': '🔵',
+        '에픽': '🟣',
+        '레전드리': '🟠',
+        '신화': '🔴'
+    };
+    return rarityEmojis[rarity] || '⚪';
 }
 
 // 경험치 바 생성 함수
@@ -8699,11 +12376,48 @@ const COST_COEFFICIENTS = {
 
 // 아이템 레벨별 설정 (모든 상점 아이템 포함)
 const ITEM_LEVELS = {
+    // 기본 아이템
     '기본 검': 1,
     '기본 갑옷': 1,
     '체력 포션': 1,
     '마나 포션': 1,
-    '강철 검': 10,
+    
+    // 무기류
+    '나무 검': 1,
+    '철 검': 10,
+    '강철 검': 25,
+    '미스릴 검': 40,
+    '드래곤 검': 60,
+    
+    // 갑옷류
+    '가죽 갑옷': 1,
+    '사슬 갑옷': 15,
+    '판금 갑옷': 30,
+    '드래곤 갑옷': 50,
+    
+    // 헬멧류
+    '가죽 헬멧': 1,
+    '철 헬멧': 10,
+    '강철 헬멧': 20,
+    '미스릴 헬멧': 35,
+    
+    // 장갑류
+    '가죽 장갑': 1,
+    '사슬 장갑': 10,
+    '판금 장갑': 25,
+    
+    // 부츠류
+    '가죽 부츠': 1,
+    '철 부츠': 10,
+    '강철 부츠': 25,
+    
+    // 액세서리류
+    '나무 반지': 1,
+    '은 반지': 10,
+    '금 반지': 20,
+    '다이아몬드 반지': 40,
+    
+    // 세트 아이템
     '꽃잎 세트': 1,
     '별빛 세트': 20,
     '드래곤 세트': 40,
@@ -9077,9 +12791,21 @@ async function getUser(discordId) {
     try {
         let user = await User.findOne({ discordId });
         if (!user) {
-            user = new User({ discordId });
-            await user.save();
-            console.log(`새 유저 생성: ${discordId}`);
+            try {
+                user = new User({ discordId });
+                await user.save();
+                console.log(`새 유저 생성: ${discordId}`);
+            } catch (saveError) {
+                // 중복 키 오류 발생 시 다시 조회
+                if (saveError.code === 11000) {
+                    user = await User.findOne({ discordId });
+                    if (!user) {
+                        throw new Error('유저 생성 실패');
+                    }
+                } else {
+                    throw saveError;
+                }
+            }
         }
         
         let needsSave = false;
@@ -9424,6 +13150,142 @@ async function updatePopularKingRole(guild) {
     }
 }
 
+// 프로페셔널 공지 임베드 생성 함수
+function createNoticeEmbed(notice) {
+    const category = NOTICE_SYSTEM.categories[notice.category] || NOTICE_SYSTEM.categories.notice;
+    const priority = NOTICE_SYSTEM.priorities[notice.priority] || NOTICE_SYSTEM.priorities.medium;
+    const template = NOTICE_SYSTEM.templates[notice.templateType] || NOTICE_SYSTEM.templates.basic;
+    
+    // 기본 임베드 설정
+    const embed = new EmbedBuilder()
+        .setColor(priority.color || category.color)
+        .setTimestamp(new Date(notice.createdAt));
+    
+    // 우선순위별 타이틀 설정
+    let title = '';
+    if (priority.emoji) title += priority.emoji + ' ';
+    if (priority.blink && notice.priority === 'critical') {
+        title += `**[필독]** `;
+    }
+    title += notice.title;
+    embed.setTitle(title);
+    
+    // 작성자 정보
+    if (notice.author) {
+        embed.setAuthor({ 
+            name: notice.author.name, 
+            iconURL: notice.author.avatar 
+        });
+    }
+    
+    // 카테고리 표시
+    if (template && template.icon) {
+        embed.setFooter({ 
+            text: `${category.emoji} ${category.name} | ${template.icon} ${template.name}` 
+        });
+    } else {
+        embed.setFooter({ 
+            text: `${category.emoji} ${category.name}` 
+        });
+    }
+    
+    // 템플릿별 필드 구성
+    switch (notice.templateType) {
+        case 'basic':
+            embed.setDescription(notice.content);
+            break;
+            
+        case 'maintenance':
+            embed.setDescription(notice.content || '');
+            
+            // 보상을 먼저 추가
+            if (notice.compensation) {
+                embed.addFields({ 
+                    name: '🎁 보상', 
+                    value: notice.compensation 
+                });
+            }
+            
+            // 시간 정보는 나중에 추가
+            embed.addFields(
+                { 
+                    name: '🕐 점검 시간', 
+                    value: notice.time || '미정', 
+                    inline: true 
+                },
+                { 
+                    name: '⏱️ 예상 소요시간', 
+                    value: notice.duration || '약 2시간', 
+                    inline: true 
+                }
+            );
+            break;
+            
+        case 'event':
+            embed.setDescription(notice.content || ''); // 메인 내용을 description에 추가
+            embed.addFields(
+                { 
+                    name: '📅 이벤트 기간', 
+                    value: notice.period || '미정', 
+                    inline: false 
+                }
+            );
+            
+            if (notice.rewards) {
+                embed.addFields({ 
+                    name: '🎁 이벤트 보상', 
+                    value: notice.rewards 
+                });
+            }
+            
+            if (notice.howToJoin) {
+                embed.addFields({ 
+                    name: '📝 참여 방법', 
+                    value: notice.howToJoin 
+                });
+            }
+            break;
+            
+        case 'update':
+            if (notice.version) {
+                embed.setDescription(`**버전**: ${notice.version}\n\n${notice.content}`);
+            } else {
+                embed.setDescription(notice.content);
+            }
+            
+            if (notice.changes) {
+                embed.addFields({ 
+                    name: '✨ 변경사항', 
+                    value: notice.changes 
+                });
+            }
+            
+            if (notice.fixes) {
+                embed.addFields({ 
+                    name: '🔧 버그 수정', 
+                    value: notice.fixes 
+                });
+            }
+            break;
+    }
+    
+    // 태그 추가
+    if (notice.tags && notice.tags.length > 0) {
+        embed.addFields({ 
+            name: '🏷️ 태그', 
+            value: notice.tags.map(tag => `\`${tag}\``).join(' '), 
+            inline: false 
+        });
+    }
+    
+    // 중요도에 따른 추가 효과
+    if (notice.priority === 'critical') {
+        embed.setThumbnail('https://cdn.discordapp.com/attachments/1234567890/critical_notice.png');
+    }
+    
+    return embed;
+}
+
 // 슬래시 명령어 정의
 const commands = [
     new SlashCommandBuilder()
@@ -9633,6 +13495,14 @@ const commands = [
                     { name: '⚔️ 유저와 대결', value: 'pvp' },
                     { name: '🤖 봇과 대결', value: 'bot' }
                 )),
+    
+    new SlashCommandBuilder()
+        .setName('초성')
+        .setDescription('🎯 초성 게임 메뉴를 표시합니다'),
+    
+    new SlashCommandBuilder()
+        .setName('끝말잇기')
+        .setDescription('🔤 끝말잇기 게임을 시작합니다'),
                 
     new SlashCommandBuilder()
         .setName('주식복구')
@@ -9695,13 +13565,154 @@ const commands = [
         .addSubcommand(subcommand =>
             subcommand
                 .setName('정보')
-                .setDescription('현재 보스 상태를 확인합니다'))
+                .setDescription('현재 보스 상태를 확인합니다')),
+    
+    new SlashCommandBuilder()
+        .setName('말')
+        .setDescription('봇이 메시지를 전송합니다 (관리자 전용)')
+        .addStringOption(option =>
+            option.setName('메시지')
+                .setDescription('전송할 메시지')
+                .setRequired(true))
+        .addChannelOption(option =>
+            option.setName('채널')
+                .setDescription('메시지를 전송할 채널 (기본: 현재 채널)')
+                .setRequired(false)),
+                
+    new SlashCommandBuilder()
+        .setName('ip관리')
+        .setDescription('IP 관련 정보를 관리합니다 (관리자 전용)')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('조회')
+                .setDescription('사용자의 IP 정보를 조회합니다')
+                .addUserOption(option =>
+                    option.setName('사용자')
+                        .setDescription('조회할 사용자')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('차단')
+                .setDescription('특정 IP를 차단합니다')
+                .addStringOption(option =>
+                    option.setName('ip')
+                        .setDescription('차단할 IP 주소')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('사유')
+                        .setDescription('차단 사유')
+                        .setRequired(false)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('차단해제')
+                .setDescription('IP 차단을 해제합니다')
+                .addStringOption(option =>
+                    option.setName('ip')
+                        .setDescription('차단 해제할 IP 주소')
+                        .setRequired(true))),
+    new SlashCommandBuilder()
+        .setName('매크로테스트')
+        .setDescription('매크로 방지 시스템을 테스트합니다 (관리자 전용)')
+        .addStringOption(option =>
+            option.setName('타입')
+                .setDescription('테스트 유형을 선택하세요')
+                .setRequired(true)
+                .addChoices(
+                    { name: '기본 검증', value: 'basic' },
+                    { name: '빠른 클릭 패턴', value: 'rapid' },
+                    { name: '반복 패턴', value: 'pattern' },
+                    { name: '상태 확인', value: 'status' },
+                    { name: '특정 유저 초기화', value: 'reset' },
+                    { name: '전체 초기화', value: 'reset_all' }
+                ))
+        .addUserOption(option =>
+            option.setName('대상')
+                .setDescription('테스트 대상 유저 (비워두면 자신)')
+                .setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('공지작성')
+        .setDescription('프로페셔널 공지사항을 작성합니다 (관리자 전용)')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('새공지')
+                .setDescription('새로운 공지사항을 작성합니다')
+                .addStringOption(option =>
+                    option.setName('템플릿')
+                        .setDescription('공지 템플릿을 선택하세요')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: '📢 기본 공지', value: 'basic' },
+                            { name: '🔧 점검 공지', value: 'maintenance' },
+                            { name: '🎉 이벤트 공지', value: 'event' },
+                            { name: '📋 업데이트 공지', value: 'update' }
+                        )))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('미리보기')
+                .setDescription('저장된 공지를 미리보기합니다')
+                .addStringOption(option =>
+                    option.setName('공지id')
+                        .setDescription('미리보기할 공지 ID')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('발송')
+                .setDescription('저장된 공지를 발송합니다')
+                .addStringOption(option =>
+                    option.setName('공지id')
+                        .setDescription('발송할 공지 ID')
+                        .setRequired(true))
+                .addChannelOption(option =>
+                    option.setName('채널')
+                        .setDescription('공지를 발송할 채널')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('멘션')
+                        .setDescription('멘션 옵션')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: '@everyone', value: 'everyone' },
+                            { name: '@here', value: 'here' },
+                            { name: '멘션 없음', value: 'none' }
+                        )))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('목록')
+                .setDescription('저장된 공지 목록을 확인합니다'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('삭제')
+                .setDescription('저장된 공지를 삭제합니다')
+                .addStringOption(option =>
+                    option.setName('공지id')
+                        .setDescription('삭제할 공지 ID')
+                        .setRequired(true))),
+    
+    new SlashCommandBuilder()
+        .setName('사전강화')
+        .setDescription('카운트다운 중 특별 강화 이벤트! 실패해도 레벨이 내려가지 않습니다!'),
+    
+    new SlashCommandBuilder()
+        .setName('댕댕봇소환')
+        .setDescription('댕댕봇을 이 채널에 소환합니다 (개발자 전용)'),
+    
+    new SlashCommandBuilder()
+        .setName('백업복원')
+        .setDescription('사전강화 데이터 백업 복원 (개발자 전용)')
+        .addStringOption(option =>
+            option.setName('백업파일')
+                .setDescription('복원할 백업 파일명 (예: prelaunchEventData_backup_1750873525091.json)')
+                .setRequired(true)),
+                
+    new SlashCommandBuilder()
+        .setName('권한테스트')
+        .setDescription('봇과 사용자의 권한을 확인합니다')
 ];
 
 // 봇이 준비되었을 때
 client.once('ready', async () => {
     try {
-        console.log(`${client.user.tag} 봇이 온라인 상태입니다! - 자동 재시작 테스트`);
+        console.log(`${client.user.tag} 봇이 온라인 상태입니다! - 자동 재시작 테스트 v2`);
         console.log(`개발 모드: ${DEV_MODE ? '활성화' : '비활성화'}`);
         if (DEV_MODE && DEV_CHANNEL_IDS.length > 0) {
             console.log(`개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}`);
@@ -9709,6 +13720,26 @@ client.once('ready', async () => {
         
         // MongoDB 연결
         await connectDB();
+        
+        // 웹 서버 시작 (IP 수집용)
+        startWebServer();
+        
+        // 사전강화 데이터 복원 확인
+        if (Object.keys(global.prelaunchEventData).length > 0) {
+            console.log(`📊 사전강화 이벤트 데이터 복원: ${Object.keys(global.prelaunchEventData).length}명의 참가자`);
+        }
+        
+        // 카운트다운 자동 복원 제거 - 수동으로 /카운트시작 명령어로만 시작
+        if (openCountdown.isActive) {
+            console.log('📢 카운트다운 상태가 활성화되어 있지만 자동 복원하지 않습니다.');
+            console.log('💡 /카운트시작 명령어를 사용하여 수동으로 시작해주세요.');
+            // 카운트다운 상태를 비활성화
+            openCountdown.isActive = false;
+            openCountdown.interval = null;
+            openCountdown.messageId = null;
+            openCountdown.channelId = null;
+            saveCountdownState();
+        }
         
         // 기존 ObjectId 데이터 일괄 정리
         await cleanupEquipmentData();
@@ -9719,23 +13750,51 @@ client.once('ready', async () => {
         // 게임 데이터 로드
         loadGameData();
         
-        // 슬래시 명령어 등록
-        try {
-            const rest = new REST().setToken(TOKEN);
-            console.log('슬래시 명령어 등록 중...');
-            
-            // 개발 모드에서는 길드(서버) 명령어 사용 (즉시 적용)
-            const guildId = DEV_MODE ? '1371885859649097849' : null; // 개발 서버 ID
-            
-            const data = await rest.put(
-                guildId ? Routes.applicationGuildCommands(CLIENT_ID, guildId) : Routes.applicationCommands(CLIENT_ID),
-                { body: commands }
-            );
-            
-            console.log(`슬래시 명령어 ${data.length}개가 등록되었습니다!`);
-            console.log('등록된 명령어:', data.map(cmd => cmd.name).join(', '));
-        } catch (error) {
-            console.error('명령어 등록 실패:', error);
+        // 댕댕봇 이벤트 스케줄러 시작 (카운트다운 활성 시)
+        if (isCountdownActive()) {
+            console.log('🐕 댕댕봇 이벤트 스케줄러를 시작합니다...');
+            console.log('카운트다운 상태:', openCountdown);
+            scheduleDogBotEvent();
+        } else {
+            console.log('❌ 카운트다운이 비활성화되어 댕댕봇 스케줄러를 시작하지 않습니다.');
+            console.log('카운트다운 상태:', openCountdown);
+        }
+        
+        // 슬래시 명령어 등록 (환경변수로 제어)
+        console.log('🔍 명령어 등록 조건 확인:');
+        console.log('  - REGISTER_COMMANDS:', process.env.REGISTER_COMMANDS);
+        console.log('  - DEV_MODE:', DEV_MODE);
+        console.log('  - 조건 결과:', process.env.REGISTER_COMMANDS === 'true' || DEV_MODE);
+        
+        if (process.env.REGISTER_COMMANDS === 'true' || DEV_MODE) {
+            try {
+                const rest = new REST().setToken(TOKEN);
+                console.log('슬래시 명령어 등록 중...');
+                
+                // 길드별로 명령어 등록 (즉시 사용 가능)
+                let totalRegistered = 0;
+                for (const guild of client.guilds.cache.values()) {
+                    try {
+                        const data = await rest.put(
+                            Routes.applicationGuildCommands(CLIENT_ID, guild.id),
+                            { body: commands }
+                        );
+                        console.log(`✅ ${guild.name} 서버에 ${data.length}개 명령어 등록 완료`);
+                        totalRegistered++;
+                    } catch (error) {
+                        console.error(`❌ ${guild.name} 서버 명령어 등록 실패:`, error.message);
+                    }
+                }
+                
+                console.log(`✅ 총 ${totalRegistered}개 서버에 명령어 등록 완료!`);
+                console.log('📋 등록된 명령어:', commands.map(cmd => cmd.name).join(', '));
+            } catch (error) {
+                console.error('❌ 명령어 등록 실패:', error);
+                console.error('CLIENT_ID:', CLIENT_ID);
+                console.error('TOKEN 존재:', !!TOKEN);
+            }
+        } else {
+            console.log('ℹ️ 명령어 등록 스킵 (REGISTER_COMMANDS !== true)');
         }
         
         // 엠블럼 시스템 초기화
@@ -9748,7 +13807,18 @@ client.once('ready', async () => {
 // 엠블럼 시스템 초기화 함수
 async function initializeEmblemSystem() {
     try {
-        const channel = await client.channels.fetch(EMBLEM_CHANNEL_ID);
+        // 채널 접근 권한 확인
+        let channel;
+        try {
+            channel = await client.channels.fetch(EMBLEM_CHANNEL_ID);
+        } catch (error) {
+            if (error.code === 50001) {
+                console.log('🚫 엠블럼 채널 접근 권한이 없습니다. 엠블럼 시스템을 건너뜁니다.');
+                return;
+            }
+            throw error;
+        }
+        
         if (!channel) {
             console.log('엠블럼 채널을 찾을 수 없습니다.');
             return;
@@ -9852,12 +13922,8 @@ client.on('interactionCreate', async (interaction) => {
                 const categoryMenu = createCategorySpecificMenu(category);
                 const menuRow = new ActionRowBuilder().addComponents(categoryMenu);
                 
-                // 카테고리 정보 임베드
-                const categoryEmbed = new EmbedBuilder()
-                    .setColor(categoryInfo.color)
-                    .setTitle(`${categoryInfo.emoji} ${categoryInfo.name}`)
-                    .setDescription(categoryInfo.description)
-                    .setFooter({ text: '원하는 메뉴를 선택하세요!' });
+                // 카테고리 정보 임베드 - 카테고리별 상세 정보 추가
+                const categoryEmbed = await createCategoryEmbed(category, user.id);
                 
                 await interaction.update({
                     embeds: [categoryEmbed],
@@ -9926,8 +13992,8 @@ client.on('interactionCreate', async (interaction) => {
                         { name: '⭐ 레벨', value: `\`\`\`Lv.${user.level}\`\`\``, inline: true },
                         { name: '✨ 경험치', value: `\`\`\`${user.exp}/${maxExp}\`\`\``, inline: true },
                         { name: '<:currency_emoji:1377404064316522778> 골드', value: `\`\`\`${user.gold.toLocaleString()}\`\`\``, inline: true },
-                        { name: '📅 출석현황', value: `\`\`\`${attendanceStatus}\`\`\``, inline: true },
-                        { name: '🏆 종합순위', value: `\`\`\`준비중\`\`\``, inline: true },
+                        { name: '📅 출석현황', value: `\`\`\`${attendanceStatus} (${user.attendanceStreak || 0}일 연속)\`\`\``, inline: true },
+                        { name: '📊 주간출석', value: `\`\`\`${user.weeklyAttendance ? user.weeklyAttendance.filter(x => x).length : 0}/7일\`\`\``, inline: true },
                         { name: '💖 인기도', value: `\`\`\`${user.popularity}\`\`\``, inline: true }
                     )
                     .setFooter({ text: '카테고리를 선택하세요!' });
@@ -9988,9 +14054,21 @@ client.on('interactionCreate', async (interaction) => {
                     }
                     
                     const embed = new EmbedBuilder()
-                        .setColor('#ff6b6b')
-                        .setTitle('🗡️ 사냥터 선택')
-                        .setDescription(`사냥할 지역을 선택하세요\n\n🎫 **남은 사냥권**: ${user.huntingTickets || 20}/20${getNextTicketRegenTime(user) ? ` (다음 재생성: ${getNextTicketRegenTime(user)})` : ''}\n💡 5분마다 1장씩 재생성됩니다`);
+                        .setColor('#27ae60')
+                        .setAuthor({ 
+                            name: `${user.nickname}의 사냥`, 
+                            iconURL: interaction.user.displayAvatarURL() 
+                        })
+                        .setTitle('⚔️ 사냥터 선택')
+                        .setDescription(`## 🏞️ 사냥 지역 선택\n> 🎫 **사냥권**: \`${user.huntingTickets || 20}/20\`${getNextTicketRegenTime(user) ? ` | 다음 재생성: ${getNextTicketRegenTime(user)}` : ''}\n> 💡 5분마다 1장씩 자동 재생성됩니다`)
+                        .addFields(
+                            { name: '📊 사냥 정보', value: '```yaml\n전투력이 높을수록 승률 상승\n레벨이 높은 지역일수록 보상 증가\n```', inline: false }
+                        )
+                        .setFooter({ 
+                            text: '🎮 원하는 사냥터를 선택하세요', 
+                            iconURL: client.user.displayAvatarURL() 
+                        })
+                        .setTimestamp();
                     
                     const huntingButtons = new ActionRowBuilder();
                     const startIndex = currentPage * itemsPerPage;
@@ -10040,90 +14118,145 @@ client.on('interactionCreate', async (interaction) => {
                     // 전투력 계산
                     const combatPower = calculateCombatPower(user);
                     
+                    // 장비 상태 시각화를 위한 프로그레스 바 생성
+                    const createProgressBar = (current, max, length = 10) => {
+                        const filled = Math.round((current / max) * length);
+                        const empty = length - filled;
+                        return `${'█'.repeat(filled)}${'░'.repeat(empty)}`;
+                    };
+                    
+                    // 각 장비 슬롯 정보 생성
+                    const equipmentInfo = [];
+                    const slots = [
+                        { type: 'weapon', emoji: '⚔️', name: '무기' },
+                        { type: 'armor', emoji: '🛡️', name: '갑옷' },
+                        { type: 'helmet', emoji: '⛑️', name: '헬멧' },
+                        { type: 'gloves', emoji: '🧤', name: '장갑' },
+                        { type: 'boots', emoji: '👢', name: '부츠' },
+                        { type: 'accessory', emoji: '💎', name: '액세서리' }
+                    ];
+                    
+                    let totalStats = { attack: 0, defense: 0, dodge: 0, luck: 0 };
+                    
+                    slots.forEach(slot => {
+                        const equipped = getEquippedItem(user, slot.type);
+                        if (equipped) {
+                            const enhanceLevel = equipped.enhanceLevel || 0;
+                            const itemLevel = ITEM_LEVELS[equipped.setName] || ITEM_LEVELS[equipped.name] || 1;
+                            const enhanceBonus = calculateEnhancementBonus(itemLevel, enhanceLevel);
+                            
+                            // 스탯 합산
+                            totalStats.attack += (equipped.stats?.attack || 0) + enhanceBonus.attack;
+                            totalStats.defense += (equipped.stats?.defense || 0) + enhanceBonus.defense;
+                            totalStats.dodge += equipped.stats?.dodge || 0;
+                            totalStats.luck += equipped.stats?.luck || 0;
+                            
+                            const rarityColors = {
+                                '일반': '⚪',
+                                '고급': '🟢',
+                                '레어': '🔵',
+                                '에픽': '🟣',
+                                '레전드리': '🟠',
+                                '신화': '🔴'
+                            };
+                            
+                            const rarityIcon = rarityColors[equipped.rarity] || '⚪';
+                            const enhanceText = enhanceLevel > 0 ? `\n┗ ✨ **+${enhanceLevel}강화**` : '';
+                            
+                            equipmentInfo.push({
+                                name: `${slot.emoji} __${slot.name}__`,
+                                value: `${rarityIcon} **${equipped.name}**${enhanceText}`,
+                                inline: true
+                            });
+                        } else {
+                            equipmentInfo.push({
+                                name: `${slot.emoji} __${slot.name}__`,
+                                value: '```diff\n- 미착용\n```',
+                                inline: true
+                            });
+                        }
+                    });
+                    
                     const equipmentEmbed = new EmbedBuilder()
-                        .setColor('#f39c12')
-                        .setTitle('⚔️ 장비 관리')
-                        .setDescription(`**${getUserTitle(user)} ${user.nickname}**님의 현재 장비 상태\n\n🔥 **총 전투력**: ${combatPower.toLocaleString()}`)
-                        .setImage('attachment://kim_equipment.gif')
-                        .addFields(
-                            { name: '⚔️ 무기', value: getEquippedItem(user, 'weapon') ? (() => {
-                                const weapon = getEquippedItem(user, 'weapon');
-                                const enhanceLevel = weapon.enhanceLevel || 0;
-                                const baseAttack = weapon.stats?.attack || [0, 0];
-                                const minAttack = Array.isArray(baseAttack) ? baseAttack[0] : baseAttack;
-                                const maxAttack = Array.isArray(baseAttack) ? baseAttack[1] : baseAttack;
-                                const enhanceBonus = enhanceLevel * 2; // 강화당 +2 공격력
-                                return `${weapon.name}${enhanceLevel > 0 ? ` (+${enhanceLevel}강)` : ''}\n공격력: ${minAttack + enhanceBonus}-${maxAttack + enhanceBonus}`;
-                            })() : '미착용', inline: true },
-                            { name: '🛡️ 갑옷', value: getEquippedItem(user, 'armor') ? (() => {
-                                const armor = getEquippedItem(user, 'armor');
-                                const enhanceLevel = armor.enhanceLevel || 0;
-                                const baseDefense = armor.stats?.defense || [0, 0];
-                                const minDefense = Array.isArray(baseDefense) ? baseDefense[0] : baseDefense;
-                                const maxDefense = Array.isArray(baseDefense) ? baseDefense[1] : baseDefense;
-                                const enhanceBonus = enhanceLevel * 2; // 강화당 +2 방어력
-                                return `${armor.name}${enhanceLevel > 0 ? ` (+${enhanceLevel}강)` : ''}\n방어력: ${minDefense + enhanceBonus}-${maxDefense + enhanceBonus}`;
-                            })() : '미착용', inline: true },
-                            { name: '⛑️ 헬멧', value: getEquippedItem(user, 'helmet') ? `${getEquippedItem(user, 'helmet').name}${(getEquippedItem(user, 'helmet').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'helmet').enhanceLevel}강)` : ''}` : '미착용', inline: true },
-                            { name: '🧤 장갑', value: getEquippedItem(user, 'gloves') ? `${getEquippedItem(user, 'gloves').name}${(getEquippedItem(user, 'gloves').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'gloves').enhanceLevel}강)` : ''}` : '미착용', inline: true },
-                            { name: '👢 부츠', value: getEquippedItem(user, 'boots') ? `${getEquippedItem(user, 'boots').name}${(getEquippedItem(user, 'boots').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'boots').enhanceLevel}강)` : ''}` : '미착용', inline: true },
-                            { name: '💎 액세서리', value: getEquippedItem(user, 'accessory') ? `${getEquippedItem(user, 'accessory').name}${(getEquippedItem(user, 'accessory').enhanceLevel || 0) > 0 ? ` (+${getEquippedItem(user, 'accessory').enhanceLevel}강)` : ''}` : '미착용', inline: true }
-                        );
+                        .setColor('#2ecc71')
+                        .setAuthor({ 
+                            name: `${user.nickname}의 장비 관리`, 
+                            iconURL: interaction.user.displayAvatarURL() 
+                        })
+                        .setDescription(`## 🏆 전투력 분석\n` +
+                            `> **총 전투력** \`${combatPower.toLocaleString()}\`\n` +
+                            `> ${createProgressBar(combatPower, 50000)} \`${Math.round(combatPower/500)}%\`\n\n` +
+                            `### 📊 장비 스탯 총합\n` +
+                            `> ⚔️ 공격력: **+${totalStats.attack}** | 🛡️ 방어력: **+${totalStats.defense}**\n` +
+                            `> 💨 회피력: **+${totalStats.dodge}** | 🍀 행운: **+${totalStats.luck}**`)
+                        .addFields(equipmentInfo)
+                        .setThumbnail('attachment://kim_equipment.gif')
+                        .setFooter({ 
+                            text: '💡 장비를 변경하려면 아래 버튼을 클릭하세요', 
+                            iconURL: client.user.displayAvatarURL() 
+                        })
+                        .setTimestamp();
 
-                    // 카테고리별 장비 교체 버튼
+                    // 고급스러운 버튼 디자인
                     const categoryButtons = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
                                 .setCustomId('equip_category_weapon')
-                                .setLabel('⚔️ 무기')
-                                .setStyle(ButtonStyle.Primary),
+                                .setLabel('무기 변경')
+                                .setEmoji('⚔️')
+                                .setStyle(ButtonStyle.Secondary),
                             new ButtonBuilder()
                                 .setCustomId('equip_category_armor')
-                                .setLabel('🛡️ 갑옷')
-                                .setStyle(ButtonStyle.Primary),
+                                .setLabel('갑옷 변경')
+                                .setEmoji('🛡️')
+                                .setStyle(ButtonStyle.Secondary),
                             new ButtonBuilder()
                                 .setCustomId('equip_category_helmet')
-                                .setLabel('⛑️ 헬멧')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('equip_category_gloves')
-                                .setLabel('🧤 장갑')
-                                .setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder()
-                                .setCustomId('equip_category_boots')
-                                .setLabel('👢 부츠')
-                                .setStyle(ButtonStyle.Primary)
+                                .setLabel('헬멧 변경')
+                                .setEmoji('⛑️')
+                                .setStyle(ButtonStyle.Secondary)
                         );
 
                     const categoryButtons2 = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
+                                .setCustomId('equip_category_gloves')
+                                .setLabel('장갑 변경')
+                                .setEmoji('🧤')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('equip_category_boots')
+                                .setLabel('부츠 변경')
+                                .setEmoji('👢')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
                                 .setCustomId('equip_category_accessory')
-                                .setLabel('💎 액세서리')
-                                .setStyle(ButtonStyle.Primary)
+                                .setLabel('액세서리')
+                                .setEmoji('💎')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    // 퀵 액션 버튼
+                    const quickActions = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('equipment_preset')
+                                .setLabel('프리셋')
+                                .setEmoji('📋')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('equipment_optimize')
+                                .setLabel('최적화')
+                                .setEmoji('🎯')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('돌아가기')
+                                .setEmoji('🔙')
+                                .setStyle(ButtonStyle.Secondary)
                         );
 
-                    // 장착된 아이템 해제 버튼들
-                    const unequipButtons = new ActionRowBuilder();
-                    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
-                    const buttonLabels = ['⚔️', '🛡️', '⛑️', '🧤', '👢', '💎'];
-                    
-                    equipmentSlots.forEach((slot, index) => {
-                        const slotValue = user.equipment[slot];
-                        if (slotValue !== -1 && slotValue !== null && slotValue !== undefined && typeof slotValue === 'number') {
-                            unequipButtons.addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId(`unequip_${slot}`)
-                                    .setLabel(`${buttonLabels[index]} 해제`)
-                                    .setStyle(ButtonStyle.Danger)
-                            );
-                        }
-                    });
-
-                    const components = [categoryButtons, categoryButtons2];
-                    if (unequipButtons.components.length > 0) {
-                        components.push(unequipButtons);
-                    }
+                    const components = [categoryButtons, categoryButtons2, quickActions];
 
                     await interaction.editReply({ 
                         embeds: [equipmentEmbed], 
@@ -10316,6 +14449,9 @@ client.on('interactionCreate', async (interaction) => {
                     }
                     
                     const maxExp = profileUser.level * 100;
+                    // 전투력 계산
+                    const totalCombatPower = calculateCombatPower(profileUser);
+                    
                     const profileEmbed = new EmbedBuilder()
                         .setColor('#9932cc')
                         .setTitle('👤 내 정보')
@@ -10324,14 +14460,15 @@ client.on('interactionCreate', async (interaction) => {
                             { name: '레벨', value: `Lv.${profileUser.level}`, inline: true },
                             { name: '경험치', value: `${profileUser.exp}/${maxExp} EXP`, inline: true },
                             { name: '골드', value: `${profileUser.gold.toLocaleString()}<:currency_emoji:1377404064316522778>`, inline: true },
-                            { name: '⚔️ 공격력', value: `${profileUser.stats?.strength || 10}`, inline: true },
-                            { name: '🛡️ 방어력', value: `${profileUser.stats?.vitality || 10}`, inline: true },
-                            { name: '💨 회피력', value: `${profileUser.stats?.agility || 10}`, inline: true },
+                            { name: '💪 전투력', value: `${totalCombatPower}`, inline: true },
+                            { name: '⚔️ 힘', value: `${profileUser.stats?.strength || 10}`, inline: true },
+                            { name: '🛡️ 체력', value: `${profileUser.stats?.vitality || 10}`, inline: true },
+                            { name: '💨 민첩', value: `${profileUser.stats?.agility || 10}`, inline: true },
+                            { name: '🧠 지능', value: `${profileUser.stats?.intelligence || 10}`, inline: true },
                             { name: '🍀 행운', value: `${profileUser.stats?.luck || 10}`, inline: true },
                             { name: '📊 남은 포인트', value: `${profileUser.statPoints}`, inline: true },
                             { name: '인기도', value: `${profileUser.popularity} ${profileUser.popularity > 0 ? '❤️' : profileUser.popularity < 0 ? '💔' : ''}`, inline: true },
-                            { name: '출석 연속일', value: `${profileUser.attendanceStreak}일`, inline: true },
-                            { name: '해제된 사냥터', value: `${profileUser.unlockedAreas.length}개`, inline: true }
+                            { name: '출석 연속일', value: `${profileUser.attendanceStreak}일 🔥`, inline: true }
                         );
                     
                     const profileButtons = new ActionRowBuilder()
@@ -10568,12 +14705,12 @@ client.on('interactionCreate', async (interaction) => {
                     
                     const mushroomEmbed = new EmbedBuilder()
                         .setColor('#32cd32')
-                        .setTitle('🍄 독버섯 게임')
-                        .setDescription('독버섯을 피하고 황금버섯을 찾아보세요!')
+                        .setTitle('🍄 독버섯 사냥')
+                        .setDescription('**12개의 버섯** 중 독버섯을 피하고 특수 버섯을 찾아보세요!\n\n**✨ 특수 버섯:**\n🟡 황금버섯 - 보너스 3000G\n❓ 미스터리버섯 - 랜덤 보너스')
                         .addFields(
-                            { name: '🎮 게임 방식', value: '여러 버섯 중 독버섯을 피하고 황금버섯을 찾으세요', inline: false },
-                            { name: '💰 베팅 금액', value: '1라운드당 100골드', inline: true },
-                            { name: '🏆 최대 보상', value: '베팅금의 10배까지!', inline: true }
+                            { name: '🎮 게임 방식', value: '12개 버섯 중 독버섯을 피하고 5라운드 생존', inline: false },
+                            { name: '💰 참가비', value: '100골드', inline: true },
+                            { name: '🏆 최대 보상', value: '멀티플레이어 총 상금 분배!', inline: true }
                         );
                     
                     const mushroomButtons = new ActionRowBuilder()
@@ -10583,12 +14720,32 @@ client.on('interactionCreate', async (interaction) => {
                                 .setLabel('🍄 혼자 플레이')
                                 .setStyle(ButtonStyle.Primary),
                             new ButtonBuilder()
-                                .setCustomId('mushroom_pvp')
-                                .setLabel('👥 PVP 대전')
+                                .setCustomId('mushroom_multiplayer')
+                                .setLabel('👥 멀티플레이어')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('mushroom_bot')
+                                .setLabel('🤖 봇과 대전')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('mushroom_tournament')
+                                .setLabel('🏆 토너먼트')
                                 .setStyle(ButtonStyle.Danger)
                         );
                     
-                    return await interaction.editReply({ embeds: [mushroomEmbed], components: [mushroomButtons] });
+                    const mushroomButtons2 = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('mushroom_ranking')
+                                .setLabel('🏆 랭킹')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('mushroom_stats')
+                                .setLabel('📊 내 기록')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [mushroomEmbed], components: [mushroomButtons, mushroomButtons2] });
                     
                 case 'oddeven':
                     // 홀짝 게임
@@ -10622,6 +14779,209 @@ client.on('interactionCreate', async (interaction) => {
                         );
                     
                     return await interaction.editReply({ embeds: [oddevenEmbed], components: [oddevenButtons] });
+                    
+                case 'rps':
+                    // 가위바위보 게임
+                    // 이미 위에서 deferUpdate를 했으므로 제거
+                    
+                    const rpsUser = await getUser(interaction.user.id);
+                    if (!rpsUser || !rpsUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    // RPS 게임 데이터 초기화
+                    if (!rpsUser.rpsGameData) {
+                        rpsUser.rpsGameData = {
+                            botTickets: RPS_GAME.maxTickets,
+                            userTickets: RPS_GAME.maxTickets,
+                            lastBotTicketRegen: new Date(),
+                            lastUserTicketRegen: new Date(),
+                            totalGames: 0,
+                            wins: 0,
+                            losses: 0,
+                            draws: 0,
+                            currentStreak: 0,
+                            bestStreak: 0,
+                            totalWinnings: 0,
+                            totalLosses: 0
+                        };
+                        await rpsUser.save();
+                    }
+                    
+                    // 티켓 재생성 체크
+                    await regenerateRpsTickets(rpsUser);
+                    
+                    const rpsEmbed = new EmbedBuilder()
+                        .setColor('#FF6B6B')
+                        .setTitle('✊✌️✋ 가위바위보 대전')
+                        .setDescription('봇 또는 다른 유저와 가위바위보 대결을 펼쳐보세요!')
+                        .addFields(
+                            { name: '🎫 봇 대전 티켓', value: `${rpsUser.rpsGameData.botTickets}/${RPS_GAME.maxTickets}`, inline: true },
+                            { name: '🎟️ 유저 대전 티켓', value: `${rpsUser.rpsGameData.userTickets}/${RPS_GAME.maxTickets}`, inline: true },
+                            { name: '🔥 현재 연승', value: `${rpsUser.rpsGameData.currentStreak}회`, inline: true },
+                            { name: '📊 전적', value: `${rpsUser.rpsGameData.wins}승 ${rpsUser.rpsGameData.losses}패 ${rpsUser.rpsGameData.draws}무`, inline: false },
+                            { name: '💰 순수익', value: `${(rpsUser.rpsGameData.totalWinnings - rpsUser.rpsGameData.totalLosses).toLocaleString()}G`, inline: true },
+                            { name: '🏆 최고 연승', value: `${rpsUser.rpsGameData.bestStreak}회`, inline: true }
+                        )
+                        .setFooter({ text: '티켓은 5분마다 1장씩 재생성됩니다' });
+                    
+                    const rpsButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('rps_bot')
+                                .setLabel('🤖 봇과 대전')
+                                .setStyle(ButtonStyle.Primary)
+                                .setDisabled(rpsUser.rpsGameData.botTickets < 1),
+                            new ButtonBuilder()
+                                .setCustomId('rps_user')
+                                .setLabel('👥 유저와 대전')
+                                .setStyle(ButtonStyle.Success)
+                                .setDisabled(rpsUser.rpsGameData.userTickets < 1),
+                            new ButtonBuilder()
+                                .setCustomId('rps_ranking')
+                                .setLabel('🏆 랭킹')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [rpsEmbed], components: [rpsButtons] });
+                    
+                case 'slot':
+                    // 김헌터 슬롯머신
+                    const slotUser = await getUser(interaction.user.id);
+                    if (!slotUser || !slotUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    // 슬롯머신 통계 초기화
+                    if (!slotUser.slotStats) {
+                        slotUser.slotStats = {
+                            totalSpins: 0,
+                            totalBet: 0,
+                            totalWon: 0,
+                            biggestWin: 0,
+                            jackpotWins: 0,
+                            currentStreak: 0,
+                            bestStreak: 0,
+                            lastSpin: null
+                        };
+                        await slotUser.save();
+                    }
+                    
+                    const netProfit = slotUser.slotStats.totalWon - slotUser.slotStats.totalBet;
+                    const winRate = slotUser.slotStats.totalSpins > 0 
+                        ? Math.floor((slotUser.slotStats.totalWon / slotUser.slotStats.totalBet) * 100) || 0
+                        : 0;
+                    
+                    const slotEmbed = new EmbedBuilder()
+                        .setColor('#FFD700')
+                        .setTitle('🎰 김헌터 슬롯머신')
+                        .setDescription('🐕 김헌터를 3개 모으면 잭팟! 💰')
+                        .addFields(
+                            { name: '💰 현재 잭팟', value: `${SLOT_MACHINE.jackpot.currentAmount.toLocaleString()}G`, inline: true },
+                            { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${slotUser.gold.toLocaleString()}G`, inline: true },
+                            { name: '🎲 총 스핀', value: `${slotUser.slotStats.totalSpins}회`, inline: true },
+                            { name: '📊 순수익', value: `${netProfit.toLocaleString()}G`, inline: true },
+                            { name: '💹 수익률', value: `${winRate}%`, inline: true },
+                            { name: '🏆 최고 당첨', value: `${slotUser.slotStats.biggestWin.toLocaleString()}G`, inline: true }
+                        )
+                        .setFooter({ text: '행운을 빕니다! 🍀' });
+                    
+                    // 베팅 금액 선택 버튼
+                    const betButtons = new ActionRowBuilder()
+                        .addComponents(
+                            ...SLOT_MACHINE.betAmounts.slice(0, 5).map(amount => 
+                                new ButtonBuilder()
+                                    .setCustomId(`slot_bet_${amount}`)
+                                    .setLabel(`${amount.toLocaleString()}G`)
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setDisabled(slotUser.gold < amount)
+                            )
+                        );
+                    
+                    const actionButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('slot_auto')
+                                .setLabel('🔄 자동 스핀')
+                                .setStyle(ButtonStyle.Success)
+                                .setDisabled(slotUser.gold < SLOT_MACHINE.betAmounts[0]),
+                            new ButtonBuilder()
+                                .setCustomId('slot_history')
+                                .setLabel('📜 스핀 기록')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('slot_ranking')
+                                .setLabel('🏆 잭팟 명예의 전당')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [slotEmbed], components: [betButtons, actionButtons] });
+                    
+                case 'dungeon':
+                    // 던전 탐험
+                    const dungeonUser = await getUser(interaction.user.id);
+                    if (!dungeonUser || !dungeonUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    // 던전 통계 초기화
+                    if (!dungeonUser.dungeonStats) {
+                        dungeonUser.dungeonStats = {
+                            totalRuns: 0,
+                            maxFloor: 0,
+                            totalGoldEarned: 0,
+                            totalDeaths: 0,
+                            bossKills: 0,
+                            itemsFound: 0,
+                            lastRun: null
+                        };
+                        await dungeonUser.save();
+                    }
+                    
+                    const dungeonEmbed = new EmbedBuilder()
+                        .setColor('#8B4513')
+                        .setTitle('🏰 던전 탐험')
+                        .setDescription('5층 던전을 탐험하고 보물을 찾으세요!\n각 층마다 더 강력한 몬스터가 기다리고 있습니다.')
+                        .addFields(
+                            { name: '💰 입장료', value: `${DUNGEON_CRAWLER.entryFee.toLocaleString()}G`, inline: true },
+                            { name: '🏰 최대 층수', value: `${DUNGEON_CRAWLER.maxFloor}층`, inline: true },
+                            { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${dungeonUser.gold.toLocaleString()}G`, inline: true },
+                            { name: '📊 최고 기록', value: `${dungeonUser.dungeonStats.maxFloor}층`, inline: true },
+                            { name: '🎯 총 탐험', value: `${dungeonUser.dungeonStats.totalRuns}회`, inline: true },
+                            { name: '💀 보스 처치', value: `${dungeonUser.dungeonStats.bossKills}마리`, inline: true }
+                        )
+                        .setFooter({ text: '준비가 되셨나요? 던전이 당신을 기다립니다!' });
+                    
+                    const dungeonButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('dungeon_enter')
+                                .setLabel('🏰 던전 입장')
+                                .setStyle(ButtonStyle.Success)
+                                .setDisabled(dungeonUser.gold < DUNGEON_CRAWLER.entryFee),
+                            new ButtonBuilder()
+                                .setCustomId('dungeon_guide')
+                                .setLabel('📖 가이드')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('dungeon_ranking')
+                                .setLabel('🏆 랭킹')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [dungeonEmbed], components: [dungeonButtons] });
                     
                 case 'stats':
                     // 능력치
@@ -10993,6 +15353,97 @@ client.on('interactionCreate', async (interaction) => {
                         );
                     
                     return await interaction.editReply({ embeds: [racingEmbed], components: [racingButtons] });
+                    
+                case 'chosung':
+                    // 초성게임
+                    const chosungUser = await getUser(interaction.user.id);
+                    if (!chosungUser || !chosungUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    // 현재 대기열 상태 확인
+                    const chosungQueue = wordGameQueues.get('chosung') || [];
+                    const isInQueue = chosungQueue.some(p => p.id === interaction.user.id);
+                    
+                    const chosungEmbed = new EmbedBuilder()
+                        .setColor('#4169e1')
+                        .setTitle('🔤 초성게임')
+                        .setDescription('제시된 초성에 맞는 단어를 빠르게 맞추는 게임입니다!')
+                        .addFields(
+                            { name: '🎮 게임 방식', value: '봇이 초성을 제시하면 해당하는 단어를 입력', inline: false },
+                            { name: '👥 참가 인원', value: '2~5명 (부족하면 봇이 참여)', inline: true },
+                            { name: '⏱️ 제한 시간', value: '15초', inline: true },
+                            { name: '🏆 보상', value: '1등: 10,000G\n2등: 3,000G\n3등: 1,000G', inline: false },
+                            { name: '📊 현재 대기열', value: `${chosungQueue.length}명 대기중`, inline: true }
+                        );
+                    
+                    const chosungButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('chosung_join')
+                                .setLabel(isInQueue ? '📤 대기열 나가기' : '🎮 게임 참가')
+                                .setStyle(isInQueue ? ButtonStyle.Danger : ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('chosung_rules')
+                                .setLabel('📖 게임 규칙')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('chosung_ranking')
+                                .setLabel('🏆 초성게임 랭킹')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [chosungEmbed], components: [chosungButtons] });
+                    
+                case 'wordchain':
+                    // 끝말잇기
+                    const wordchainUser = await getUser(interaction.user.id);
+                    if (!wordchainUser || !wordchainUser.registered) {
+                        return await interaction.editReply({ content: '먼저 회원가입을 해주세요!' });
+                    }
+                    
+                    // 현재 대기열 상태 확인
+                    const wordchainQueue = wordGameQueues.get('wordchain') || [];
+                    const isInWordchainQueue = wordchainQueue.some(p => p.id === interaction.user.id);
+                    
+                    const wordchainEmbed = new EmbedBuilder()
+                        .setColor('#00bfff')
+                        .setTitle('🔗 끝말잇기')
+                        .setDescription('앞 사람이 말한 단어의 끝 글자로 시작하는 단어를 이어가는 게임입니다!')
+                        .addFields(
+                            { name: '🎮 게임 방식', value: '순서대로 단어를 이어가며 대결', inline: false },
+                            { name: '👥 참가 인원', value: '2~5명 (부족하면 봇이 참여)', inline: true },
+                            { name: '⏱️ 제한 시간', value: '10초', inline: true },
+                            { name: '🏆 보상', value: '1등: 10,000G\n2등: 3,000G\n3등: 1,000G', inline: false },
+                            { name: '📊 현재 대기열', value: `${wordchainQueue.length}명 대기중`, inline: true },
+                            { name: '⚠️ 주의사항', value: '한방단어 사용 시 다음 사람이 3초 내 대응 못하면 승리', inline: false }
+                        );
+                    
+                    const wordchainButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('wordchain_join')
+                                .setLabel(isInWordchainQueue ? '📤 대기열 나가기' : '🎮 게임 참가')
+                                .setStyle(isInWordchainQueue ? ButtonStyle.Danger : ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('wordchain_rules')
+                                .setLabel('📖 게임 규칙')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('wordchain_ranking')
+                                .setLabel('🏆 끝말잇기 랭킹')
+                                .setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_game_menu')
+                                .setLabel('🎮 게임 메뉴')
+                                .setStyle(ButtonStyle.Secondary)
+                        );
+                    
+                    return await interaction.editReply({ embeds: [wordchainEmbed], components: [wordchainButtons] });
                     
                 case 'auction':
                     // 경매장
@@ -13023,43 +17474,64 @@ client.on('interactionCreate', async (interaction) => {
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
-    console.log(`명령어 실행 - 채널: ${interaction.channelId}, 사용자: ${interaction.user.id}, 베타 모드: ${BETA_MODE}`);
+    const { commandName } = interaction;
+    console.log(`명령어 실행 - 채널: ${interaction.channelId}, 사용자: ${interaction.user.id}, 명령어: ${commandName}, 베타 모드: ${BETA_MODE}`);
     
-    // 베타 모드 체크
-    if (BETA_MODE) {
-        // 베타 채널이 아닌 경우
-        if (!isBetaChannel(interaction.channelId)) {
+    // 관리자 채널 체크 - 관리자 채널에서는 모든 명령어 사용 가능
+    if (isAdminChannel(interaction.channelId)) {
+        // 관리자 사용자만 사용 가능
+        if (!isAdmin(interaction.user.id)) {
             await interaction.reply({ 
-                content: '🚧 현재 클로즈베타 테스트 중입니다.\n지정된 베타 채널에서만 사용 가능합니다.', 
+                content: '🔒 이 채널은 관리자 전용 채널입니다.', 
+                flags: 64 
+            });
+            return;
+        }
+        // 관리자 채널에서는 모든 제한을 건너뛰고 명령어 실행
+    } else {
+        // 일반 채널에서는 카운트다운 상태 확인 (개발 모드에서는 비활성화)
+        if (!DEV_MODE && !global.serverOpened && !['핑', '회원가입', '사전강화', '댕댕봇소환', '권한테스트'].includes(commandName)) {
+            await interaction.reply({ 
+                content: '🚧 현재 서버 오픈 준비 중입니다.\n서버가 오픈되면 모든 기능을 이용할 수 있습니다!', 
                 flags: 64 
             });
             return;
         }
         
-        // 베타 테스터가 아닌 경우
-        if (!isBetaTester(interaction.user.id)) {
-            await interaction.reply({ 
-                content: '🔒 현재 클로즈베타 테스트 중입니다.\n베타 테스터로 등록된 사용자만 이용할 수 있습니다.', 
-                flags: 64 
-            });
-            return;
+        // 베타 모드 체크 - 프로덕션 환경에서는 비활성화
+        if (BETA_MODE && process.env.NODE_ENV !== 'production') {
+            // 베타 채널이 아닌 경우
+            if (!isBetaChannel(interaction.channelId)) {
+                await interaction.reply({ 
+                    content: '🚧 현재 클로즈베타 테스트 중입니다.\n지정된 베타 채널에서만 사용 가능합니다.', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 베타 테스터가 아닌 경우
+            if (!isBetaTester(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: '🔒 현재 클로즈베타 테스트 중입니다.\n베타 테스터로 등록된 사용자만 이용할 수 있습니다.', 
+                    flags: 64 
+                });
+                return;
+            }
         }
     }
     
     // 개발 모드에서 채널 제한
-    if (DEV_MODE && DEV_CHANNEL_IDS.length > 0 && !DEV_CHANNEL_IDS.includes(interaction.channelId)) {
-        console.log(`채널 불일치 - 현재: ${interaction.channelId}, 허용된 개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}`);
+    if (DEV_MODE && DEV_CHANNEL_IDS.length > 0 && !DEV_CHANNEL_IDS.includes(interaction.channelId) && !canUseInProductionTest(interaction)) {
+        console.log(`채널 불일치 - 현재: ${interaction.channelId}, 허용된 개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}, 본서버 테스트 채널: ${PRODUCTION_TEST_CHANNEL_ID}`);
         await interaction.reply({ content: '개발 모드에서는 지정된 채널에서만 사용 가능합니다!', flags: 64 });
         return;
     }
 
-    const { commandName } = interaction;
-
     // 카운트다운 중에도 허용되는 명령어들
-    const allowedDuringCountdown = ['핑', '회원가입', '카운트다운', '게임데이터초기화'];
+    const allowedDuringCountdown = ['핑', '회원가입', '카운트다운', '게임데이터초기화', '사전강화', '회원가입채널설정', '돈지급', '말', '보스', 'ip관리', '공지작성', '매크로테스트', '댕댕봇소환', '게임', '권한테스트', '서버오픈'];
     
-    // 카운트다운 체크 (허용된 명령어 제외)
-    if (isCountdownActive() && !allowedDuringCountdown.includes(commandName)) {
+    // 카운트다운 체크 (허용된 명령어 제외) - 개발 모드에서는 비활성화
+    if (!DEV_MODE && isCountdownActive() && !allowedDuringCountdown.includes(commandName)) {
         await interaction.reply({ content: getCountdownMessage(), flags: 64 });
         return;
     }
@@ -13072,7 +17544,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '게임') {
             // 먼저 defer로 응답을 지연시킴 (3초 제한 해결)
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
             
             const user = await getUser(interaction.user.id);
             if (!user) {
@@ -13170,29 +17642,33 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '회원가입') {
-            const attachment = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_join.png'), { name: 'kim_join.png' });
+            // 바로 모달을 띄워서 이메일 인증 회원가입 진행
+            const modal = new ModalBuilder()
+                .setCustomId('registerModal')
+                .setTitle('🎮 강화왕 김헌터 RPG 회원가입');
             
-            const embed = new EmbedBuilder()
-                .setColor('#ff6b6b')
-                .setTitle('강화왕 김헌터 회원가입')
-                .setDescription('환영합니다! 강화왕 김헌터의 세계로 오신 것을 환영합니다.\n\n게임을 시작하기 위해 회원가입을 진행해주세요.')
-                .setImage('attachment://kim_join.png')
-                .addFields(
-                    { name: '이메일 문의', value: 'support@kimhunter.com', inline: true },
-                    { name: '디스코드 문의', value: '김헌터#0001', inline: true },
-                    { name: '기타 문의', value: '티켓 시스템 이용', inline: true }
-                )
-                .setFooter({ text: '아래 버튼을 눌러 회원가입을 진행하세요!' });
-
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('register')
-                        .setLabel('회원가입')
-                        .setStyle(ButtonStyle.Primary)
-                );
-
-            await interaction.reply({ embeds: [embed], components: [row], files: [attachment] });
+            const nicknameInput = new TextInputBuilder()
+                .setCustomId('nickname')
+                .setLabel('닉네임을 입력하세요')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('2-10자 사이의 닉네임')
+                .setMinLength(2)
+                .setMaxLength(10)
+                .setRequired(true);
+            
+            const emailInput = new TextInputBuilder()
+                .setCustomId('email')
+                .setLabel('이메일을 입력하세요')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('example@email.com')
+                .setRequired(true);
+            
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(nicknameInput),
+                new ActionRowBuilder().addComponents(emailInput)
+            );
+            
+            await interaction.showModal(modal);
         }
         
         else if (commandName === 'db테스트') {
@@ -13273,7 +17749,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '전투력수정') {
-            if (!isDeveloper(interaction.user.id)) {
+            if (!isAdmin(interaction.user.id)) {
                 await interaction.reply({ content: '관리자만 사용할 수 있는 명령어입니다!', flags: 64 });
                 return;
             }
@@ -13319,7 +17795,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (commandName === '이메일테스트') {
             try {
                 // 먼저 응답을 지연시켜 시간 제한 문제 해결
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
                 
                 const testCode = generateVerificationCode();
                 const emailSent = await sendVerificationEmail('sup.kimhunter@gmail.com', testCode);
@@ -13351,18 +17827,35 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '회원가입채널설정') {
             try {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
                 
-                const SIGNUP_CHANNEL_ID = '1380684353998426122';
+                // 관리자 권한 확인
+                if (!isAdmin(interaction.user.id)) {
+                    await interaction.editReply({ content: '❌ 관리자만 사용할 수 있는 명령어입니다!' });
+                    return;
+                }
+                
+                // 환경에 따라 다른 채널 ID 사용
+                const SIGNUP_CHANNEL_ID = process.env.REGISTRATION_CHANNEL_ID || '1386395805656547348'; // 프로덕션 기본값
+                
+                console.log(`회원가입 채널 설정 시도 - 채널 ID: ${SIGNUP_CHANNEL_ID}`);
+                    
                 const signupChannel = await client.channels.fetch(SIGNUP_CHANNEL_ID);
                 
                 if (signupChannel) {
+                    // 봇이 해당 채널에 메시지를 보낼 권한이 있는지 확인
+                    const permissions = signupChannel.permissionsFor(client.user);
+                    if (!permissions.has(['SendMessages', 'AttachFiles', 'EmbedLinks'])) {
+                        await interaction.editReply({ content: '❌ 봇이 해당 채널에 메시지를 보낼 권한이 없습니다!' });
+                        return;
+                    }
+                    
                     const signupAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_join.png'), { name: 'kim_join.png' });
                     
                     const signupEmbed = new EmbedBuilder()
                         .setColor('#ff6b6b')
                         .setTitle('강화왕 김헌터 회원가입')
-                        .setDescription('환영합니다! 강화왕 김헌터의 세계로 오신 것을 환영합니다.\n\n게임을 시작하기 위해 회원가입을 진행해주세요.\n\n**회원가입 혜택:**\n• 가입 즉시 1,000G 지급\n• 경험치 부스터 및 초보자 무기 제공\n• 일일보상 및 다양한 게임 컨텐츠 이용 가능')
+                        .setDescription('환영합니다! 강화왕 김헌터의 세계로 오신 것을 환영합니다.\n\n게임을 시작하기 위해 회원가입을 진행해주세요.\n\n**회원가입 혜택:**\n• 가입 즉시 5,000G 지급\n• 일일보상 및 다양한 게임 컨텐츠 이용 가능')
                         .setImage('attachment://kim_join.png')
                         .addFields(
                             { name: '📧 이메일 문의', value: 'sup.kimhunter@gmail.com', inline: true },
@@ -13397,6 +17890,9 @@ client.on('interactionCreate', async (interaction) => {
         
         // 강화 명령어 처리
         else if (commandName === '강화' || commandName === '집중력' || commandName === '축복받은날') {
+            // 매크로 방지 - 사용자 액션 기록
+            await recordUserAction(interaction.user.id, 'enhance');
+            
             const slotName = interaction.options.getString('장비슬롯');
             const useProtection = interaction.options.getBoolean('보호권사용') || false;
             const user = await getUser(interaction.user.id);
@@ -13592,6 +18088,9 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '의뢰') {
+            // 매크로 방지 - 사용자 액션 기록
+            await recordUserAction(interaction.user.id, 'quest');
+            
             // 쿨타임 체크
             const cooldownMinutes = checkQuestCooldown(interaction.user.id);
             if (cooldownMinutes) {
@@ -13635,6 +18134,9 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '주식') {
+            // 매크로 방지 - 사용자 액션 기록
+            await recordUserAction(interaction.user.id, 'stock');
+            
             const user = await getUser(interaction.user.id);
             
             if (!user || !user.registered) {
@@ -13884,22 +18386,104 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         // 🔧 관리자 전용 명령어들
-        else if (commandName === '카운트다운') {
-            // 관리자 권한 체크
-            if (!isAdmin(interaction.user.id)) {
+        else if (commandName === '서버오픈') {
+            // 관리자만 사용 가능
+            if (!ADMIN_USER_IDS.includes(interaction.user.id)) {
                 await interaction.reply({ content: '❌ 관리자만 사용할 수 있는 명령어입니다!', flags: 64 });
+                return;
+            }
+            
+            // 서버가 이미 오픈되어 있는지 확인
+            if (global.serverOpened) {
+                await interaction.reply({ content: '✅ 서버가 이미 오픈되어 있습니다!', flags: 64 });
+                return;
+            }
+            
+            // 서버 오픈
+            global.serverOpened = true;
+            
+            // 카운트다운 비활성화
+            openCountdown.isActive = false;
+            if (openCountdown.interval) {
+                clearInterval(openCountdown.interval);
+                openCountdown.interval = null;
+            }
+            saveCountdownState();
+            
+            // 서버 오픈 안내
+            const openEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('🎉 서버 오픈!')
+                .setDescription('강화왕 김헌터 서버가 정식 오픈되었습니다!\n\n모든 기능을 자유롭게 이용하실 수 있습니다!')
+                .addFields(
+                    { name: '🎮 사용 가능한 기능', value: '모든 게임 명령어\n주식 거래\n강화 시스템\n미니게임 등', inline: false },
+                    { name: '💰 사전 이벤트 보상', value: '사전강화 이벤트 참가자들의 포인트가 골드로 전환됩니다!', inline: false }
+                )
+                .setFooter({ text: '즐거운 게임 되세요!' })
+                .setTimestamp();
+            
+            await interaction.reply({ embeds: [openEmbed] });
+            
+            // 공지 채널에 서버 오픈 알림
+            try {
+                const announcementChannel = await client.channels.fetch(interaction.channelId);
+                await announcementChannel.send({
+                    content: '@everyone',
+                    embeds: [openEmbed]
+                });
+            } catch (error) {
+                console.error('서버 오픈 공지 전송 오류:', error);
+            }
+            
+            return;
+        }
+        
+        else if (commandName === '카운트다운_삭제됨') {
+            // 이 부분은 삭제됨
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ content: '❌ 이 명령어는 더 이상 사용할 수 없습니다.', flags: 64 });
                 return;
             }
             
             const subcommand = interaction.options.getSubcommand();
             
             if (subcommand === '시작') {
+                console.log('🚀 [카운트다운] 시작 명령어 실행');
+                console.log('📊 인터랙션 ID:', interaction.id);
+                console.log('👤 사용자:', interaction.user.tag);
+                console.log('💬 채널:', interaction.channelId);
+                
+                // 중복 실행 방지를 위한 플래그
+                if (global._countdownStarting) {
+                    console.log('⚠️ 이미 카운트다운 시작 처리 중입니다. 중복 실행을 무시합니다.');
+                    await interaction.reply({ content: '⚠️ 이미 처리 중입니다. 잠시만 기다려주세요.', flags: 64 });
+                    return;
+                }
+                global._countdownStarting = true;
+                
+                try {
+                    // 즉시 응답 연기 (중복 실행 방지)
+                    await interaction.deferReply({ flags: 64 });
+                
                 const timeInput = interaction.options.getString('시간');
-                const channel = interaction.options.getChannel('채널');
+                const channel = interaction.options.getChannel('채널') || interaction.channel;
                 
                 // 기존 카운트다운 중지
                 if (openCountdown.interval) {
                     clearInterval(openCountdown.interval);
+                    openCountdown.interval = null;
+                }
+                
+                // 기존 메시지 확인
+                let existingMessage = null;
+                if (openCountdown.messageId && openCountdown.channelId === channel.id) {
+                    try {
+                        existingMessage = await channel.messages.fetch(openCountdown.messageId);
+                        console.log('✅ 기존 카운트다운 메시지를 발견했습니다. 업데이트합니다.');
+                    } catch (error) {
+                        console.log('⚠️ 기존 메시지를 찾을 수 없습니다. 새로 생성합니다.');
+                        existingMessage = null;
+                    }
                 }
                 
                 // 시간 파싱
@@ -13908,14 +18492,14 @@ client.on('interactionCreate', async (interaction) => {
                     // 날짜 형식 (예: 2025-01-15 20:00)
                     launchTime = new Date(timeInput);
                     if (isNaN(launchTime.getTime())) {
-                        await interaction.reply({ content: '❌ 올바른 날짜 형식을 입력해주세요! (예: 2025-01-15 20:00)', flags: 64 });
+                        await interaction.editReply({ content: '❌ 올바른 날짜 형식을 입력해주세요! (예: 2025-01-15 20:00)' });
                         return;
                     }
                 } else {
                     // 시간 단위 (예: 24)
                     const hours = parseInt(timeInput);
                     if (isNaN(hours) || hours < 1 || hours > 168) {
-                        await interaction.reply({ content: '❌ 시간은 1~168 사이의 숙c자로 입력해주세요!', flags: 64 });
+                        await interaction.editReply({ content: '❌ 시간은 1~168 사이의 숫자로 입력해주세요!' });
                         return;
                     }
                     launchTime = new Date(Date.now() + hours * 60 * 60 * 1000);
@@ -13925,6 +18509,10 @@ client.on('interactionCreate', async (interaction) => {
                 openCountdown.isActive = true;
                 openCountdown.launchTime = launchTime;
                 openCountdown.channelId = channel.id;
+                openCountdown.startTime = Date.now();
+                
+                // 상태 저장
+                saveCountdownState();
                 
                 // 초기 카운트다운 계산
                 const remaining = openCountdown.launchTime - Date.now();
@@ -13996,21 +18584,38 @@ client.on('interactionCreate', async (interaction) => {
                     })
                     .setTimestamp();
                 
-                // kim_main.png 파일 첨부
-                const kimMainPath = path.join(__dirname, 'resource', 'kim_main.png');
-                const files = [];
-                if (fs.existsSync(kimMainPath)) {
-                    files.push(new AttachmentBuilder(kimMainPath, { name: 'kim_main.png' }));
+                // 메시지 생성 또는 업데이트
+                let message;
+                if (existingMessage) {
+                    // 기존 메시지 업데이트
+                    console.log('✏️ [카운트다운] 기존 메시지 업데이트');
+                    await existingMessage.edit({ embeds: [countdownEmbed] });
+                    message = existingMessage;
+                } else {
+                    // 새 메시지 생성
+                    console.log('📝 [카운트다운] 새 메시지 생성 시작');
+                    console.log('📍 채널 ID:', channel.id);
+                    console.log('📍 채널 이름:', channel.name);
+                    const kimMainPath = path.join(__dirname, 'resource', 'kim_main.png');
+                    const files = [];
+                    if (fs.existsSync(kimMainPath)) {
+                        files.push(new AttachmentBuilder(kimMainPath, { name: 'kim_main.png' }));
+                    }
+                    console.log('📤 메시지 전송 중...');
+                    message = await channel.send({ embeds: [countdownEmbed], files });
+                    console.log('✅ 메시지 전송 완료! ID:', message.id);
+                    openCountdown.messageId = message.id;
+                    saveCountdownState(); // 메시지 ID 즉시 저장
+                    console.log('💾 [카운트다운] 메시지 ID 저장 완료');
                 }
-                
-                const message = await channel.send({ embeds: [countdownEmbed], files });
-                openCountdown.messageId = message.id;
                 
                 // 업데이트 카운터 (이미지 업데이트 주기 조절용)
                 let updateCounter = 0;
                 
-                // 1초마다 업데이트
+                // 5초마다 업데이트
+                console.log('⏰ [카운트다운] Interval 시작');
                 openCountdown.interval = setInterval(async () => {
+                    console.log('🔄 [카운트다운] Interval 실행 - 메시지 ID:', openCountdown.messageId);
                     try {
                         const remaining = openCountdown.launchTime - Date.now();
                         updateCounter++;
@@ -14019,6 +18624,7 @@ client.on('interactionCreate', async (interaction) => {
                             // 카운트다운 종료
                             clearInterval(openCountdown.interval);
                             openCountdown.isActive = false;
+                            saveCountdownState();
                             
                             // 축하 이미지 생성
                             const celebrationBuffer = await createCelebrationImage();
@@ -14071,7 +18677,7 @@ client.on('interactionCreate', async (interaction) => {
                             await message.edit({ embeds: [launchEmbed], files });
                             
                             // 전체 공지
-                            await channel.send('```\n🟢 SYSTEM NOTIFICATION\n\nKimHunter RPG is now ONLINE.\nAll features have been unlocked.\n\nThank you for waiting.\n```\n@everyone');
+                            await channel.send('```\n🟢 시스템 알림\n\n강화왕 김헌터 RPG가 정식 오픈되었습니다.\n모든 기능이 활성화되었습니다.\n\n기다려주셔서 감사합니다.\n```\n@everyone');
                         } else {
                             // 카운트다운 업데이트
                             const updateDays = Math.floor(remaining / (1000 * 60 * 60 * 24));
@@ -14141,7 +18747,7 @@ client.on('interactionCreate', async (interaction) => {
                                 systemStatus += `\n\nCOUNTDOWN: T-${finalSeconds} seconds`;
                             }
                             
-                            systemStatus += '\n\nAll features are currently locked during pre-launch maintenance.\nThank you for your patience.';
+                            systemStatus += '\n\n정식 오픈 전 유지보수 중으로 모든 기능이 잠겨있습니다.\n기다려주셔서 감사합니다.';
                             
                             const updatedEmbed = new EmbedBuilder()
                                 .setColor(embedColor)
@@ -14186,43 +18792,69 @@ client.on('interactionCreate', async (interaction) => {
                                 })
                                 .setTimestamp();
                             
-                            // kim_main.png 파일 첨부
-                            const kimMainPath = path.join(__dirname, 'resource', 'kim_main.png');
-                            const files = [];
-                            if (fs.existsSync(kimMainPath)) {
-                                files.push(new AttachmentBuilder(kimMainPath, { name: 'kim_main.png' }));
-                            }
-                            
-                            // 업데이트
-                            await message.edit({ embeds: [updatedEmbed], files });
+                            // 업데이트 (파일 첨부 제거 - 메시지 편집 시 불필요)
+                            await message.edit({ embeds: [updatedEmbed] });
                         }
                     } catch (error) {
                         console.error('카운트다운 업데이트 오류:', error);
+                        
+                        // Unknown Message 오류인 경우 카운트다운 중지
+                        if (error.code === 10008) {
+                            console.log('카운트다운 메시지를 찾을 수 없습니다. 카운트다운을 중지합니다.');
+                            if (openCountdown.interval) {
+                                clearInterval(openCountdown.interval);
+                            }
+                            openCountdown.isActive = false;
+                            openCountdown.interval = null;
+                            openCountdown.channelId = null;
+                            openCountdown.messageId = null;
+                            saveCountdownState();
+                        }
                     }
-                }, 1000); // 1초마다 업데이트
+                }, 5000); // 5초마다 업데이트 (Discord API 제한 고려)
                 
                 const timeDisplay = timeInput.includes('-') 
                     ? `오픈 시간: ${launchTime.toLocaleString('ko-KR')}`
                     : `${parseInt(timeInput)}시간 후`;
-                await interaction.reply({ content: `✅ 카운트다운이 시작되었습니다! (${timeDisplay})`, flags: 64 });
+                await interaction.editReply({ content: `✅ 카운트다운이 시작되었습니다! (${timeDisplay})` });
+                
+                // 플래그 해제
+                global._countdownStarting = false;
+                console.log('✅ [카운트다운] 시작 명령어 처리 완료');
+                
+                } catch (error) {
+                    console.error('❌ [카운트다운] 시작 중 오류:', error);
+                    global._countdownStarting = false; // 오류 시에도 플래그 해제
+                    
+                    if (interaction.deferred) {
+                        await interaction.editReply({ content: '❌ 카운트다운 시작 중 오류가 발생했습니다.' });
+                    } else {
+                        await interaction.reply({ content: '❌ 카운트다운 시작 중 오류가 발생했습니다.', flags: 64 });
+                    }
+                }
                 
             } else if (subcommand === '중지') {
+                await interaction.deferReply({ flags: 64 });
+                
                 if (openCountdown.interval) {
                     clearInterval(openCountdown.interval);
+                    openCountdown.interval = null;
                 }
                 openCountdown.isActive = false;
-                openCountdown.interval = null;
+                openCountdown.messageId = null;
+                openCountdown.channelId = null;
+                openCountdown.totalTime = null;
+                openCountdown.startTime = null;
+                saveCountdownState();
                 
-                openCountdown.interval = null;
-                
-                await interaction.reply({ content: '✅ 카운트다운이 중지되었습니다!', flags: 64 });
+                await interaction.editReply({ content: '✅ 카운트다운이 중지되었습니다!' });
             }
         }
         
         else if (commandName === '게임데이터초기화') {
-            // 관리자 권한 체크
+            // 개발자만 사용 가능
             if (!isAdmin(interaction.user.id)) {
-                await interaction.reply({ content: '❌ 관리자만 사용할 수 있는 명령어입니다!', flags: 64 });
+                await interaction.reply({ content: '❌ 개발자만 사용할 수 있는 명령어입니다!', flags: 64 });
                 return;
             }
             
@@ -14256,8 +18888,119 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
         
+        // 🚨 매크로 테스트 명령어
+        else if (commandName === '매크로테스트') {
+            // 관리자 권한 확인
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ content: '❌ 개발자만 사용할 수 있는 명령어입니다!', flags: 64 });
+                return;
+            }
+            
+            const testType = interaction.options.getString('타입') || 'basic';
+            const userId = interaction.options.getUser('대상')?.id || interaction.user.id;
+            
+            if (testType === 'basic') {
+                // 기본 매크로 검증 테스트
+                await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
+                await sendMacroVerification(interaction, userId);
+            } 
+            else if (testType === 'rapid') {
+                // 빠른 클릭 시뮬레이션
+                await interaction.reply({ content: '⚡ 빠른 클릭 패턴 시뮬레이션 중...', flags: 64 });
+                
+                // 빠른 클릭 패턴 기록
+                for (let i = 0; i < 10; i++) {
+                    recordUserAction(userId, 'rapid_test_click', Date.now() + i * 50); // 50ms 간격
+                }
+                
+                await interaction.followUp({ content: '✅ 패턴이 기록되었습니다. 의심 점수를 확인하세요.' });
+            }
+            else if (testType === 'pattern') {
+                // 동일 패턴 시뮬레이션
+                await interaction.reply({ content: '🔄 반복 패턴 시뮬레이션 중...', flags: 64 });
+                
+                // 동일한 간격으로 반복
+                const baseTime = Date.now();
+                for (let i = 0; i < 10; i++) {
+                    recordUserAction(userId, 'pattern_test', baseTime + i * 1000); // 정확히 1초 간격
+                }
+                
+                await interaction.followUp({ content: '✅ 반복 패턴이 기록되었습니다.' });
+            }
+            else if (testType === 'status') {
+                // 현재 상태 확인
+                const userPattern = ANTI_MACRO.userPatterns.get(userId);
+                const penaltyStatus = checkPenaltyStatus(userId);
+                const verification = ANTI_MACRO.activeVerifications.get(userId);
+                
+                const statusEmbed = new EmbedBuilder()
+                    .setColor('#0099ff')
+                    .setTitle('🔍 매크로 방지 시스템 상태')
+                    .setDescription(`**대상 유저**: <@${userId}>`)
+                    .addFields(
+                        { 
+                            name: '📊 의심 점수', 
+                            value: userPattern ? `${userPattern.suspicionScore}점` : '0점', 
+                            inline: true 
+                        },
+                        { 
+                            name: '⚠️ 제재 상태', 
+                            value: penaltyStatus.restricted ? '제한됨' : '정상', 
+                            inline: true 
+                        },
+                        { 
+                            name: '🔐 검증 진행중', 
+                            value: verification ? '예' : '아니오', 
+                            inline: true 
+                        }
+                    );
+                    
+                if (userPattern && userPattern.actions.length > 0) {
+                    statusEmbed.addFields({
+                        name: '📈 최근 행동 패턴',
+                        value: `기록된 행동: ${userPattern.actions.length}개\n마지막 행동: <t:${Math.floor(userPattern.actions[userPattern.actions.length - 1].timestamp / 1000)}:R>`,
+                        inline: false
+                    });
+                }
+                
+                if (penaltyStatus.restricted) {
+                    const penaltyHistory = ANTI_MACRO.penaltyHistory.get(userId);
+                    statusEmbed.addFields({
+                        name: '🚫 제재 정보',
+                        value: `현재 레벨: ${penaltyHistory.level}단계\n남은 시간: ${Math.floor(penaltyStatus.timeLeft / 1000 / 60)}분`,
+                        inline: false
+                    });
+                }
+                
+                await interaction.reply({ embeds: [statusEmbed] });
+            }
+            else if (testType === 'reset') {
+                // 특정 유저 데이터 초기화
+                ANTI_MACRO.userPatterns.delete(userId);
+                ANTI_MACRO.activeVerifications.delete(userId);
+                ANTI_MACRO.penaltyHistory.delete(userId);
+                
+                await interaction.reply({ content: `✅ <@${userId}>의 매크로 방지 데이터가 초기화되었습니다.`, flags: 64 });
+            }
+            else if (testType === 'reset_all') {
+                // 전체 데이터 초기화
+                const totalUsers = ANTI_MACRO.userPatterns.size + ANTI_MACRO.penaltyHistory.size;
+                ANTI_MACRO.userPatterns.clear();
+                ANTI_MACRO.activeVerifications.clear();
+                ANTI_MACRO.penaltyHistory.clear();
+                
+                await interaction.reply({ 
+                    content: `✅ 전체 매크로 방지 데이터가 초기화되었습니다.\n초기화된 유저 수: ${totalUsers}명`, 
+                    flags: 64 
+                });
+            }
+        }
+        
         // 🔮 에너지 조각 시스템 명령어들
         else if (commandName === '에너지채굴') {
+            // 매크로 방지 - 사용자 액션 기록
+            await recordUserAction(interaction.user.id, 'mining');
+            
             const user = await getUser(interaction.user.id);
             
             if (!user || !user.registered) {
@@ -14670,7 +19413,9 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '결투') {
-            await interaction.deferReply({ ephemeral: true });
+            // 매크로 방지 - 사용자 액션 기록
+            await recordUserAction(interaction.user.id, 'duel');
+            await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
             
             const user = await getUser(interaction.user.id);
             
@@ -14710,7 +19455,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '결투정보') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
             
             const user = await getUser(interaction.user.id);
             
@@ -14752,7 +19497,7 @@ client.on('interactionCreate', async (interaction) => {
         
         else if (commandName === '랭킹') {
             try {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
                 
                 const topUsers = await User.find({ registered: true })
                     .sort({ 'pvp.rating': -1 })
@@ -15041,6 +19786,15 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '홀짝') {
+            // 미니게임 채널 확인
+            if (!isMinigameChannel(interaction.channelId) && !isDeveloper(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: `❌ 이 명령어는 <#${PRODUCTION_TEST_CHANNEL_ID}> 채널에서만 사용할 수 있습니다!`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
             const user = await getUser(interaction.user.id);
             
             if (!user || !user.registered) {
@@ -15048,13 +19802,136 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
 
-            await oddEvenGame.showMonsterBattleMenu(interaction);
+            // 홀짝 게임 메뉴 표시
+            const embed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🎲 홀짝 게임')
+                .setDescription('몬스터와 함께하는 신나는 홀짝 게임!')
+                .addFields(
+                    { name: '🎯 게임 방법', value: '홀수 또는 짝수를 선택하여 몬스터와 대결하세요!', inline: false },
+                    { name: '💰 보상', value: '승리 시 골드와 경험치를 획듍합니다', inline: false },
+                    { name: '⚡ 스킬', value: '특수 스킬을 사용하여 승률을 높일 수 있습니다', inline: false }
+                )
+                .setFooter({ text: '준비가 되셨다면 아래 버튼을 클릭하세요!' });
+            
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('oddeven_start')
+                        .setLabel('게임 시작')
+                        .setEmoji('🎲')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('oddeven_rules')
+                        .setLabel('게임 규칙')
+                        .setEmoji('📖')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('oddeven_ranking')
+                        .setLabel('랭킹 보기')
+                        .setEmoji('🏆')
+                        .setStyle(ButtonStyle.Success)
+                );
+            
+            await interaction.reply({ embeds: [embed], components: [row] });
+        }
+        
+        else if (commandName === '초성') {
+            // 미니게임 채널 확인
+            if (!isMinigameChannel(interaction.channelId) && !isDeveloper(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: `❌ 이 명령어는 <#${PRODUCTION_TEST_CHANNEL_ID}> 채널에서만 사용할 수 있습니다!`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+
+            // 초성 게임 메뉴 표시 (기존 chosung 게임과 동일)
+            const embed = new EmbedBuilder()
+                .setColor('#FF69B4')
+                .setTitle('🔤 초성 게임')
+                .setDescription('제시된 초성으로 시작하는 단어를 말해보세요!')
+                .addFields(
+                    { name: '🎯 게임 방법', value: '제시된 초성에 맞는 단어를 입력하세요', inline: false },
+                    { name: '⏱️ 제한 시간', value: '15초 안에 답을 입력해야 합니다', inline: false },
+                    { name: '👥 멀티플레이', value: '여러 명이 함께 즐길 수 있습니다', inline: false }
+                )
+                .setFooter({ text: '준비가 되셨다면 아래 버튼을 클릭하세요!' });
+            
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('chosung_join')
+                        .setLabel('게임 참가')
+                        .setEmoji('🎮')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('chosung_rules')
+                        .setLabel('게임 규칙')
+                        .setEmoji('📖')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.reply({ embeds: [embed], components: [row] });
+        }
+        
+        else if (commandName === '끝말잇기') {
+            // 미니게임 채널 확인
+            if (!isMinigameChannel(interaction.channelId) && !isDeveloper(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: `❌ 이 명령어는 <#${PRODUCTION_TEST_CHANNEL_ID}> 채널에서만 사용할 수 있습니다!`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const user = await getUser(interaction.user.id);
+            
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+
+            // 끝말잇기 게임 메뉴 표시 (기존 wordchain 게임과 동일)
+            const embed = new EmbedBuilder()
+                .setColor('#4169E1')
+                .setTitle('🔗 끝말잇기 게임')
+                .setDescription('끝말을 이어가며 단어를 만들어보세요!')
+                .addFields(
+                    { name: '🎯 게임 방법', value: '이전 단어의 마지막 글자로 시작하는 단어를 입력하세요', inline: false },
+                    { name: '⏱️ 제한 시간', value: '15초 안에 답을 입력해야 합니다', inline: false },
+                    { name: '👥 멀티플레이', value: '여러 명이 함께 즐길 수 있습니다', inline: false }
+                )
+                .setFooter({ text: '준비가 되셨다면 아래 버튼을 클릭하세요!' });
+            
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('wordchain_join')
+                        .setLabel('게임 참가')
+                        .setEmoji('🎮')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('wordchain_rules')
+                        .setLabel('게임 규칙')
+                        .setEmoji('📖')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.reply({ embeds: [embed], components: [row] });
         }
         
         else if (commandName === '주식복구') {
             // 주식 데이터 복구 명령어 (관리자 전용)
             if (interaction.user.id !== '1123609568397836309') { // 본인 디스코드 ID로 변경
-                await interaction.reply({ content: '❌ 관리자만 사용할 수 있는 명령어입니다!', flags: 64 });
+                await interaction.reply({ content: '❌ 개발자만 사용할 수 있는 명령어입니다!', flags: 64 });
                 return;
             }
             
@@ -15097,6 +19974,9 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         else if (commandName === '유물탐사') {
+            // 매크로 방지 - 사용자 액션 기록
+            await recordUserAction(interaction.user.id, 'artifact');
+            
             const user = await getUser(interaction.user.id);
             
             if (!user || !user.registered) {
@@ -15315,7 +20195,280 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
         
+        else if (commandName === '권한테스트') {
+            // 권한 테스트 명령어
+            const guild = interaction.guild;
+            const member = await guild.members.fetch(interaction.user.id);
+            const botMember = await guild.members.fetch(client.user.id);
+            
+            const embed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('🔐 권한 테스트 결과')
+                .setDescription('봇과 사용자의 권한을 확인합니다.')
+                .addFields(
+                    { name: '👤 사용자 권한', value: member.permissions.has('Administrator') ? '✅ 관리자 권한 있음' : '❌ 관리자 권한 없음', inline: true },
+                    { name: '🤖 봇 권한', value: botMember.permissions.has('Administrator') ? '✅ 관리자 권한 있음' : '❌ 관리자 권한 없음', inline: true },
+                    { name: '📝 명령어 등록', value: botMember.permissions.has('UseApplicationCommands') ? '✅ 가능' : '❌ 불가능', inline: false },
+                    { name: '💬 메시지 전송', value: botMember.permissions.has('SendMessages') ? '✅ 가능' : '❌ 불가능', inline: true },
+                    { name: '🗑️ 메시지 삭제', value: botMember.permissions.has('ManageMessages') ? '✅ 가능' : '❌ 불가능', inline: true },
+                    { name: '🏷️ 역할 관리', value: botMember.permissions.has('ManageRoles') ? '✅ 가능' : '❌ 불가능', inline: true },
+                    { name: '📢 채널 관리', value: botMember.permissions.has('ManageChannels') ? '✅ 가능' : '❌ 불가능', inline: true },
+                    { name: '🚫 멤버 추방', value: botMember.permissions.has('KickMembers') ? '✅ 가능' : '❌ 불가능', inline: true },
+                    { name: '⛔ 멤버 차단', value: botMember.permissions.has('BanMembers') ? '✅ 가능' : '❌ 불가능', inline: true }
+                )
+                .setFooter({ text: '테스트 서버와 동일한 환경 구성을 위해 필요한 권한들입니다.' })
+                .setTimestamp();
+            
+            // 추가로 글로벌 명령어 등록 가능 여부 확인
+            try {
+                const applicationInfo = await client.application.fetch();
+                const canManageGlobal = applicationInfo.owner.id === interaction.user.id || 
+                                      (applicationInfo.team && applicationInfo.team.members.has(interaction.user.id));
+                embed.addFields({
+                    name: '🌐 글로벌 명령어 등록',
+                    value: canManageGlobal ? '✅ 가능 (앱 소유자/팀 멤버)' : '❌ 불가능',
+                    inline: false
+                });
+            } catch (error) {
+                console.error('앱 정보 확인 오류:', error);
+            }
+            
+            await interaction.reply({ embeds: [embed] });
+            return;
+        }
+        
+        else if (commandName === '공지작성') {
+            // 관리자 권한 체크
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const subcommand = interaction.options.getSubcommand();
+            
+            if (subcommand === '새공지') {
+                const templateType = interaction.options.getString('템플릿');
+                const template = NOTICE_SYSTEM.templates[templateType];
+                
+                // 공지 ID 생성 (단순화)
+                const timestamp = Date.now();
+                const random = Math.random().toString(36).substr(2, 9);
+                const noticeId = `${timestamp}_${random}`;
+                
+                // 템플릿에 따른 모달 생성
+                const modal = new ModalBuilder()
+                    .setCustomId(`notice_create|${noticeId}|${templateType}`)
+                    .setTitle(`${template.icon} ${template.name} 작성`);
+                
+                // 기본 필드들
+                const titleInput = new TextInputBuilder()
+                    .setCustomId('title')
+                    .setLabel('제목')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+                    .setMaxLength(100);
+                
+                const contentInput = new TextInputBuilder()
+                    .setCustomId('content')
+                    .setLabel('내용')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(true)
+                    .setMaxLength(1000);
+                
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(titleInput),
+                    new ActionRowBuilder().addComponents(contentInput)
+                );
+                
+                // 템플릿별 추가 필드
+                if (templateType === 'maintenance') {
+                    const timeInput = new TextInputBuilder()
+                        .setCustomId('time')
+                        .setLabel('점검 시간 및 예상 소요시간')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('예: 14:00~16:00 (2시간)')
+                        .setRequired(true);
+                    
+                    const compensationInput = new TextInputBuilder()
+                        .setCustomId('compensation')
+                        .setLabel('보상 내용')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(false);
+                    
+                    modal.addComponents(
+                        new ActionRowBuilder().addComponents(timeInput),
+                        new ActionRowBuilder().addComponents(compensationInput)
+                    );
+                } else if (templateType === 'event') {
+                    const periodInput = new TextInputBuilder()
+                        .setCustomId('period')
+                        .setLabel('이벤트 기간')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true);
+                    
+                    const rewardsInput = new TextInputBuilder()
+                        .setCustomId('rewards')
+                        .setLabel('이벤트 보상')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true);
+                    
+                    modal.addComponents(
+                        new ActionRowBuilder().addComponents(periodInput),
+                        new ActionRowBuilder().addComponents(rewardsInput)
+                    );
+                } else if (templateType === 'update') {
+                    const versionInput = new TextInputBuilder()
+                        .setCustomId('version')
+                        .setLabel('버전 (예: v2.0.0)')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true);
+                    
+                    const changesInput = new TextInputBuilder()
+                        .setCustomId('changes')
+                        .setLabel('변경사항')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true);
+                    
+                    modal.addComponents(
+                        new ActionRowBuilder().addComponents(versionInput),
+                        new ActionRowBuilder().addComponents(changesInput)
+                    );
+                }
+                
+                // 태그 입력 (모든 템플릿 공통)
+                const tagsInput = new TextInputBuilder()
+                    .setCustomId('tags')
+                    .setLabel('태그 (쉼표로 구분)')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false)
+                    .setPlaceholder('예: 중요, 업데이트, 이벤트');
+                
+                modal.addComponents(new ActionRowBuilder().addComponents(tagsInput));
+                
+                await interaction.showModal(modal);
+            }
+            else if (subcommand === '미리보기') {
+                const noticeId = interaction.options.getString('공지id');
+                const notice = NOTICE_SYSTEM.savedNotices.get(noticeId);
+                
+                if (!notice) {
+                    await interaction.reply({ 
+                        content: '❌ 해당 ID의 공지를 찾을 수 없습니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                const previewEmbed = createNoticeEmbed(notice);
+                await interaction.reply({ 
+                    content: '📋 **공지 미리보기**',
+                    embeds: [previewEmbed], 
+                    flags: 64 
+                });
+            }
+            else if (subcommand === '발송') {
+                const noticeId = interaction.options.getString('공지id');
+                const channel = interaction.options.getChannel('채널');
+                const mentionType = interaction.options.getString('멘션') || 'none';
+                
+                const notice = NOTICE_SYSTEM.savedNotices.get(noticeId);
+                
+                if (!notice) {
+                    await interaction.reply({ 
+                        content: '❌ 해당 ID의 공지를 찾을 수 없습니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                const noticeEmbed = createNoticeEmbed(notice);
+                
+                // 멘션 설정
+                let content = '';
+                if (mentionType === 'everyone') content = '@everyone';
+                else if (mentionType === 'here') content = '@here';
+                
+                try {
+                    const sentMessage = await channel.send({ 
+                        content: content,
+                        embeds: [noticeEmbed] 
+                    });
+                    
+                    // 공지 고정 옵션
+                    if (notice.priority === 'high' || notice.priority === 'critical') {
+                        await sentMessage.pin();
+                    }
+                    
+                    // 기본 리액션 추가
+                    await sentMessage.react('✅');
+                    await sentMessage.react('❓');
+                    
+                    await interaction.reply({ 
+                        content: `✅ 공지가 ${channel}에 발송되었습니다!`, 
+                        flags: 64 
+                    });
+                } catch (error) {
+                    await interaction.reply({ 
+                        content: `❌ 공지 발송 중 오류가 발생했습니다: ${error.message}`, 
+                        flags: 64 
+                    });
+                }
+            }
+            else if (subcommand === '목록') {
+                const notices = Array.from(NOTICE_SYSTEM.savedNotices.entries());
+                
+                if (notices.length === 0) {
+                    await interaction.reply({ 
+                        content: '📭 저장된 공지가 없습니다.', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                const listEmbed = new EmbedBuilder()
+                    .setTitle('📋 저장된 공지 목록')
+                    .setColor('#0099ff')
+                    .setDescription(notices.map(([id, notice]) => {
+                        const category = NOTICE_SYSTEM.categories[notice.category];
+                        const priority = NOTICE_SYSTEM.priorities[notice.priority];
+                        return `${category.emoji} **${notice.title}**\n├ ID: \`${id}\`\n├ 우선순위: ${priority.emoji} ${priority.name}\n└ 작성일: ${new Date(notice.createdAt).toLocaleString('ko-KR')}`;
+                    }).join('\n\n'))
+                    .setFooter({ text: `총 ${notices.length}개의 공지` });
+                
+                await interaction.reply({ embeds: [listEmbed], flags: 64 });
+            }
+            else if (subcommand === '삭제') {
+                const noticeId = interaction.options.getString('공지id');
+                
+                if (!NOTICE_SYSTEM.savedNotices.has(noticeId)) {
+                    await interaction.reply({ 
+                        content: '❌ 해당 ID의 공지를 찾을 수 없습니다!', 
+                        flags: 64 
+                    });
+                    return;
+                }
+                
+                NOTICE_SYSTEM.savedNotices.delete(noticeId);
+                await interaction.reply({ 
+                    content: '🗑️ 공지가 삭제되었습니다.', 
+                    flags: 64 
+                });
+            }
+        }
+        
         else if (commandName === '독버섯') {
+            // 미니게임 채널 확인
+            if (!isMinigameChannel(interaction.channelId) && !isDeveloper(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: `❌ 이 명령어는 <#${PRODUCTION_TEST_CHANNEL_ID}> 채널에서만 사용할 수 있습니다!`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
             const user = await getUser(interaction.user.id);
             
             if (!user || !user.registered) {
@@ -15325,6 +20478,706 @@ client.on('interactionCreate', async (interaction) => {
             
             const difficulty = interaction.options.getString('난이도') || 'solo';
             await mushroomGame.startGame(interaction, user, difficulty);
+        }
+        
+        else if (commandName === '초성') {
+            // 미니게임 채널 확인
+            if (!isMinigameChannel(interaction.channelId) && !isDeveloper(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: `❌ 이 명령어는 <#${PRODUCTION_TEST_CHANNEL_ID}> 채널에서만 사용할 수 있습니다!`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 초성 게임 메뉴 표시
+            const embed = new EmbedBuilder()
+                .setColor('#FF69B4')
+                .setTitle('🎯 초성 게임')
+                .setDescription('원하는 초성 게임을 선택해주세요!')
+                .addFields(
+                    { name: '🔤 초성 퀴즈', value: '제시된 초성을 보고 단어를 맞추는 게임', inline: false },
+                    { name: '🎲 초성 끝말잇기', value: '초성으로 끝말잇기를 하는 게임', inline: false },
+                    { name: '⏱️ 초성 스피드 퀴즈', value: '시간 제한 내에 최대한 많이 맞추는 게임', inline: false }
+                )
+                .setFooter({ text: '아래 버튼을 클릭하여 게임을 시작하세요!' });
+            
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('chosung_quiz')
+                        .setLabel('초성 퀴즈')
+                        .setEmoji('🔤')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('chosung_wordchain')
+                        .setLabel('초성 끝말잇기')
+                        .setEmoji('🎲')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('chosung_speed')
+                        .setLabel('스피드 퀴즈')
+                        .setEmoji('⏱️')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            
+            await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+        }
+        
+        else if (commandName === '끝말잇기') {
+            // 미니게임 채널 확인
+            if (!isMinigameChannel(interaction.channelId) && !isDeveloper(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: `❌ 이 명령어는 <#${PRODUCTION_TEST_CHANNEL_ID}> 채널에서만 사용할 수 있습니다!`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 끝말잇기 게임 메뉴 표시
+            const embed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('🔤 끝말잇기 게임')
+                .setDescription('다양한 끝말잇기 게임을 즐겨보세요!')
+                .addFields(
+                    { name: '🎯 일반 끝말잇기', value: '기본적인 끝말잇기 게임', inline: false },
+                    { name: '⚡ 스피드 끝말잇기', value: '제한 시간 내에 빠르게 이어가는 게임', inline: false },
+                    { name: '🏆 배틀 끝말잇기', value: '다른 유저와 대결하는 끝말잇기', inline: false },
+                    { name: '🎪 테마 끝말잇기', value: '특정 주제로만 진행하는 끝말잇기', inline: false }
+                )
+                .setFooter({ text: '원하는 게임 모드를 선택하세요!' });
+            
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('wordchain_normal')
+                        .setLabel('일반 끝말잇기')
+                        .setEmoji('🎯')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('wordchain_speed')
+                        .setLabel('스피드 끝말잇기')
+                        .setEmoji('⚡')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('wordchain_battle')
+                        .setLabel('배틀 끝말잇기')
+                        .setEmoji('🏆')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('wordchain_theme')
+                        .setLabel('테마 끝말잇기')
+                        .setEmoji('🎪')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+        }
+        
+        else if (commandName === '말') {
+            // 관리자 권한 체크
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const message = interaction.options.getString('메시지');
+            const channel = interaction.options.getChannel('채널') || interaction.channel;
+            
+            try {
+                // 봇이 메시지 전송
+                await channel.send(message);
+                
+                // 관리자에게만 확인 메시지 (숨김)
+                await interaction.reply({ 
+                    content: `✅ 메시지를 전송했습니다!\n채널: ${channel.name}\n내용: ${message}`, 
+                    flags: 64 
+                });
+            } catch (error) {
+                console.error('메시지 전송 오류:', error);
+                await interaction.reply({ 
+                    content: '❌ 메시지 전송에 실패했습니다!', 
+                    flags: 64 
+                });
+            }
+        }
+        
+        // IP 관리 명령어 (관리자 전용)
+        else if (commandName === 'ip관리') {
+            // 관리자 권한 체크
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ content: '❌ 개발자만 사용할 수 있는 명령어입니다!', flags: 64 });
+                return;
+            }
+            
+            const subcommand = interaction.options.getSubcommand();
+            
+            if (subcommand === '조회') {
+                const targetUser = interaction.options.getUser('사용자');
+                if (!targetUser) {
+                    await interaction.reply({ content: '❌ 조회할 사용자를 선택해주세요.', flags: 64 });
+                    return;
+                }
+                const userData = await User.findOne({ discordId: targetUser.id });
+                
+                if (!userData) {
+                    await interaction.reply({ content: '해당 유저의 데이터를 찾을 수 없습니다.', flags: 64 });
+                    return;
+                }
+                
+                const ipEmbed = new EmbedBuilder()
+                    .setColor('#0099ff')
+                    .setTitle(`📡 ${userData.nickname || targetUser.username}의 IP 정보`)
+                    .setThumbnail(targetUser.displayAvatarURL())
+                    .addFields(
+                        { name: '📧 이메일', value: userData.email || '미등록', inline: true },
+                        { name: '🌐 가입 IP', value: userData.registrationIP || '기록 없음', inline: true },
+                        { name: '📍 마지막 IP', value: userData.lastLoginIP || '기록 없음', inline: true },
+                        { name: '📅 가입일', value: userData.createdAt ? userData.createdAt.toLocaleString('ko-KR') : '알 수 없음', inline: false }
+                    );
+                
+                // IP 히스토리 추가
+                if (userData.ipHistory && userData.ipHistory.length > 0) {
+                    const recentHistory = userData.ipHistory.slice(-10); // 최근 10개만
+                    const historyText = recentHistory.map(h => 
+                        `• ${h.action} - ${h.ip} (${new Date(h.timestamp).toLocaleString('ko-KR')})`
+                    ).join('\n');
+                    
+                    ipEmbed.addFields({
+                        name: '📜 최근 IP 활동 기록',
+                        value: `\`\`\`${historyText}\`\`\``,
+                        inline: false
+                    });
+                }
+                
+                await interaction.reply({ embeds: [ipEmbed], flags: 64 });
+            }
+            
+            else if (subcommand === '이메일조회') {
+                const email = interaction.options.getString('이메일');
+                const users = await User.find({ email: email });
+                
+                if (users.length === 0) {
+                    await interaction.reply({ content: '해당 이메일로 등록된 계정이 없습니다.', flags: 64 });
+                    return;
+                }
+                
+                const emailEmbed = new EmbedBuilder()
+                    .setColor('#ff9800')
+                    .setTitle(`📧 ${email}로 연결된 계정들`)
+                    .setDescription(`총 ${users.length}개의 계정이 발견되었습니다.`);
+                
+                for (const user of users) {
+                    const discordUser = await client.users.fetch(user.discordId).catch(() => null);
+                    emailEmbed.addFields({
+                        name: `${user.nickname || '닉네임 없음'} (${discordUser ? discordUser.tag : user.discordId})`,
+                        value: `가입일: ${user.createdAt ? user.createdAt.toLocaleString('ko-KR') : '알 수 없음'}\n` +
+                               `가입 IP: ${user.registrationIP || '기록 없음'}\n` +
+                               `인증 여부: ${user.emailVerified ? '✅ 인증됨' : '❌ 미인증'}`,
+                        inline: false
+                    });
+                }
+                
+                await interaction.reply({ embeds: [emailEmbed], flags: 64 });
+            }
+            
+            else if (subcommand === '차단') {
+                const ip = interaction.options.getString('ip');
+                const reason = interaction.options.getString('사유') || '규정 위반';
+                
+                try {
+                    // 이미 차단된 IP인지 확인
+                    const existingBan = await IPBan.findOne({ ip: ip, active: true });
+                    if (existingBan) {
+                        await interaction.reply({ 
+                            content: `⚠️ 해당 IP는 이미 차단되어 있습니다.\n차단일: ${existingBan.bannedAt.toLocaleString('ko-KR')}\n사유: ${existingBan.reason}`, 
+                            flags: 64 
+                        });
+                        return;
+                    }
+                    
+                    // 새로운 차단 추가
+                    const newBan = new IPBan({
+                        ip: ip,
+                        reason: reason,
+                        bannedBy: interaction.user.id
+                    });
+                    
+                    await newBan.save();
+                    
+                    // 해당 IP를 사용하는 모든 유저 찾기
+                    const affectedUsers = await User.find({
+                        $or: [
+                            { registrationIP: ip },
+                            { lastLoginIP: ip },
+                            { 'ipHistory.ip': ip }
+                        ]
+                    });
+                    
+                    const banEmbed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('⛔ IP 차단 완료')
+                        .setDescription(`IP **${ip}**가 차단 목록에 추가되었습니다.`)
+                        .addFields(
+                            { name: '차단 사유', value: reason, inline: true },
+                            { name: '차단자', value: `<@${interaction.user.id}>`, inline: true },
+                            { name: '영향받는 계정 수', value: `${affectedUsers.length}개`, inline: true }
+                        )
+                        .setTimestamp();
+                    
+                    if (affectedUsers.length > 0) {
+                        const userList = affectedUsers.slice(0, 10).map(u => 
+                            `• ${u.nickname || 'Unknown'} (${u.discordId})`
+                        ).join('\n');
+                        
+                        banEmbed.addFields({
+                            name: '영향받는 계정들',
+                            value: `\`\`\`${userList}${affectedUsers.length > 10 ? `\n... 외 ${affectedUsers.length - 10}개` : ''}\`\`\``,
+                            inline: false
+                        });
+                    }
+                    
+                    await interaction.reply({ embeds: [banEmbed], flags: 64 });
+                    
+                } catch (error) {
+                    console.error('IP 차단 오류:', error);
+                    await interaction.reply({ 
+                        content: '❌ IP 차단 중 오류가 발생했습니다.', 
+                        flags: 64 
+                    });
+                }
+            }
+        }
+        
+        // 사전강화 이벤트 명령어
+        else if (commandName === '사전강화') {
+            // 즉시 응답 연기하여 중복 실행 방지
+            await interaction.deferReply();
+            
+            // 매크로 감지 시스템 기록
+            recordUserAction(interaction.user.id, 'prelaunch_enhance', Date.now());
+            
+            // 카운트다운이 활성화되어 있는지 확인
+            if (!isCountdownActive()) {
+                await interaction.editReply({ 
+                    content: '❌ 현재 사전강화 이벤트가 진행중이지 않습니다!\n오픈 카운트다운이 시작되어야 참여할 수 있습니다.'
+                });
+                return;
+            }
+            
+            const ENHANCE_EVENT = require('./data/prelaunchEvent');
+            const userId = interaction.user.id;
+            
+            // 유저 이벤트 데이터 가져오기 (메모리에 저장)
+            if (!global.prelaunchEventData) {
+                global.prelaunchEventData = {};
+            }
+            
+            if (!global.prelaunchEventData[userId]) {
+                global.prelaunchEventData[userId] = {
+                    points: 0,
+                    attempts: 0,
+                    currentItem: null,
+                    currentLevel: 0,
+                    successStreak: 0,
+                    failStreak: 0,
+                    achievements: [],
+                    lastAttempt: null,
+                    dailyAttempts: 0,
+                    lastDailyReset: new Date().toDateString()
+                };
+            }
+            
+            const userData = global.prelaunchEventData[userId];
+            
+            // 일일 초기화
+            if (userData.lastDailyReset !== new Date().toDateString()) {
+                userData.dailyAttempts = 0;
+                userData.lastDailyReset = new Date().toDateString();
+            }
+            
+            // 쿨타임 체크 (3초)
+            if (userData.lastAttempt && Date.now() - userData.lastAttempt < 3000) {
+                const remaining = Math.ceil((3000 - (Date.now() - userData.lastAttempt)) / 1000);
+                await interaction.reply({ 
+                    content: `⏱️ ${remaining}초 후에 다시 시도하세요!`, 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 현재 아이템이 없으면 선택 메뉴 표시
+            if (!userData.currentItem) {
+                const itemEmbed = new EmbedBuilder()
+                    .setColor('#FFD700')
+                    .setTitle('🎯 오픈 전 강화 이벤트')
+                    .setDescription('강화할 장비를 선택하세요!\n각 장비마다 난이도와 최대 강화 레벨이 다릅니다.\n\n💎 **포인트 1점 = 1골드로 정식 오픈 시 지급됩니다!**')
+                    .addFields(
+                        ENHANCE_EVENT.virtualItems.map(item => ({
+                            name: `${item.emoji} ${item.name}`,
+                            value: `난이도: ${item.difficulty}\n최대 레벨: +${item.maxLevel}`,
+                            inline: true
+                        }))
+                    )
+                    .setImage('attachment://event_01.jpg')
+                    .setFooter({ text: '높은 난이도일수록 더 많은 포인트를 획득합니다!' });
+                
+                const itemSelect = new StringSelectMenuBuilder()
+                    .setCustomId('prelaunch_item_select')
+                    .setPlaceholder('강화할 장비를 선택하세요')
+                    .addOptions(
+                        ENHANCE_EVENT.virtualItems.map((item, index) => ({
+                            label: item.name,
+                            description: `난이도: ${item.difficulty} | 최대 +${item.maxLevel}`,
+                            value: index.toString(),
+                            emoji: item.emoji
+                        }))
+                    );
+                
+                const eventAttachment = new AttachmentBuilder(
+                    path.join(__dirname, 'resource', 'event_01.jpg'), 
+                    { name: 'event_01.jpg' }
+                );
+                
+                const row = new ActionRowBuilder().addComponents(itemSelect);
+                await interaction.reply({ 
+                    embeds: [itemEmbed], 
+                    components: [row],
+                    files: [eventAttachment]
+                });
+                return;
+            }
+            
+            // 강화 시도
+            const item = userData.currentItem;
+            const currentLevel = userData.currentLevel;
+            const successRate = ENHANCE_EVENT.getSuccessRate(item.baseSuccess, currentLevel);
+            
+            // 디버그 로그 추가
+            console.log(`[사전강화] ${interaction.user.tag} 강화 시도:`, {
+                item: item.name,
+                currentLevel: currentLevel,
+                maxLevel: item.maxLevel,
+                successRate: successRate
+            });
+            
+            // 강화 결과 계산
+            const roll = Math.random() * 100;
+            const success = roll < successRate;
+            
+            userData.lastAttempt = Date.now();
+            userData.attempts++;
+            userData.dailyAttempts++;
+            
+            let points = 0;
+            let message = '';
+            
+            if (success) {
+                const prevLevel = userData.currentLevel;
+                userData.currentLevel++;
+                userData.successStreak++;
+                userData.failStreak = 0;
+                
+                console.log(`[사전강화] 성공: +${prevLevel} → +${userData.currentLevel}`);
+                
+                // 기본 성공 포인트 + 레벨 보너스
+                points = ENHANCE_EVENT.basePoints.success + (userData.currentLevel * ENHANCE_EVENT.basePoints.levelBonus);
+                
+                // 난이도별 보너스
+                const difficultyMultiplier = {
+                    'easy': 1,
+                    'normal': 1.2,
+                    'hard': 1.5,
+                    'expert': 2,
+                    'legendary': 3
+                };
+                points = Math.floor(points * difficultyMultiplier[item.difficulty]);
+                
+                // 특별 레벨 보너스 제거 (요청에 따라)
+                
+                // 연속 성공 보너스
+                if (ENHANCE_EVENT.streakBonus.success[userData.successStreak]) {
+                    const streak = ENHANCE_EVENT.streakBonus.success[userData.successStreak];
+                    points += streak.points;
+                    message += `\n${streak.message}`;
+                }
+                
+                // 현재 순위 계산
+                let myRank = 1;
+                if (global.prelaunchEventData) {
+                    const allUsers = Object.entries(global.prelaunchEventData)
+                        .map(([id, data]) => ({ id, points: data.points }))
+                        .sort((a, b) => b.points - a.points);
+                    myRank = allUsers.findIndex(u => u.id === userId) + 1;
+                }
+                
+                const resultEmbed = new EmbedBuilder()
+                    .setColor('#00FF00')
+                    .setTitle('✅ 강화 성공!')
+                    .setDescription(`${item.emoji} **${item.name}** +${currentLevel} → **+${userData.currentLevel}**${message}`)
+                    .addFields(
+                        { name: '획득 포인트', value: `+${points}P`, inline: true },
+                        { name: '누적 포인트', value: `${userData.points + points}P`, inline: true },
+                        { name: '현재 순위', value: `${myRank}위`, inline: true }
+                    );
+                
+                // 최대 레벨 도달
+                if (userData.currentLevel >= item.maxLevel) {
+                    resultEmbed.addFields({
+                        name: '🏆 최대 레벨 달성!',
+                        value: '새로운 장비를 선택하세요!'
+                    });
+                    userData.currentItem = null;
+                    userData.currentLevel = 0;
+                    points += 1000000; // 999강 완성 보너스
+                }
+                
+                await interaction.editReply({ embeds: [resultEmbed] });
+                
+            } else {
+                // 실패
+                userData.failStreak++;
+                userData.successStreak = 0;
+                
+                console.log(`[사전강화] 실패: +${currentLevel} 에서 실패`);
+                
+                // 기본 실패 포인트
+                points = ENHANCE_EVENT.basePoints.fail;
+                
+                // 레벨 하락 시스템
+                if (currentLevel >= 300) {
+                    // 300강 이상: 파괴/하락/유지 시스템
+                    const destructionRoll = Math.random() * 100;
+                    
+                    if (destructionRoll < 0.1) {
+                        // 0.1% 파괴
+                        userData.currentLevel = 0;
+                        userData.currentItem = null;
+                        message = `\n💥 **장비가 파괴되었습니다!** (+${currentLevel} → 파괴)`;
+                        points += 1000; // 파괴 위로금
+                    } else if (destructionRoll < 10.1) {
+                        // 10% 하락 (1~30 랜덤)
+                        const dropAmount = Math.floor(Math.random() * 30) + 1;
+                        userData.currentLevel = Math.max(0, currentLevel - dropAmount);
+                        message = `\n💔 강화 레벨이 하락했습니다! (+${currentLevel} → +${userData.currentLevel})`;
+                    } else if (destructionRoll < 25.1) {
+                        // 15% 유지
+                        message = `\n🛡️ 강화 레벨이 유지되었습니다! (+${currentLevel})`;
+                    } else {
+                        // 74.9% 일반 실패 (변화 없음)
+                        message = '';
+                    }
+                } else if (currentLevel >= 15) {
+                    // 15-299강: 기존 시스템
+                    if (currentLevel <= 30) {
+                        userData.currentLevel = Math.max(0, currentLevel - 1);
+                    } else if (currentLevel <= 100) {
+                        userData.currentLevel = Math.max(0, currentLevel - Math.floor(Math.random() * 2 + 1));
+                    } else if (currentLevel < 300) {
+                        userData.currentLevel = Math.max(0, currentLevel - Math.floor(Math.random() * 4 + 2));
+                    }
+                    if (userData.currentLevel < currentLevel) {
+                        message = `\n💔 강화 레벨이 하락했습니다! (+${currentLevel} → +${userData.currentLevel})`;
+                        console.log(`[사전강화] 레벨 하락: +${currentLevel} → +${userData.currentLevel}`);
+                    }
+                }
+                
+                // 연속 실패 보너스
+                if (ENHANCE_EVENT.streakBonus.fail[userData.failStreak]) {
+                    const streak = ENHANCE_EVENT.streakBonus.fail[userData.failStreak];
+                    points += streak.points;
+                    message += `\n${streak.message}`;
+                }
+                
+                // 현재 순위 계산
+                let myRank = 1;
+                if (global.prelaunchEventData) {
+                    const allUsers = Object.entries(global.prelaunchEventData)
+                        .map(([id, data]) => ({ id, points: data.points }))
+                        .sort((a, b) => b.points - a.points);
+                    myRank = allUsers.findIndex(u => u.id === userId) + 1;
+                }
+                
+                const resultEmbed = new EmbedBuilder()
+                    .setColor('#FF0000')
+                    .setTitle('❌ 강화 실패!')
+                    .setDescription(`${item.emoji} **${item.name}** +${currentLevel} 강화 실패${message}`)
+                    .addFields(
+                        { name: '획득 포인트', value: `+${points}P`, inline: true },
+                        { name: '누적 포인트', value: `${userData.points + points}P`, inline: true },
+                        { name: '현재 순위', value: `${myRank}위`, inline: true }
+                    );
+                
+                await interaction.editReply({ embeds: [resultEmbed] });
+            }
+            
+            // 포인트 추가
+            userData.points += points;
+            
+            // 저장 예약 (중복 저장 방지)
+            schedulePrelaunchSave();
+            
+            // 업적 체크
+            // 첫 도전
+            if (userData.attempts === 1 && !userData.achievements.includes('firstTry')) {
+                userData.achievements.push('firstTry');
+                userData.points += ENHANCE_EVENT.challenges.firstTry.points;
+            }
+            
+            // 7강 달성
+            if (userData.currentLevel === 7 && !userData.achievements.includes('lucky7')) {
+                userData.achievements.push('lucky7');
+                userData.points += ENHANCE_EVENT.challenges.lucky7.points;
+            }
+            
+            // 100번 시도
+            if (userData.attempts === 100 && !userData.achievements.includes('persistence')) {
+                userData.achievements.push('persistence');
+                userData.points += ENHANCE_EVENT.challenges.persistence.points;
+            }
+            
+            // 5% 확률로 성공
+            if (success && successRate <= 5 && !userData.achievements.includes('miracle')) {
+                userData.achievements.push('miracle');
+                userData.points += ENHANCE_EVENT.challenges.miracle.points;
+            }
+        }
+        
+        // 댕댕봇 소환 명령어 (관리자 전용)
+        else if (commandName === '댕댕봇소환') {
+            // 관리자만 사용 가능
+            if (!isAdmin(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 카운트다운이 활성화되어 있는지 확인
+            if (!isCountdownActive()) {
+                await interaction.reply({ 
+                    content: '❌ 카운트다운이 활성화되어 있지 않습니다!\n댕댕봇은 카운트다운 중에만 작동합니다.', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 현재 채널을 기억 (최신 1개만)
+            rememberDogChannel(interaction.channelId);
+            
+            // 댕댕봇 이벤트 즉시 실행
+            await interaction.reply({ 
+                content: `🐕 댕댕봇을 이 채널에 소환합니다!\n🥰 앞으로 이 채널에서만 1시간에 5번 랜덤하게 나타납니다.\n⏰ 유지시간: 3분`, 
+                flags: 64 
+            });
+            
+            // 1초 후 댕댕봇 이벤트 시작
+            setTimeout(() => {
+                startDogBotEvent();
+            }, 1000);
+        }
+        
+        else if (commandName === '백업복원') {
+            // 개발자만 사용 가능
+            if (!isDeveloper(interaction.user.id)) {
+                await interaction.reply({ 
+                    content: '❌ 이 명령어는 개발자만 사용할 수 있습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const backupFile = interaction.options.getString('백업파일');
+            
+            try {
+                // 백업 파일 확인
+                if (!fs.existsSync(backupFile)) {
+                    // backups 폴더에서 찾기
+                    const backupPaths = [];
+                    const findBackup = (dir) => {
+                        if (!fs.existsSync(dir)) return;
+                        const files = fs.readdirSync(dir);
+                        for (const file of files) {
+                            const fullPath = path.join(dir, file);
+                            const stats = fs.statSync(fullPath);
+                            if (stats.isDirectory()) {
+                                findBackup(fullPath);
+                            } else if (file === backupFile) {
+                                backupPaths.push(fullPath);
+                            }
+                        }
+                    };
+                    
+                    findBackup('backups');
+                    findBackup('.'); // 현재 디렉토리도 확인
+                    
+                    if (backupPaths.length === 0) {
+                        await interaction.reply({ 
+                            content: `❌ 백업 파일을 찾을 수 없습니다: ${backupFile}`, 
+                            flags: 64 
+                        });
+                        return;
+                    }
+                    
+                    // 가장 최근 백업 사용
+                    const targetBackup = backupPaths[backupPaths.length - 1];
+                    
+                    // 현재 데이터 백업
+                    const emergencyBackup = `prelaunchEventData_emergency_${Date.now()}.json`;
+                    fs.copyFileSync(PRELAUNCH_DATA_PATH, emergencyBackup);
+                    
+                    // 백업 복원
+                    fs.copyFileSync(targetBackup, PRELAUNCH_DATA_PATH);
+                    
+                    // 전역 데이터 다시 로드
+                    global.prelaunchEventData = loadPrelaunchData();
+                    
+                    // 복원된 데이터 확인
+                    const restoredData = global.prelaunchEventData;
+                    const userCount = Object.keys(restoredData).length;
+                    
+                    // 주요 유저 정보
+                    let infoText = `✅ 백업 복원 완료!\n📁 복원 파일: ${targetBackup}\n👥 총 유저 수: ${userCount}명`;
+                    
+                    const criticalUsers = ['295980447849250817', '563406206362845224'];
+                    for (const userId of criticalUsers) {
+                        if (restoredData[userId]) {
+                            const user = restoredData[userId];
+                            infoText += `\n• ${userId}: ${user.points}점, 레벨 ${user.currentLevel}`;
+                        }
+                    }
+                    
+                    infoText += `\n\n💾 비상 백업 생성: ${emergencyBackup}`;
+                    
+                    await interaction.reply({ 
+                        content: infoText, 
+                        flags: 64 
+                    });
+                    
+                    console.log(`✅ 백업 복원 완료: ${targetBackup}`);
+                } else {
+                    // 직접 경로로 복원
+                    const emergencyBackup = `prelaunchEventData_emergency_${Date.now()}.json`;
+                    fs.copyFileSync(PRELAUNCH_DATA_PATH, emergencyBackup);
+                    fs.copyFileSync(backupFile, PRELAUNCH_DATA_PATH);
+                    global.prelaunchEventData = loadPrelaunchData();
+                    
+                    await interaction.reply({ 
+                        content: `✅ 백업 복원 완료!\n📁 복원 파일: ${backupFile}\n💾 비상 백업 생성: ${emergencyBackup}`, 
+                        flags: 64 
+                    });
+                }
+            } catch (error) {
+                console.error('백업 복원 오류:', error);
+                await interaction.reply({ 
+                    content: `❌ 백업 복원 중 오류 발생: ${error.message}`, 
+                    flags: 64 
+                });
+            }
         }
         
     } catch (error) {
@@ -15367,8 +21220,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // 개발 모드에서 채널 제한
-    if (DEV_MODE && DEV_CHANNEL_IDS.length > 0 && !DEV_CHANNEL_IDS.includes(interaction.channelId)) {
-        console.log(`채널 불일치 - 현재: ${interaction.channelId}, 허용된 개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}`);
+    if (DEV_MODE && DEV_CHANNEL_IDS.length > 0 && !DEV_CHANNEL_IDS.includes(interaction.channelId) && !canUseInProductionTest(interaction)) {
+        console.log(`채널 불일치 - 현재: ${interaction.channelId}, 허용된 개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}, 본서버 테스트 채널: ${PRODUCTION_TEST_CHANNEL_ID}`);
         await interaction.reply({ content: '개발 모드에서는 지정된 채널에서만 사용 가능합니다!', flags: 64 });
         return;
     }
@@ -15774,26 +21627,36 @@ client.on('interactionCreate', async (interaction) => {
                 { name: '🎁 미스터리 박스', gold: 1500, exp: 100, item: 'mystery_box' }
             ];
 
-            // 초기 룰렛 표시
+            // 초기 룰렛 표시 - 고급스러운 디자인
             const rouletteEmbed = new EmbedBuilder()
-                .setColor('#ffaa00')
-                .setTitle('🎡 출석 체크 보상 돌려돌려 돌림판!')
-                .setDescription(`**${user.nickname || interaction.user.username}**님의 출석 체크!\\n\\n연속 출석: **${user.attendanceStreak}일** 🔥`)
+                .setColor('#e74c3c')
+                .setAuthor({ 
+                    name: `${user.nickname || interaction.user.username}의 일일 보상`, 
+                    iconURL: interaction.user.displayAvatarURL() 
+                })
+                .setTitle('🎰 일일 출석 보상')
+                .setDescription(`## 🎉 출석 완료!\\n> 연속 출석: **${user.attendanceStreak}일** 🔥\\n\\n### 📅 주간 출석 현황\\n${user.weeklyAttendance.map((attended, i) => {
+                    const days = ['일', '월', '화', '수', '목', '금', '토'];
+                    return attended ? `${days[i]}✅` : `${days[i]}⬜`;
+                }).join(' ')} **[${user.weeklyAttendance.filter(x => x).length}/7]**`)
                 .addFields(
-                    { name: '주간 출석 현황', value: `${user.weeklyAttendance.map((attended, i) => {
-                        const days = ['일', '월', '화', '수', '목', '금', '토'];
-                        return attended ? `${days[i]}✅` : `${days[i]}❌`;
-                    }).join(' ')} (${user.weeklyAttendance.filter(x => x).length}/7)`, inline: false },
+                    { name: '🎁 오늘의 보상', value: '```diff\\n+ 기본 보상\\n+ 연속 출석 보너스\\n+ 주간 미션 보상\\n```', inline: true },
+                    { name: '🏆 출석 마일스톤', value: `\`\`\`\\n7일: 1,000G 보너스\\n30일: 특별 아이템\\n100일: 레전드 칭호\\n\`\`\``, inline: true }
                 )
                 .setImage('attachment://kim_daily.gif')
-                .setFooter({ text: '아래 버튼을 눌러 돌림판을 돌리세요!' });
+                .setFooter({ 
+                    text: '💡 돌림판을 돌려 추가 보상을 획득하세요!', 
+                    iconURL: client.user.displayAvatarURL() 
+                })
+                .setTimestamp();
 
             const row = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
                         .setCustomId('spin_roulette')
-                        .setLabel('🎡 돌림판 돌리기!')
-                        .setStyle(ButtonStyle.Primary)
+                        .setLabel('돌림판 돌리기')
+                        .setEmoji('🎰')
+                        .setStyle(ButtonStyle.Success)
                 );
 
             await interaction.reply({ embeds: [rouletteEmbed], components: [row], files: [dailyAttachment], flags: 64 });
@@ -16106,6 +21969,9 @@ client.on('interactionCreate', async (interaction) => {
                 if (selectedMonster.isBoss) {
                     checkQuestProgress(user, 'weekly', 'kill_boss');
                 }
+                
+                // 일일 미션 업데이트 (사냥)
+                const missionResult = await updateDailyMission(user, 'hunting', 1);
 
                 // 에너지 조각 드랍 체크 (0.1% 확률)
                 let energyFragmentDrop = null;
@@ -16243,6 +22109,15 @@ client.on('interactionCreate', async (interaction) => {
                             inline: false 
                         }
                     );
+                
+                // 일일 미션 완료 알림 추가
+                if (missionResult && missionResult.completed) {
+                    resultEmbed.addFields({
+                        name: '🎯 일일 미션 완료!',
+                        value: `✅ **사냥 미션 완료!**\n🎁 보상: ${missionResult.reward.gold.toLocaleString()} 골드, ${missionResult.reward.exp} EXP`,
+                        inline: false
+                    });
+                }
                 
                 // 랜덤 인카운터 정보 추가
                 if (randomEncounter) {
@@ -17081,6 +22956,125 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
+        // 홀짝 게임 버튼 처리
+        else if (interaction.customId === 'oddeven_start') {
+            await oddEvenGame.showMonsterBattleMenu(interaction);
+        }
+        else if (interaction.customId === 'oddeven_rules') {
+            const rulesEmbed = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('📖 홀짝 게임 규칙')
+                .setDescription('몬스터와 함께하는 홀짝 게임의 규칙입니다.')
+                .addFields(
+                    { name: '🎲 기본 규칙', value: '1. 홀수 또는 짝수를 선택합니다\n2. 몬스터도 동시에 선택합니다\n3. 결과가 맞으면 승리!', inline: false },
+                    { name: '💰 보상', value: '• 승리: 배팅금액 x2\n• 패배: 배팅금액 손실', inline: false },
+                    { name: '⚡ 특수 스킬', value: '• 예언: 다음 결과 힌트\n• 더블업: 보상 2배\n• 보호막: 패배 시 50% 보호', inline: false }
+                );
+            
+            await interaction.reply({ embeds: [rulesEmbed], flags: 64 });
+        }
+        else if (interaction.customId === 'oddeven_ranking') {
+            const rankingEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🏆 홀짝 게임 랭킹')
+                .setDescription('현재 구현 중입니다!')
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [rankingEmbed], flags: 64 });
+        }
+        
+        // 초성 게임 버튼 처리
+        else if (interaction.customId === 'chosung_quiz') {
+            const quizEmbed = new EmbedBuilder()
+                .setColor('#FF69B4')
+                .setTitle('🔤 초성 퀴즈 게임')
+                .setDescription('초성 퀴즈 게임을 시작합니다!')
+                .addFields(
+                    { name: '📝 게임 방법', value: '제시된 초성을 보고 정답 단어를 맞추세요!', inline: false }
+                )
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [quizEmbed], flags: 64 });
+        }
+        else if (interaction.customId === 'chosung_wordchain') {
+            const wordchainEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('🎲 초성 끝말잇기')
+                .setDescription('초성 끝말잇기 게임을 시작합니다!')
+                .addFields(
+                    { name: '📝 게임 방법', value: '초성으로 끝말잇기를 이어가세요!', inline: false }
+                )
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [wordchainEmbed], flags: 64 });
+        }
+        else if (interaction.customId === 'chosung_speed') {
+            const speedEmbed = new EmbedBuilder()
+                .setColor('#FF0000')
+                .setTitle('⏱️ 초성 스피드 퀴즈')
+                .setDescription('초성 스피드 퀴즈를 시작합니다!')
+                .addFields(
+                    { name: '📝 게임 방법', value: '제한 시간 내에 최대한 많은 초성을 맞추세요!', inline: false }
+                )
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [speedEmbed], flags: 64 });
+        }
+        
+        // 끝말잇기 게임 버튼 처리
+        else if (interaction.customId === 'wordchain_normal') {
+            const normalEmbed = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('🎯 일반 끝말잇기')
+                .setDescription('일반 끝말잇기를 시작합니다!')
+                .addFields(
+                    { name: '📝 게임 방법', value: '제시된 단어의 끝 글자로 시작하는 단어를 이어가세요!', inline: false },
+                    { name: '⏰ 제한 시간', value: '30초 이내에 답해야 합니다', inline: false }
+                )
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [normalEmbed], flags: 64 });
+        }
+        else if (interaction.customId === 'wordchain_speed') {
+            const speedEmbed = new EmbedBuilder()
+                .setColor('#FF0000')
+                .setTitle('⚡ 스피드 끝말잇기')
+                .setDescription('스피드 끝말잇기를 시작합니다!')
+                .addFields(
+                    { name: '📝 게임 방법', value: '10초 내에 빠르게 단어를 이어가세요!', inline: false },
+                    { name: '🏆 목표', value: '최대한 많은 단어를 이어가는 것이 목표입니다', inline: false }
+                )
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [speedEmbed], flags: 64 });
+        }
+        else if (interaction.customId === 'wordchain_battle') {
+            const battleEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('🏆 배틀 끝말잇기')
+                .setDescription('배틀 끝말잇기를 시작합니다!')
+                .addFields(
+                    { name: '📝 게임 방법', value: '다른 유저와 1대1로 끝말잇기 대결을 합니다!', inline: false },
+                    { name: '⚔️ 승리 조건', value: '상대방이 답하지 못하면 승리!', inline: false }
+                )
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [battleEmbed], flags: 64 });
+        }
+        else if (interaction.customId === 'wordchain_theme') {
+            const themeEmbed = new EmbedBuilder()
+                .setColor('#9400D3')
+                .setTitle('🎪 테마 끝말잇기')
+                .setDescription('테마 끝말잇기를 시작합니다!')
+                .addFields(
+                    { name: '📝 게임 방법', value: '특정 주제(동물, 음식, 지역 등)로만 끝말잇기를 진행합니다!', inline: false },
+                    { name: '🎭 주제 예시', value: '• 동물: 사자, 자라, 라마...\n• 음식: 김치, 치킨, 킨더초콜릿...', inline: false }
+                )
+                .setFooter({ text: '곧 업데이트 예정!' });
+            
+            await interaction.reply({ embeds: [themeEmbed], flags: 64 });
+        }
+        
         else if (interaction.customId === 'shop') {
             const shopMainAttachment = new AttachmentBuilder(path.join(__dirname, 'resource', 'kim_shop_main.gif'), { name: 'kim_shop_main.gif' });
             
@@ -17518,8 +23512,8 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(currentPage >= totalPages - 1),
                     new ButtonBuilder()
-                        .setCustomId('shop')
-                        .setLabel('🔙 상점 메인')
+                        .setCustomId('shop_category_menu')
+                        .setLabel('📋 카테고리 선택')
                         .setStyle(ButtonStyle.Primary)
                 );
 
@@ -17619,8 +23613,8 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(currentPage >= totalPages - 1),
                     new ButtonBuilder()
-                        .setCustomId('shop')
-                        .setLabel('🔙 상점 메인')
+                        .setCustomId('shop_category_menu')
+                        .setLabel('📋 카테고리 선택')
                         .setStyle(ButtonStyle.Primary)
                 );
             
@@ -17639,6 +23633,13 @@ client.on('interactionCreate', async (interaction) => {
             const parts = interaction.customId.split('_');
             const category = parts[1];
             const direction = parts[2]; // 'prev' 또는 'next'
+            
+            // 사용자 데이터 가져오기
+            const user = await getUser(interaction.user.id);
+            if (!user) {
+                await interaction.reply({ content: '사용자 데이터를 찾을 수 없습니다!', flags: 64 });
+                return;
+            }
             
             // 현재 페이지 정보 추출 (임베드의 footer에서)
             const currentEmbed = interaction.message.embeds[0];
@@ -17774,8 +23775,8 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(newPage >= totalPages - 1),
                     new ButtonBuilder()
-                        .setCustomId('shop')
-                        .setLabel('🔙 상점 메인')
+                        .setCustomId('shop_category_menu')
+                        .setLabel('📋 카테고리 선택')
                         .setStyle(ButtonStyle.Primary)
                 );
 
@@ -18226,7 +24227,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // 페이지네이션 설정
-            const itemsPerPage = 3;
+            const itemsPerPage = 5; // 3개에서 5개로 증가
             const currentPage = 0;
             const totalPages = Math.ceil(categoryItems.length / itemsPerPage);
             const startIndex = currentPage * itemsPerPage;
@@ -18245,55 +24246,67 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
-            // 카테고리 임베드 생성
+            // 고급스러운 인벤토리 임베드 생성
             const categoryEmbed = new EmbedBuilder()
-                .setColor('#3498db')
-                .setTitle(`${categoryEmoji} ${categoryName} 인벤토리`)
-                .setDescription(`**${getUserTitle(user)} ${user.nickname}**님의 ${categoryName} 목록`)
-                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages} | 아이템을 선택하여 사용하거나 장착하세요!` });
-            
-            if (categoryAttachment) {
-                categoryEmbed.setImage(`attachment://${categoryGif}`);
-            }
+                .setColor('#2c3e50')
+                .setAuthor({ 
+                    name: `${user.nickname}의 인벤토리`, 
+                    iconURL: interaction.user.displayAvatarURL() 
+                })
+                .setTitle(`${categoryEmoji} ${categoryName} 보관함`)
+                .setDescription(`### 📦 보유 ${categoryName} 아이템\n> 총 **${categoryItems.length}**개 보유 중 | 슬롯 **${user.inventory.length}/${user.maxInventorySlots}** 사용`)
+                .setThumbnail(categoryAttachment ? `attachment://${categoryGif}` : null)
+                .setFooter({ 
+                    text: `페이지 ${currentPage + 1}/${totalPages} | 🎮 아이템을 선택하여 사용하세요`, 
+                    iconURL: client.user.displayAvatarURL() 
+                })
+                .setTimestamp();
 
             // 아이템 목록 텍스트 생성
             let itemList = '';
             currentItems.forEach((item, index) => {
                 const globalIndex = startIndex + index;
                 
-                // 더 안전한 장착 상태 확인
+                // 더 안전한 장착 상태 확인 (슬롯 인덱스 방식)
                 let isEquipped = false;
-                if (user.equipment && user.equipment[item.type]) {
-                    const equippedItem = user.equipment[item.type];
-                    if (typeof equippedItem === 'object' && equippedItem.id) {
-                        isEquipped = (equippedItem.id === item.id);
+                if (user.equipment && typeof user.equipment[item.type] === 'number') {
+                    const equippedSlot = user.equipment[item.type];
+                    if (equippedSlot !== -1 && item.inventorySlot === equippedSlot) {
+                        isEquipped = true;
                     }
                 }
                 
                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
+                const rarityIcon = getRarityEmoji(item.rarity);
                 
-                itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
-                itemList += `등급: ${item.rarity} | 수량: x${item.quantity}\n`;
+                itemList += `\n${rarityIcon} **${item.name}**${enhanceText} ${isEquipped ? ' 🎮 [사용중]' : ''}\n`;
+                itemList += `┗ Lv.${item.level} | x${item.quantity}개`;
                 
                 // 장비 아이템인 경우 스탯 표시
                 if (['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'].includes(item.type)) {
-                    let statsText = '';
+                    let statsText = [];
                     for (const [statName, value] of Object.entries(item.stats)) {
                         if (value !== 0) {
-                            const statDisplay = statName === 'attack' ? '공격력' : 
-                                              statName === 'defense' ? '방어력' : 
-                                              statName === 'dodge' ? '회피력' : 
-                                              statName === 'luck' ? '행운' : statName;
-                            statsText += `${statDisplay}: ${value > 0 ? '+' : ''}${value} `;
+                            const statDisplay = statName === 'attack' ? '⚔️' : 
+                                              statName === 'defense' ? '🛡️' : 
+                                              statName === 'dodge' ? '💨' : 
+                                              statName === 'luck' ? '🍀' : '';
+                            statsText.push(`${statDisplay}+${value}`);
                         }
                     }
-                    itemList += `${statsText}\n`;
+                    if (statsText.length > 0) {
+                        itemList += ` | ${statsText.join(' ')}`;
+                    }
                 }
                 
-                itemList += `💰 판매가: ${Math.floor(item.price * 0.7).toLocaleString()}<:currency_emoji:1377404064316522778>\n\n`;
+                itemList += `\n┗ 💵 ${Math.floor(item.price * 0.7).toLocaleString()}G\n`;
             });
 
-            categoryEmbed.addFields({ name: '보유 아이템', value: itemList, inline: false });
+            categoryEmbed.addFields({ 
+                name: '📖 아이템 목록', 
+                value: itemList || '`아이템이 없습니다`', 
+                inline: false 
+            });
 
             // 아이템 사용/장착 버튼들 (3개씩)
             const itemButtons = new ActionRowBuilder();
@@ -18303,12 +24316,12 @@ client.on('interactionCreate', async (interaction) => {
                 console.log(`아이템 ${item.name} (${item.id}) - type: ${item.type}`);
                 console.log(`현재 장착된 ${item.type}:`, user.equipment[item.type]);
                 
-                // 더 안전한 장착 상태 확인
+                // 더 안전한 장착 상태 확인 (슬롯 인덱스 방식)
                 let isEquipped = false;
-                if (user.equipment && user.equipment[item.type]) {
-                    const equippedItem = user.equipment[item.type];
-                    if (typeof equippedItem === 'object' && equippedItem.id) {
-                        isEquipped = (equippedItem.id === item.id);
+                if (user.equipment && typeof user.equipment[item.type] === 'number') {
+                    const equippedSlot = user.equipment[item.type];
+                    if (equippedSlot !== -1 && item.inventorySlot === equippedSlot) {
+                        isEquipped = true;
                     }
                 }
                 
@@ -18376,7 +24389,7 @@ client.on('interactionCreate', async (interaction) => {
         
         // 인벤토리 아이템 사용/장착 처리
         else if (interaction.customId.startsWith('inv_use_')) {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
             
             // customId 파싱: inv_use_{itemId}_{category}_{currentPage}
             // itemId에 _가 포함되어 있으므로 마지막 두 부분을 제거하여 itemId 추출
@@ -19001,7 +25014,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // 페이지네이션 설정
-            const itemsPerPage = 3;
+            const itemsPerPage = 5; // 3개에서 5개로 증가
             const currentPage = 0;
             const totalPages = Math.ceil(categoryItems.length / itemsPerPage);
             const startIndex = currentPage * itemsPerPage;
@@ -19010,13 +25023,29 @@ client.on('interactionCreate', async (interaction) => {
             console.log(`${category} 카테고리 아이템 표시 - 총 ${categoryItems.length}개, 현재 페이지: ${currentPage + 1}`);
             console.log('현재 페이지 아이템들:', currentItems.map((item, idx) => `${idx}: ${item.name} (ID: ${item.id || 'NO_ID'})`));
 
-            // 카테고리 임베드 생성
+            // 고급스러운 카테고리 임베드 생성
             const categoryEmbed = new EmbedBuilder()
-                .setColor('#3498db')
-                .setTitle(`${getCategoryEmoji(category)} ${getCategoryName(category)} 교체`)
-                .setDescription(`**${getUserTitle(user)} ${user.nickname}**님의 ${getCategoryName(category)} 목록`)
-                .setFooter({ text: `페이지 ${currentPage + 1}/${totalPages} | 원하는 아이템을 선택하여 장착하세요!` });
+                .setColor('#9b59b6')
+                .setAuthor({ 
+                    name: `${user.nickname}의 ${getCategoryName(category)} 보관함`, 
+                    iconURL: interaction.user.displayAvatarURL() 
+                })
+                .setDescription(`### ${getCategoryEmoji(category)} ${getCategoryName(category)} 선택\n` +
+                    `> 현재 착용: ${currentEquippedItem ? `**${currentEquippedItem.name}** (+${currentEquippedItem.enhanceLevel || 0}강)` : '`미착용`'}\n\n` +
+                    `📦 **보유 아이템** (${categoryItems.length}개)`)
+                .setFooter({ 
+                    text: `페이지 ${currentPage + 1}/${totalPages} | ✨ 장착하려면 아래 버튼을 클릭하세요`, 
+                    iconURL: client.user.displayAvatarURL() 
+                })
+                .setTimestamp();
 
+            // 현재 착용 중인 아이템 찾기
+            const currentEquippedSlot = user.equipment[category];
+            let currentEquippedItem = null;
+            if (currentEquippedSlot !== -1 && typeof currentEquippedSlot === 'number') {
+                currentEquippedItem = user.inventory.find(item => item.inventorySlot === currentEquippedSlot);
+            }
+            
             // 아이템 목록 텍스트 생성
             let itemList = '';
             currentItems.forEach((item, index) => {
@@ -19024,21 +25053,46 @@ client.on('interactionCreate', async (interaction) => {
                 const isEquipped = user.equipment[category] === item.inventorySlot;
                 const enhanceText = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel}강)` : '';
                 
-                itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' -착용중' : ''}\n`;
+                itemList += `**${globalIndex + 1}. ${item.name}**${enhanceText} ${isEquipped ? ' 🔸[착용중]' : ''}\n`;
                 itemList += `등급: ${item.rarity} | 레벨: ${item.level}\n`;
                 
-                // 스탯 표시
+                // 스탯 표시 및 비교
                 let statsText = '';
+                let compareText = '';
+                
                 for (const [statName, value] of Object.entries(item.stats)) {
                     if (value !== 0) {
                         const statDisplay = statName === 'attack' ? '공격력' : 
                                           statName === 'defense' ? '방어력' : 
                                           statName === 'dodge' ? '회피력' : 
                                           statName === 'luck' ? '행운' : statName;
-                        statsText += `${statDisplay}: ${value > 0 ? '+' : ''}${value} `;
+                        
+                        // 강화 보너스 계산
+                        const itemLevel = ITEM_LEVELS[item.setName] || ITEM_LEVELS[item.name] || 1;
+                        const enhanceBonus = calculateEnhancementBonus(itemLevel, item.enhanceLevel || 0);
+                        const totalValue = value + (statName === 'attack' ? enhanceBonus.attack : statName === 'defense' ? enhanceBonus.defense : 0);
+                        
+                        statsText += `${statDisplay}: ${totalValue} `;
+                        
+                        // 현재 착용 중인 아이템과 비교
+                        if (currentEquippedItem && !isEquipped) {
+                            const currentValue = currentEquippedItem.stats[statName] || 0;
+                            const currentLevel = ITEM_LEVELS[currentEquippedItem.setName] || ITEM_LEVELS[currentEquippedItem.name] || 1;
+                            const currentEnhanceBonus = calculateEnhancementBonus(currentLevel, currentEquippedItem.enhanceLevel || 0);
+                            const currentTotal = currentValue + (statName === 'attack' ? currentEnhanceBonus.attack : statName === 'defense' ? currentEnhanceBonus.defense : 0);
+                            
+                            const diff = totalValue - currentTotal;
+                            if (diff !== 0) {
+                                compareText += `(${diff > 0 ? '✅+' : '🔴'}${diff}) `;
+                            }
+                        }
                     }
                 }
-                itemList += `${statsText}\n\n`;
+                itemList += `${statsText}\n`;
+                if (compareText && !isEquipped) {
+                    itemList += `현재 착용 아이템 대비: ${compareText}\n`;
+                }
+                itemList += `\n`;
             });
 
             categoryEmbed.addFields({ name: '보유 아이템', value: itemList, inline: false });
@@ -19049,15 +25103,10 @@ client.on('interactionCreate', async (interaction) => {
                 const globalIndex = startIndex + index;
                 const currentEquipped = user.equipment[category];
                 
-                // 장착 상태 확인 (호환성 고려)
+                // 장착 상태 확인 (슬롯 인덱스 방식)
                 let isEquipped = false;
-                if (currentEquipped) {
-                    if (typeof currentEquipped === 'object' && currentEquipped.id === item.id) {
-                        isEquipped = true;
-                    } else if (typeof currentEquipped === 'number') {
-                        const itemIndex = user.inventory.findIndex(inv => inv.id === item.id);
-                        isEquipped = (currentEquipped === itemIndex);
-                    }
+                if (typeof currentEquipped === 'number' && currentEquipped !== -1) {
+                    isEquipped = (currentEquipped === item.inventorySlot);
                 }
                 
                 // 아이템 ID가 없으면 인덱스 사용
@@ -19065,12 +25114,17 @@ client.on('interactionCreate', async (interaction) => {
                 
                 console.log(`버튼 생성 - ${item.name}: itemIdentifier=${itemIdentifier}, customId=equip_item_${itemIdentifier}_${category}_${currentPage}`);
                 
+                // 강화 수치 표시
+                const enhanceDisplay = item.enhanceLevel > 0 ? ` (+${item.enhanceLevel})` : '';
+                const levelReq = user.level < item.level;
+                
                 itemButtons.addComponents(
                     new ButtonBuilder()
                         .setCustomId(`equip_item_${itemIdentifier}_${category}_${currentPage}`)
-                        .setLabel(`${globalIndex + 1}. ${item.name} 장착`)
-                        .setStyle(isEquipped ? ButtonStyle.Success : ButtonStyle.Primary)
-                        .setDisabled(isEquipped)
+                        .setLabel(`${item.name}${enhanceDisplay}`)
+                        .setEmoji(getRarityEmoji(item.rarity))
+                        .setStyle(isEquipped ? ButtonStyle.Success : levelReq ? ButtonStyle.Danger : ButtonStyle.Primary)
+                        .setDisabled(isEquipped || levelReq)
                 );
             });
 
@@ -21962,6 +28016,148 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
+        // 초성게임 버튼 핸들러들
+        else if (interaction.customId === 'chosung_join') {
+            // 초성게임 참가/취소
+            const queue = wordGameQueues.get('chosung') || [];
+            const inQueue = queue.some(p => p.id === interaction.user.id);
+            
+            if (inQueue) {
+                // 대기열에서 제거
+                const newQueue = queue.filter(p => p.id !== interaction.user.id);
+                wordGameQueues.set('chosung', newQueue);
+                
+                await interaction.reply({
+                    content: '📤 초성게임 대기열에서 나갔습니다.',
+                    flags: 64
+                });
+            } else {
+                // 대기열에 추가
+                queue.push({
+                    id: interaction.user.id,
+                    name: user.nickname || interaction.user.username,
+                    joinedAt: Date.now()
+                });
+                wordGameQueues.set('chosung', queue);
+                
+                // 개발자 테스트 모드 확인
+                const isDeveloper = interaction.user.id === process.env.DEVELOPER_ID;
+                
+                await interaction.reply({
+                    content: `✅ 초성게임 대기열에 참가했습니다! (현재 ${queue.length}명 대기중)\n${queue.length >= WORD_GAME.minPlayers ? '인원이 모여 곧 게임이 시작됩니다!' : `최소 ${WORD_GAME.minPlayers}명이 필요합니다.`}${isDeveloper ? '\n\n🔧 개발자 모드: 5초 후 봇과 함께 게임을 시작합니다!' : ''}`,
+                    flags: 64
+                });
+                
+                // 개발자는 혼자서도 시작 가능
+                if (isDeveloper && queue.length === 1) {
+                    setTimeout(async () => {
+                        const currentQueue = wordGameQueues.get('chosung') || [];
+                        if (currentQueue.length === 1 && currentQueue[0].id === interaction.user.id) {
+                            await startChosungGame(interaction.channel, currentQueue);
+                            wordGameQueues.set('chosung', []);
+                        }
+                    }, 5000);
+                }
+                // 최소 인원이 모이면 게임 시작
+                else if (queue.length >= WORD_GAME.minPlayers && !wordGameSessions.has('chosung_' + interaction.channelId)) {
+                    // 게임 세션 생성
+                    await startChosungGame(interaction.channel, queue.slice(0, WORD_GAME.maxPlayers));
+                    wordGameQueues.set('chosung', []); // 대기열 초기화
+                }
+            }
+        }
+        
+        else if (interaction.customId === 'chosung_rules') {
+            // 초성게임 규칙
+            const rulesEmbed = new EmbedBuilder()
+                .setColor('#4169e1')
+                .setTitle('📖 초성게임 규칙')
+                .setDescription('초성게임의 규칙을 설명합니다.')
+                .addFields(
+                    { name: '🎮 게임 진행', value: '1. 봇이 초성을 제시합니다 (예: ㅅㄹ)\n2. 플레이어들은 해당 초성으로 이루어진 단어를 입력합니다\n3. 가장 빨리 정답을 맞춘 사람이 점수를 획득합니다', inline: false },
+                    { name: '⏱️ 제한 시간', value: '각 문제당 15초의 제한 시간이 있습니다', inline: false },
+                    { name: '📊 점수 계산', value: '• 정답: +100점\n• 오답: -10점\n• 시간 초과: 0점', inline: false },
+                    { name: '🏆 승리 조건', value: '모든 라운드가 끝난 후 가장 높은 점수를 획득한 플레이어가 승리합니다', inline: false },
+                    { name: '⚠️ 주의사항', value: '• 욕설이나 비속어는 인정되지 않습니다\n• 사전에 등록된 표준어만 인정됩니다\n• 동음이의어도 모두 인정됩니다', inline: false }
+                );
+            
+            await interaction.reply({
+                embeds: [rulesEmbed],
+                flags: 64
+            });
+        }
+        
+        // 끝말잇기 버튼 핸들러들
+        else if (interaction.customId === 'wordchain_join') {
+            // 끝말잇기 참가/취소
+            const queue = wordGameQueues.get('wordchain') || [];
+            const inQueue = queue.some(p => p.id === interaction.user.id);
+            
+            if (inQueue) {
+                // 대기열에서 제거
+                const newQueue = queue.filter(p => p.id !== interaction.user.id);
+                wordGameQueues.set('wordchain', newQueue);
+                
+                await interaction.reply({
+                    content: '📤 끝말잇기 대기열에서 나갔습니다.',
+                    flags: 64
+                });
+            } else {
+                // 대기열에 추가
+                queue.push({
+                    id: interaction.user.id,
+                    name: user.nickname || interaction.user.username,
+                    joinedAt: Date.now()
+                });
+                wordGameQueues.set('wordchain', queue);
+                
+                // 개발자 테스트 모드 확인
+                const isDeveloper = interaction.user.id === process.env.DEVELOPER_ID;
+                
+                await interaction.reply({
+                    content: `✅ 끝말잇기 대기열에 참가했습니다! (현재 ${queue.length}명 대기중)\n${queue.length >= WORD_GAME.minPlayers ? '인원이 모여 곧 게임이 시작됩니다!' : `최소 ${WORD_GAME.minPlayers}명이 필요합니다.`}${isDeveloper ? '\n\n🔧 개발자 모드: 5초 후 봇과 함께 게임을 시작합니다!' : ''}`,
+                    flags: 64
+                });
+                
+                // 개발자는 혼자서도 시작 가능
+                if (isDeveloper && queue.length === 1) {
+                    setTimeout(async () => {
+                        const currentQueue = wordGameQueues.get('wordchain') || [];
+                        if (currentQueue.length === 1 && currentQueue[0].id === interaction.user.id) {
+                            await startWordchainGame(interaction.channel, currentQueue);
+                            wordGameQueues.set('wordchain', []);
+                        }
+                    }, 5000);
+                }
+                // 최소 인원이 모이면 게임 시작
+                else if (queue.length >= WORD_GAME.minPlayers && !wordGameSessions.has('wordchain_' + interaction.channelId)) {
+                    // 게임 세션 생성
+                    await startWordchainGame(interaction.channel, queue.slice(0, WORD_GAME.maxPlayers));
+                    wordGameQueues.set('wordchain', []); // 대기열 초기화
+                }
+            }
+        }
+        
+        else if (interaction.customId === 'wordchain_rules') {
+            // 끝말잇기 규칙
+            const rulesEmbed = new EmbedBuilder()
+                .setColor('#00bfff')
+                .setTitle('📖 끝말잇기 규칙')
+                .setDescription('끝말잇기의 규칙을 설명합니다.')
+                .addFields(
+                    { name: '🎮 게임 진행', value: '1. 첫 플레이어가 시작 단어를 받습니다\n2. 다음 플레이어는 이전 단어의 끝 글자로 시작하는 단어를 입력합니다\n3. 제한 시간 내에 단어를 입력하지 못하면 탈락합니다', inline: false },
+                    { name: '⏱️ 제한 시간', value: '각 턴마다 10초의 제한 시간이 있습니다', inline: false },
+                    { name: '🚫 금지사항', value: '• 이미 사용된 단어는 재사용 불가\n• 1글자 단어는 사용 불가\n• 명사만 인정됩니다', inline: false },
+                    { name: '💣 한방 단어', value: '특정 글자(늄, 듐, 슘 등)로 끝나는 단어를 사용하면 다음 사람이 3초 내에 대응하지 못하면 즉시 승리합니다', inline: false },
+                    { name: '🏆 승리 조건', value: '마지막까지 살아남은 플레이어가 승리합니다', inline: false }
+                );
+            
+            await interaction.reply({
+                embeds: [rulesEmbed],
+                flags: 64
+            });
+        }
+        
         // 보스 시스템 핸들러
         else if (interaction.customId === 'boss_challenge') {
             // 보스 도전하기
@@ -22552,7 +28748,7 @@ client.on('interactionCreate', async (interaction) => {
         else if (interaction.customId === 'register') {
             const modal = new ModalBuilder()
                 .setCustomId('registerModal')
-                .setTitle('🎮 김헌터 회원가입');
+                .setTitle('🎮 강화왕 김헌터 RPG 회원가입');
             
             const nicknameInput = new TextInputBuilder()
                 .setCustomId('nickname')
@@ -22641,6 +28837,263 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [statusEmbed], 
                 components: [menuRow], 
                 files: [attachment] 
+            });
+        }
+        
+        // 인증번호 입력 버튼 처리
+        else if (interaction.customId === 'showVerifyModal') {
+            const verifyModal = new ModalBuilder()
+                .setCustomId('verifyEmailModal')
+                .setTitle('📧 이메일 인증');
+            
+            const codeInput = new TextInputBuilder()
+                .setCustomId('verificationCode')
+                .setLabel('인증번호를 입력하세요')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('6자리 인증번호')
+                .setMinLength(6)
+                .setMaxLength(6)
+                .setRequired(true);
+            
+            verifyModal.addComponents(
+                new ActionRowBuilder().addComponents(codeInput)
+            );
+            
+            await interaction.showModal(verifyModal);
+        }
+        
+        // 사전강화 이벤트 아이템 선택 처리
+        else if (interaction.customId === 'prelaunch_item_select') {
+            try {
+                // 인터렉션이 이미 응답되었는지 확인
+                if (interaction.deferred || interaction.replied) {
+                    console.log('⚠️ 인터렉션이 이미 응답되었습니다.');
+                    return;
+                }
+                
+                const ENHANCE_EVENT = require('./data/prelaunchEvent');
+                const userId = interaction.user.id;
+                const selectedIndex = parseInt(interaction.values[0]);
+                const selectedItem = ENHANCE_EVENT.virtualItems[selectedIndex];
+                
+                if (!global.prelaunchEventData) {
+                    global.prelaunchEventData = {};
+                }
+                
+                if (!global.prelaunchEventData[userId]) {
+                    global.prelaunchEventData[userId] = {
+                        points: 0,
+                        attempts: 0,
+                        currentItem: null,
+                        currentLevel: 0,
+                        successStreak: 0,
+                        failStreak: 0,
+                        achievements: [],
+                        lastAttempt: null,
+                        dailyAttempts: 0,
+                        lastDailyReset: new Date().toDateString()
+                    };
+                }
+                
+                const userData = global.prelaunchEventData[userId];
+                // 아이템 정보를 복사하고 maxLevel을 999로 업데이트
+                userData.currentItem = {
+                    name: selectedItem.name,
+                    emoji: selectedItem.emoji,
+                    baseSuccess: selectedItem.baseSuccess,
+                    difficulty: selectedItem.difficulty,
+                    maxLevel: 999  // 모든 아이템 999레벨로 통일
+                };
+                userData.currentLevel = 0;
+                userData.successStreak = 0;
+                userData.failStreak = 0;
+                
+                console.log(`[사전강화] ${interaction.user.tag} 아이템 선택:`, {
+                    item: userData.currentItem.name,
+                    maxLevel: userData.currentItem.maxLevel
+                });
+                
+                // 저장 예약
+                schedulePrelaunchSave();
+                
+                const startEmbed = new EmbedBuilder()
+                    .setColor('#FFD700')
+                    .setTitle('🎯 강화 시작!')
+                    .setDescription(`${selectedItem.emoji} **${selectedItem.name}**를 선택하셨습니다!`)
+                    .addFields(
+                        { name: '기본 성공률', value: `${selectedItem.baseSuccess}%`, inline: true },
+                        { name: '최대 레벨', value: `+${selectedItem.maxLevel}`, inline: true },
+                        { name: '난이도', value: selectedItem.difficulty, inline: true }
+                    )
+                    .setFooter({ text: '이제 /사전강화 명령어로 강화를 시작하세요!' });
+                
+                await interaction.update({ embeds: [startEmbed], components: [] });
+            } catch (error) {
+                console.error('드롭다운 처리 오류:', error);
+                // 에러 발생 시 가능한 경우에만 응답
+                if (!interaction.replied && !interaction.deferred) {
+                    try {
+                        await interaction.reply({ 
+                            content: '처리 중 오류가 발생했습니다. 다시 시도해주세요.', 
+                            flags: 64 
+                        });
+                    } catch (e) {
+                        console.error('에러 응답 실패:', e);
+                    }
+                }
+            }
+        }
+        
+        // 사전강화 이벤트 버튼 핸들러
+        else if (interaction.customId === 'prelaunch_event_info') {
+            try {
+                // 즉시 응답 지연 처리
+                await interaction.deferReply({ flags: 64 }); // 64 = Ephemeral flag
+                
+                // 사전강화 명령어와 동일한 처리
+                if (!isCountdownActive()) {
+                    await interaction.editReply({ 
+                        content: '❌ 현재 사전강화 이벤트가 진행중이지 않습니다!\n오픈 카운트다운이 시작되어야 참여할 수 있습니다.'
+                    });
+                    return;
+                }
+            
+            const ENHANCE_EVENT = require('./data/prelaunchEvent');
+            const menuOptions = ENHANCE_EVENT.virtualItems.map((item, index) => ({
+                label: item.name,
+                description: `${item.rarity} - 최대 +${item.maxLevel}강`,
+                value: index.toString(),
+                emoji: item.emoji
+            }));
+            
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('prelaunch_item_select')
+                .setPlaceholder('강화할 아이템을 선택하세요!')
+                .addOptions(menuOptions);
+                
+            const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+            
+            const selectEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🎯 사전강화 이벤트 - 아이템 선택')
+                .setDescription('강화할 가상 아이템을 선택하세요!\n각 아이템마다 난이도와 보상이 다릅니다.')
+                .setFooter({ text: '아이템 선택 후 강화를 시작하세요!' });
+                
+            await interaction.editReply({ 
+                embeds: [selectEmbed], 
+                components: [selectRow]
+            });
+            } catch (error) {
+                console.error('사전강화 버튼 처리 오류:', error);
+                if (interaction.deferred && !interaction.replied) {
+                    await interaction.editReply({ 
+                        content: '처리 중 오류가 발생했습니다. 다시 시도해주세요.' 
+                    });
+                } else if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ 
+                        content: '처리 중 오류가 발생했습니다. 다시 시도해주세요.', 
+                        flags: 64 
+                    });
+                }
+            }
+        }
+        
+        else if (interaction.customId === 'prelaunch_leaderboard') {
+            // 순위 확인
+            if (!global.prelaunchEventData) {
+                await interaction.reply({ 
+                    content: '아직 참여자가 없습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 포인트 순위
+            const pointLeaderboard = Object.entries(global.prelaunchEventData)
+                .map(([userId, data]) => ({ 
+                    userId, 
+                    points: data.points,
+                    currentItem: data.currentItem,
+                    currentLevel: data.currentLevel 
+                }))
+                .sort((a, b) => b.points - a.points)
+                .slice(0, 5);
+                
+            let pointRankingText = '';
+            for (let i = 0; i < pointLeaderboard.length; i++) {
+                const rank = i + 1;
+                const userData = pointLeaderboard[i];
+                const member = await interaction.guild.members.fetch(userData.userId).catch(() => null);
+                const displayName = member ? member.displayName : '알 수 없는 사용자';
+                
+                const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+                pointRankingText += `${medal} **${displayName}** - ${userData.points.toLocaleString()}P\n`;
+            }
+            
+            // 강화 레벨 순위 (난이도 가중치 적용)
+            const levelLeaderboard = Object.entries(global.prelaunchEventData)
+                .map(([userId, data]) => {
+                    // 난이도별 가중치
+                    const difficultyWeight = {
+                        'easy': 1,
+                        'normal': 1.2,
+                        'hard': 1.5,
+                        'expert': 2,
+                        'legendary': 3
+                    };
+                    const weight = data.currentItem ? difficultyWeight[data.currentItem.difficulty] || 1 : 1;
+                    const weightedLevel = data.currentLevel * weight;
+                    
+                    return { 
+                        userId, 
+                        currentItem: data.currentItem,
+                        currentLevel: data.currentLevel,
+                        weightedLevel: weightedLevel
+                    };
+                })
+                .sort((a, b) => b.weightedLevel - a.weightedLevel)
+                .slice(0, 5);
+                
+            let levelRankingText = '';
+            for (let i = 0; i < levelLeaderboard.length; i++) {
+                const rank = i + 1;
+                const userData = levelLeaderboard[i];
+                const member = await interaction.guild.members.fetch(userData.userId).catch(() => null);
+                const displayName = member ? member.displayName : '알 수 없는 사용자';
+                
+                const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+                const itemInfo = userData.currentItem ? 
+                    `${userData.currentItem.emoji} +${userData.currentLevel}` : 
+                    '🎯 선택중';
+                levelRankingText += `${medal} **${displayName}** - ${itemInfo}\n`;
+            }
+            
+            const leaderboardEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🏅 사전강화 이벤트 실시간 순위')
+                .addFields(
+                    { 
+                        name: '💰 포인트 순위 TOP 5', 
+                        value: pointRankingText || '참여자가 없습니다', 
+                        inline: true 
+                    },
+                    { 
+                        name: '⚔️ 강화 레벨 순위 TOP 5', 
+                        value: levelRankingText || '참여자가 없습니다', 
+                        inline: true 
+                    },
+                    { 
+                        name: '🏆 최종 1등 보상', 
+                        value: '☕ 스타벅스 아메리카노 + 40만 골드', 
+                        inline: false 
+                    }
+                )
+                .setFooter({ text: '💡 강화 레벨은 아이템 난이도에 따라 가중치가 적용됩니다!' })
+                .setTimestamp();
+                
+            await interaction.reply({ 
+                embeds: [leaderboardEmbed], 
+                flags: 64 
             });
         }
         
@@ -23522,26 +29975,202 @@ client.on('interactionCreate', async (interaction) => {
         await user.save();
     }
     
+    // 공지 작성 모달 처리
+    else if (interaction.customId.startsWith('notice_edit_modal_')) {
+        // customId 형식: notice_edit_modal_notice_1234567890_abc123def456_templateType
+        const match = interaction.customId.match(/^notice_edit_modal_(notice_\d+_[a-z0-9]+)_(.+)$/);
+        if (!match) {
+            console.error('Invalid notice edit customId format:', interaction.customId);
+            await interaction.reply({ content: '❌ 공지 편집 중 오류가 발생했습니다.', flags: 64 });
+            return;
+        }
+        
+        const noticeId = match[1];
+        const templateType = match[2];
+        
+        if (!NOTICE_SYSTEM.savedNotices.has(noticeId)) {
+            await interaction.reply({ 
+                content: '❌ 해당 공지를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+            return;
+        }
+        
+        // 기존 공지 데이터 가져오기
+        const existingNotice = NOTICE_SYSTEM.savedNotices.get(noticeId);
+        
+        // 필드 업데이트
+        const updatedNotice = {
+            ...existingNotice,
+            title: interaction.fields.getTextInputValue('title'),
+            content: interaction.fields.getTextInputValue('content'),
+            tags: interaction.fields.getTextInputValue('tags')
+                .split(',')
+                .map(tag => tag.trim())
+                .filter(tag => tag.length > 0),
+            updatedAt: new Date().toISOString()
+        };
+        
+        // 템플릿별 필드 업데이트
+        if (templateType === 'maintenance') {
+            updatedNotice.time = interaction.fields.getTextInputValue('time') || null;
+            updatedNotice.duration = interaction.fields.getTextInputValue('duration') || null;
+        } else if (templateType === 'event') {
+            updatedNotice.period = interaction.fields.getTextInputValue('period') || null;
+        } else if (templateType === 'update') {
+            updatedNotice.version = interaction.fields.getTextInputValue('version') || null;
+            updatedNotice.changes = interaction.fields.getTextInputValue('changes') || null;
+        }
+        
+        // 공지 업데이트
+        NOTICE_SYSTEM.savedNotices.set(noticeId, updatedNotice);
+        
+        // 미리보기 임베드 생성
+        const previewEmbed = createNoticeEmbed(updatedNotice);
+        
+        // 관리 버튼
+        const noticeButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`notice_send_${noticeId}`)
+                    .setLabel('📤 발송하기')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId(`notice_edit_${noticeId}`)
+                    .setLabel('✏️ 수정하기')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`notice_delete_${noticeId}`)
+                    .setLabel('🗑️ 삭제하기')
+                    .setStyle(ButtonStyle.Danger)
+            );
+        
+        await interaction.reply({
+            content: `✅ 공지가 수정되었습니다!\n\n**공지 ID**: \`${noticeId}\`\n아래는 수정된 공지 미리보기입니다:`,
+            embeds: [previewEmbed],
+            components: [noticeButtons],
+            flags: 64
+        });
+    }
+    
+    else if (interaction.customId.startsWith('notice_create|')) {
+        // 먼저 응답을 연기 (3초 제한 해결)
+        await interaction.deferReply({ flags: 64 });
+        
+        // customId 형식: notice_create|1234567890_abc123def456|templateType
+        const parts = interaction.customId.split('|');
+        if (parts.length !== 3) {
+            console.error('Invalid notice customId format:', interaction.customId);
+            await interaction.editReply({ content: '❌ 공지 생성 중 오류가 발생했습니다.' });
+            return;
+        }
+        
+        const noticeId = parts[1];
+        const templateType = parts[2];
+        
+        // 모달에서 입력받은 데이터
+        const fields = {};
+        interaction.fields.fields.forEach((field, key) => {
+            fields[key] = field.value;
+        });
+        
+        // 공지 데이터 생성
+        const noticeData = {
+            id: noticeId,
+            templateType: templateType,
+            title: fields.title,
+            content: fields.content,
+            category: 'notice', // 기본값
+            priority: 'medium', // 기본값
+            author: {
+                id: interaction.user.id,
+                name: interaction.user.username,
+                avatar: interaction.user.displayAvatarURL()
+            },
+            createdAt: Date.now(),
+            tags: fields.tags ? fields.tags.split(',').map(tag => tag.trim()).filter(tag => tag) : []
+        };
+        
+        // 템플릿별 추가 필드 처리
+        switch (templateType) {
+            case 'maintenance':
+                // time 필드에서 시간과 소요시간 파싱
+                const timeValue = fields.time;
+                const durationMatch = timeValue.match(/\((.*?)\)/);
+                if (durationMatch) {
+                    noticeData.time = timeValue.replace(/\s*\(.*?\)\s*$/, '').trim();
+                    noticeData.duration = durationMatch[1];
+                } else {
+                    noticeData.time = timeValue;
+                    noticeData.duration = '약 2시간';
+                }
+                noticeData.compensation = fields.compensation || null;
+                noticeData.category = 'maintenance';
+                noticeData.priority = 'high';
+                break;
+                
+            case 'event':
+                noticeData.period = fields.period;
+                noticeData.rewards = fields.rewards;
+                noticeData.category = 'event';
+                break;
+                
+            case 'update':
+                noticeData.version = fields.version;
+                noticeData.changes = fields.changes;
+                noticeData.fixes = fields.fixes || null;
+                noticeData.category = 'update';
+                break;
+        }
+        
+        // 공지 저장
+        NOTICE_SYSTEM.savedNotices.set(noticeId, noticeData);
+        
+        // 미리보기 임베드 생성
+        const previewEmbed = createNoticeEmbed(noticeData);
+        
+        // 관리 버튼
+        const noticeButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`notice_send_${noticeId}`)
+                    .setLabel('📤 발송하기')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId(`notice_edit_${noticeId}`)
+                    .setLabel('✏️ 수정하기')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`notice_delete_${noticeId}`)
+                    .setLabel('🗑️ 삭제하기')
+                    .setStyle(ButtonStyle.Danger)
+            );
+        
+        await interaction.editReply({
+            content: `✅ 공지가 저장되었습니다!\n\n**공지 ID**: \`${noticeId}\`\n아래는 공지 미리보기입니다:`,
+            embeds: [previewEmbed],
+            components: [noticeButtons]
+        });
+    }
+    
     else if (interaction.customId === 'registerModal') {
         const nickname = interaction.fields.getTextInputValue('nickname');
         const email = interaction.fields.getTextInputValue('email');
         
+        // 먼저 응답을 연기
+        await interaction.deferReply({ ephemeral: true });
+        
         try {
-            const user = await User.findOne({ discordId: interaction.user.id });
-            if (!user) {
-                await interaction.reply({ content: '등록되지 않은 사용자입니다. 먼저 /가입 명령어를 사용해 가입해주세요!', flags: 64 });
-                return;
-            }
-
             // 이미 회원가입 했는지 확인
-            if (user.registered) {
+            const existingUser = await User.findOne({ discordId: interaction.user.id });
+            if (existingUser && existingUser.registered) {
                 await interaction.editReply({ content: '이미 회원가입을 완료하셨습니다!' });
                 return;
             }
 
             // 닉네임 중복 체크
-            const existingUser = await User.findOne({ nickname });
-            if (existingUser) {
+            const nicknameUser = await User.findOne({ nickname });
+            if (nicknameUser && nicknameUser.discordId !== interaction.user.id) {
                 await interaction.editReply({ content: '이미 사용 중인 닉네임입니다!' });
                 return;
             }
@@ -23553,12 +30182,47 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
 
+            // 이메일 중복 체크
+            const emailUser = await User.findOne({ email, registered: true });
+            if (emailUser && emailUser.discordId !== interaction.user.id) {
+                await interaction.editReply({ content: '이미 사용 중인 이메일입니다!' });
+                return;
+            }
+
+            // 유저 생성 또는 업데이트
+            let user = existingUser;
+            if (!user) {
+                try {
+                    user = new User({
+                        discordId: interaction.user.id,
+                        nickname: nickname,
+                        email: email,
+                        registered: false
+                    });
+                    await user.save();
+                } catch (saveError) {
+                    if (saveError.code === 11000) {
+                        // 중복 키 오류 시 다시 조회
+                        user = await User.findOne({ discordId: interaction.user.id });
+                        if (user) {
+                            user.nickname = nickname;
+                            user.email = email;
+                        } else {
+                            throw new Error('유저 생성 실패');
+                        }
+                    } else {
+                        throw saveError;
+                    }
+                }
+            } else {
+                user.nickname = nickname;
+                user.email = email;
+            }
+
             // 인증코드 생성 및 저장
             const verificationCode = generateVerificationCode();
             const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10분 후 만료
 
-            user.nickname = nickname;
-            user.email = email;
             user.emailVerificationCode = verificationCode;
             user.emailVerificationExpires = expiresAt;
             
@@ -23566,10 +30230,45 @@ client.on('interactionCreate', async (interaction) => {
 
             // 이메일 전송
             try {
-                await sendVerificationEmail(email, verificationCode);
+                await sendVerificationEmail(email, verificationCode, interaction.user.id);
+                
+                // 인증번호 입력 모달 표시
+                const verifyModal = new ModalBuilder()
+                    .setCustomId('verifyEmailModal')
+                    .setTitle('📧 이메일 인증');
+                
+                const codeInput = new TextInputBuilder()
+                    .setCustomId('verificationCode')
+                    .setLabel('인증번호를 입력하세요')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('6자리 인증번호')
+                    .setMinLength(6)
+                    .setMaxLength(6)
+                    .setRequired(true);
+                
+                verifyModal.addComponents(
+                    new ActionRowBuilder().addComponents(codeInput)
+                );
+                
                 await interaction.editReply({ 
-                    content: `회원가입 정보가 저장되었습니다! \n**${email}**로 인증코드를 발송했습니다.\n\`/인증 [코드]\` 명령어로 이메일 인증을 완료해주세요.`
+                    content: `✅ **${email}**로 인증번호를 발송했습니다!\n인증번호는 10분간 유효합니다.` 
                 });
+                
+                // 후속 인증을 위해 새로운 버튼 표시
+                const verifyButton = new ButtonBuilder()
+                    .setCustomId('showVerifyModal')
+                    .setLabel('인증번호 입력')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('📧');
+                
+                const row = new ActionRowBuilder().addComponents(verifyButton);
+                
+                await interaction.followUp({
+                    content: '인증번호를 받으셨다면 아래 버튼을 눌러 입력해주세요.',
+                    components: [row],
+                    ephemeral: true
+                });
+                
             } catch (emailError) {
                 console.error('이메일 전송 오류:', emailError);
                 await interaction.editReply({ 
@@ -23579,6 +30278,148 @@ client.on('interactionCreate', async (interaction) => {
         } catch (error) {
             console.error('회원가입 처리 오류:', error);
             await interaction.editReply({ content: '회원가입 처리 중 오류가 발생했습니다!' });
+        }
+    }
+    
+    // 이메일 인증 모달 처리
+    else if (interaction.customId === 'verifyEmailModal') {
+        const inputCode = interaction.fields.getTextInputValue('verificationCode');
+        
+        await interaction.deferReply({ ephemeral: true });
+        
+        try {
+            const user = await User.findOne({ discordId: interaction.user.id });
+            
+            if (!user) {
+                await interaction.editReply({ content: '사용자 정보를 찾을 수 없습니다.' });
+                return;
+            }
+            
+            if (user.registered) {
+                await interaction.editReply({ content: '이미 회원가입이 완료되었습니다!' });
+                return;
+            }
+            
+            // 인증코드 확인
+            if (!user.emailVerificationCode || user.emailVerificationCode !== inputCode) {
+                await interaction.editReply({ content: '❌ 잘못된 인증번호입니다. 다시 확인해주세요.' });
+                return;
+            }
+            
+            // 만료 시간 확인
+            if (user.emailVerificationExpires < new Date()) {
+                await interaction.editReply({ content: '❌ 인증번호가 만료되었습니다. 다시 회원가입을 진행해주세요.' });
+                return;
+            }
+            
+            // 회원가입 완료 처리
+            user.registered = true;
+            user.emailVerified = true;
+            user.emailVerificationCode = undefined;
+            user.emailVerificationExpires = undefined;
+            
+            // IP 정보 기록 (Discord는 직접적인 IP 접근이 제한되어 있으므로 기본값 사용)
+            // 실제 IP는 Discord API로는 얻을 수 없으므로, 추후 웹 인증 등을 통해 수집 가능
+            const registrationTime = new Date();
+            user.registrationIP = 'Discord-Registration';
+            user.lastLoginIP = 'Discord-Registration';
+            user.ipHistory.push({
+                ip: 'Discord-Registration',
+                timestamp: registrationTime,
+                action: 'register'
+            });
+            
+            // 초기 보상 지급 (골드만)
+            user.gold += 5000;
+            
+            await user.save();
+            
+            const welcomeEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('🎉 회원가입 완료!')
+                .setDescription(`${user.nickname}님, 강화왕 김헌터 RPG의 세계에 오신 것을 환영합니다!`)
+                .addFields(
+                    { name: '📧 이메일', value: user.email, inline: true },
+                    { name: '🎁 가입 보상', value: '5,000 골드', inline: true }
+                )
+                .setFooter({ text: '이제 /게임 명령어로 모험을 시작하세요!' })
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [welcomeEmbed] });
+            
+            // 환영 메시지를 지정된 채널에 전송
+            try {
+                const welcomeChannel = await client.channels.fetch('1386447256408035399');
+                if (welcomeChannel) {
+                    await welcomeChannel.send(`🎊 **${user.nickname}**님이 강화왕 김헌터 RPG에 가입하셨습니다! 모두 환영해주세요!`);
+                }
+            } catch (err) {
+                console.log('환영 메시지 전송 실패:', err);
+            }
+            
+        } catch (error) {
+            console.error('인증 처리 오류:', error);
+            await interaction.editReply({ content: '인증 처리 중 오류가 발생했습니다.' });
+        }
+    }
+    
+    // 공지 채널 선택 모달 처리
+    else if (interaction.customId.startsWith('notice_channel_select_')) {
+        const noticeId = interaction.customId.replace('notice_channel_select_', '');
+        const channelId = interaction.fields.getTextInputValue('channel_id');
+        const mentionType = interaction.fields.getTextInputValue('mention_type');
+        
+        const notice = NOTICE_SYSTEM.savedNotices.get(noticeId);
+        
+        if (!notice) {
+            await interaction.reply({ 
+                content: '❌ 해당 공지를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+            return;
+        }
+        
+        try {
+            const channel = await client.channels.fetch(channelId);
+            
+            if (!channel || !channel.isTextBased()) {
+                await interaction.reply({ 
+                    content: '❌ 유효하지 않은 채널 ID입니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const noticeEmbed = createNoticeEmbed(notice);
+            
+            // 멘션 설정
+            let content = '';
+            if (mentionType === 'everyone') content = '@everyone';
+            else if (mentionType === 'here') content = '@here';
+            
+            const sentMessage = await channel.send({ 
+                content: content,
+                embeds: [noticeEmbed] 
+            });
+            
+            // 공지 고정 옵션
+            if (notice.priority === 'high' || notice.priority === 'critical') {
+                await sentMessage.pin();
+            }
+            
+            // 기본 리액션 추가
+            await sentMessage.react('✅');
+            await sentMessage.react('❓');
+            
+            await interaction.reply({ 
+                content: `✅ 공지가 ${channel}에 발송되었습니다!`, 
+                flags: 64 
+            });
+        } catch (error) {
+            await interaction.reply({ 
+                content: `❌ 공지 발송 중 오류가 발생했습니다: ${error.message}`, 
+                flags: 64 
+            });
         }
     }
     
@@ -23720,6 +30561,184 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.reply({ content: '베팅 처리 중 오류가 발생했습니다!', flags: 64 });
             }
         }
+    }
+    
+    // 가위바위보 봇 대전 모달 처리
+    else if (interaction.customId === 'rps_bot_modal') {
+        const betAmountText = interaction.fields.getTextInputValue('bet_amount');
+        const betAmount = parseInt(betAmountText.replace(/[^\d]/g, ''));
+        
+        if (isNaN(betAmount) || betAmount < RPS_GAME.minBet || betAmount > RPS_GAME.maxBet) {
+            await interaction.reply({ 
+                content: `베팅 금액은 ${RPS_GAME.minBet.toLocaleString()}G ~ ${RPS_GAME.maxBet.toLocaleString()}G 사이여야 합니다!`, 
+                flags: 64 
+            });
+            return;
+        }
+        
+        const user = await getUser(interaction.user.id);
+        if (user.gold < betAmount) {
+            await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+            return;
+        }
+        
+        // 가위바위보 선택 버튼 표시
+        const rpsEmbed = new EmbedBuilder()
+            .setColor('#FF6B6B')
+            .setTitle('✊✌️✋ 가위바위보!')
+            .setDescription(`**베팅 금액**: ${betAmount.toLocaleString()}G\n\n무엇을 내시겠습니까?`)
+            .setFooter({ text: '선택하세요!' });
+        
+        const rpsButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`rps_choice_rock_${betAmount}`)
+                    .setEmoji('✊')
+                    .setLabel('바위')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`rps_choice_scissors_${betAmount}`)
+                    .setEmoji('✌️')
+                    .setLabel('가위')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId(`rps_choice_paper_${betAmount}`)
+                    .setEmoji('✋')
+                    .setLabel('보')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
+        await interaction.reply({
+            embeds: [rpsEmbed],
+            components: [rpsButtons]
+        });
+    }
+    
+    // 슬롯머신 자동 스핀 모달 처리
+    else if (interaction.customId === 'slot_auto_modal') {
+        const betAmountText = interaction.fields.getTextInputValue('bet_amount');
+        const spinCountText = interaction.fields.getTextInputValue('spin_count');
+        const spinSpeedText = interaction.fields.getTextInputValue('spin_speed');
+        
+        const betAmount = parseInt(betAmountText);
+        const spinCount = parseInt(spinCountText);
+        const spinSpeed = parseInt(spinSpeedText);
+        
+        // 유효성 검사
+        if (!SLOT_MACHINE.betAmounts.includes(betAmount)) {
+            await interaction.reply({ 
+                content: `베팅 금액은 ${SLOT_MACHINE.betAmounts.join(', ')}G 중 하나여야 합니다!`, 
+                flags: 64 
+            });
+            return;
+        }
+        
+        if (isNaN(spinCount) || spinCount < 1 || spinCount > 100) {
+            await interaction.reply({ content: '스핀 횟수는 1~100 사이여야 합니다!', flags: 64 });
+            return;
+        }
+        
+        if (![1, 2, 3].includes(spinSpeed)) {
+            await interaction.reply({ content: '스핀 속도는 1, 2, 3 중 하나여야 합니다!', flags: 64 });
+            return;
+        }
+        
+        const user = await getUser(interaction.user.id);
+        if (!user || !user.registered) {
+            await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+            return;
+        }
+        
+        const totalBet = betAmount * spinCount;
+        if (user.gold < totalBet) {
+            await interaction.reply({ 
+                content: `자동 스핀에 필요한 골드가 부족합니다! (필요: ${totalBet.toLocaleString()}G, 보유: ${user.gold.toLocaleString()}G)`, 
+                flags: 64 
+            });
+            return;
+        }
+        
+        // 슬롯머신 통계 초기화
+        if (!user.slotStats) {
+            user.slotStats = {
+                totalSpins: 0,
+                totalBet: 0,
+                totalWon: 0,
+                biggestWin: 0,
+                jackpotWins: 0,
+                currentStreak: 0,
+                bestStreak: 0,
+                lastSpin: null
+            };
+        }
+        
+        await interaction.deferReply();
+        
+        // 자동 스핀 실행
+        const delay = SLOT_MACHINE.autoSpinDelays[spinSpeed - 1];
+        let totalWin = 0;
+        let jackpotCount = 0;
+        const results = [];
+        
+        const progressEmbed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🔄 자동 스핀 진행 중...')
+            .setDescription(`진행도: 0/${spinCount}`)
+            .setFooter({ text: '잠시만 기다려주세요...' });
+        
+        await interaction.editReply({ embeds: [progressEmbed] });
+        
+        for (let i = 0; i < spinCount; i++) {
+            const spinResult = await executeSlotSpin(user, betAmount);
+            totalWin += spinResult.win;
+            if (spinResult.isJackpot) jackpotCount++;
+            results.push(spinResult);
+            
+            // 5스핀마다 진행 상황 업데이트
+            if ((i + 1) % 5 === 0 || i === spinCount - 1) {
+                progressEmbed.setDescription(`진행도: ${i + 1}/${spinCount}\n누적 당첨금: ${totalWin.toLocaleString()}G`);
+                await interaction.editReply({ embeds: [progressEmbed] });
+            }
+            
+            if (i < spinCount - 1) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+        
+        // 결과 표시
+        const netProfit = totalWin - totalBet;
+        const resultEmbed = new EmbedBuilder()
+            .setColor(netProfit >= 0 ? '#00FF00' : '#FF0000')
+            .setTitle('🎰 자동 스핀 완료!')
+            .setDescription(jackpotCount > 0 ? `🎉 잭팟 ${jackpotCount}회 당첨! 🎉` : '자동 스핀이 완료되었습니다.')
+            .addFields(
+                { name: '🎲 총 스핀', value: `${spinCount}회`, inline: true },
+                { name: '💰 총 베팅', value: `${totalBet.toLocaleString()}G`, inline: true },
+                { name: '🏆 총 당첨', value: `${totalWin.toLocaleString()}G`, inline: true },
+                { name: '📊 순수익', value: `${netProfit >= 0 ? '+' : ''}${netProfit.toLocaleString()}G`, inline: true },
+                { name: '💹 수익률', value: `${Math.floor((totalWin / totalBet) * 100)}%`, inline: true },
+                { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+            )
+            .setFooter({ text: '다시 도전하시겠습니까?' });
+        
+        const playAgainButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('slot_auto')
+                    .setLabel('🔄 자동 스핀')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(user.gold < SLOT_MACHINE.betAmounts[0]),
+                new ButtonBuilder()
+                    .setCustomId('slot_menu')
+                    .setLabel('🎰 슬롯 메뉴')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('back_to_game_menu')
+                    .setLabel('🎮 게임 메뉴')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
+        await interaction.editReply({ embeds: [resultEmbed], components: [playAgainButtons] });
     }
     
     // 잭팟 모달 처리
@@ -23866,7 +30885,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
     
     // 첫 번째 handler에서 처리하는 상호작용들은 건너뛰기
-    const excludedIds = ['equipment', 'game_page_', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'artifact_my_charts', 'artifact_inv_', 'explore_', 'daily', 'work', 'exercise_select', 'select_exercise_type', 'main_menu', 'racing', 'join_race_', 'leave_race', 'racing_stats', 'racing_ranking'];  // 'inv_' 제거하여 inv_use_ 버튼이 작동하도록 함
+    const excludedIds = ['equipment', 'game_page_', 'inventory', 'quest', 'pvp', 'shop', 'hunting', 'register', 'equip_item_', 'equip_category_', 'equip_', 'unequip_', 'buy_stock_', 'sell_stock_', 'stock_regions', 'stock_chains', 'stock_portfolio', 'stock_news', 'stock_chart', 'stock_analysis', 'all_companies_chart', 'artifact_direct_explore', 'artifact_companies', 'artifact_inventory', 'artifact_shop', 'artifact_main_menu', 'artifact_rankings', 'artifact_guide', 'artifact_market_chart', 'artifact_chart_individual', 'artifact_my_charts', 'artifact_inv_', 'explore_', 'daily', 'work', 'exercise_select', 'select_exercise_type', 'main_menu', 'racing', 'join_race_', 'leave_race', 'racing_stats', 'racing_ranking', 'showVerifyModal', 'verifyEmailModal'];  // 'inv_' 제거하여 inv_use_ 버튼이 작동하도록 함
     
     if (excludedIds.some(id => interaction.customId.includes(id))) {
         console.log(`🟡 두 번째 핸들러에서 제외됨: ${interaction.customId}`);
@@ -23878,10 +30897,24 @@ client.on('interactionCreate', async (interaction) => {
     }
     
     try {
-        const user = await getUser(interaction.user.id);
-        if (!user || !user.registered) {
-            await interaction.reply({ content: '등록되지 않은 사용자입니다. 먼저 /가입을 완료해주세요!', flags: 64 });
-            return;
+        // 회원가입이 필요없는 기능들
+        const noAuthRequired = ['register', 'registerModal', 'prelaunch_event_info', 'prelaunch_leaderboard', 
+                               'prelaunch_item_select', 'showVerifyModal', 'verifyEmailModal'];
+        
+        // 회원가입이 필요한 경우에만 체크
+        let user = null;
+        if (!noAuthRequired.includes(interaction.customId)) {
+            try {
+                user = await getUser(interaction.user.id);
+                if (!user || !user.registered) {
+                    await interaction.reply({ content: '먼저 회원가입을 완료해주세요!', flags: 64 });
+                    return;
+                }
+            } catch (error) {
+                console.error('유저 조회 오류:', error);
+                await interaction.reply({ content: '처리 중 오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
+                return;
+            }
         }
 
         // 랭킹 카테고리 선택 처리
@@ -23988,9 +31021,79 @@ client.on('interactionCreate', async (interaction) => {
         else if (interaction.customId === 'mushroom_pvp') {
             await interaction.deferUpdate();
             
-            // PVP는 나중에 구현
-            await interaction.editReply({ 
-                content: '🚧 PVP 모드는 준비 중입니다! 솔로 모드를 즐겨주세요.' 
+            const user = await getUser(interaction.user.id);
+            await mushroomGame.startGame(interaction, user, 'pvp');
+        }
+        
+        else if (interaction.customId === 'mushroom_multiplayer') {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            await mushroomGame.startGame(interaction, user, 'multiplayer');
+        }
+        
+        else if (interaction.customId === 'mushroom_bot') {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            await mushroomGame.startGame(interaction, user, 'bot');
+        }
+        
+        else if (interaction.customId === 'mushroom_ranking') {
+            // 버섯 게임 랭킹 페이지로 이동
+            await showRankingMenu(interaction, 7); // mushroom은 7번째 인덱스
+        }
+        
+        // 토너먼트 모드
+        else if (interaction.customId === 'mushroom_tournament') {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            await mushroomGame.startTournamentMode(interaction, user);
+        }
+        
+        
+        // 버섯 게임 통계
+        else if (interaction.customId === 'mushroom_stats') {
+            await interaction.deferUpdate();
+            
+            const user = await getUser(interaction.user.id);
+            
+            const stats = user.mushroomStats || {
+                totalGames: 0,
+                wins: 0,
+                totalRounds: 0,
+                totalEarnings: 0,
+                highestRound: 0
+            };
+            
+            const winRate = stats.totalGames > 0 ? ((stats.wins / stats.totalGames) * 100).toFixed(1) : '0.0';
+            const avgRounds = stats.totalGames > 0 ? (stats.totalRounds / stats.totalGames).toFixed(1) : '0.0';
+            
+            const statsEmbed = new EmbedBuilder()
+                .setColor('#32cd32')
+                .setTitle('🍄 독버섯 게임 통계')
+                .setDescription(`**${user.nickname}**님의 게임 기록`)
+                .addFields(
+                    { name: '🎮 총 게임 수', value: `${stats.totalGames}회`, inline: true },
+                    { name: '🏆 승리', value: `${stats.wins}회`, inline: true },
+                    { name: '📊 승률', value: `${winRate}%`, inline: true },
+                    { name: '🔥 평균 생존', value: `${avgRounds}라운드`, inline: true },
+                    { name: '💎 최고 라운드', value: `${stats.highestRound}라운드`, inline: true },
+                    { name: '💰 총 수익', value: `${stats.totalEarnings.toLocaleString()}G`, inline: true }
+                );
+            
+            const backButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('game_mushroom')
+                        .setLabel('🔙 돌아가기')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({
+                embeds: [statsEmbed],
+                components: [backButton]
             });
         }
         
@@ -24051,6 +31154,9 @@ client.on('interactionCreate', async (interaction) => {
             
             const [, , gameId, index] = interaction.customId.split('_');
             const session = mushroomGameSessions.get(gameId);
+            
+            // 매크로 감지 시스템 기록
+            recordUserAction(interaction.user.id, 'mushroom_select', Date.now());
             
             if (!session || session.userId !== interaction.user.id) {
                 return await interaction.editReply({ 
@@ -24844,6 +31950,29 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
         
+        // 홀짝 게임 시작 버튼
+        else if (interaction.customId === 'oddeven_start') {
+            console.log('🎲 홀짝 게임 시작 버튼 클릭됨!');
+            await oddEvenGame.showBettingMenu(interaction);
+        }
+        
+        // 홀짝 게임 규칙 버튼
+        else if (interaction.customId === 'oddeven_rules') {
+            const rulesEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('📖 홀짝 게임 규칙')
+                .setDescription('몬스터와 함께하는 신나는 홀짝 게임의 규칙입니다!')
+                .addFields(
+                    { name: '🎲 기본 규칙', value: '1. 홀수 또는 짝수를 선택합니다\n2. 몬스터가 주사위를 굴립니다\n3. 나온 숫자가 예측과 일치하면 승리!', inline: false },
+                    { name: '💰 베팅 시스템', value: '최소: 100 골드\n최대: 보유 골드의 50%\n승리 시: 2배 획듍', inline: false },
+                    { name: '⚡ 특수 스킬', value: '🔮 통찰력: 몬스터의 패턴 힌트\n🔄 리로드: 다시 도전\n🍀 행운의 부적: 특별 보상', inline: false },
+                    { name: '🎮 레벨 시스템', value: '레벨이 높을수록 더 강력한 몬스터 등장\n더 많은 보상 획듍 가능', inline: false }
+                )
+                .setFooter({ text: '행운을 빌어요! 🍀' });
+            
+            await interaction.reply({ embeds: [rulesEmbed], flags: 64 });
+        }
+        
         // 홀짝 게임 베팅 메뉴
         else if (interaction.customId === 'oddeven_bet') {
             await oddEvenGame.showBettingMenu(interaction);
@@ -24974,6 +32103,1232 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.reply({ content: '오류가 발생했습니다. 다시 시도해주세요.', flags: 64 });
                 }
             }
+        }
+        
+        // 가위바위보 - 봇과 대전
+        else if (interaction.customId === 'rps_bot') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 티켓 확인
+            if (user.rpsGameData.botTickets < 1) {
+                await interaction.reply({ content: '🎫 봇 대전 티켓이 부족합니다! 티켓은 5분마다 1장씩 재생성됩니다.', flags: 64 });
+                return;
+            }
+            
+            // 베팅 금액 입력 모달
+            const modal = new ModalBuilder()
+                .setCustomId('rps_bot_modal')
+                .setTitle('🤖 봇과 가위바위보');
+            
+            const betInput = new TextInputBuilder()
+                .setCustomId('bet_amount')
+                .setLabel('베팅 금액')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder(`${RPS_GAME.minBet} ~ ${RPS_GAME.maxBet}`)
+                .setRequired(true);
+            
+            const row = new ActionRowBuilder().addComponents(betInput);
+            modal.addComponents(row);
+            
+            await interaction.showModal(modal);
+        }
+        
+        // 가위바위보 - 유저와 대전
+        else if (interaction.customId === 'rps_user') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 티켓 확인
+            if (user.rpsGameData.userTickets < 1) {
+                await interaction.reply({ content: '🎟️ 유저 대전 티켓이 부족합니다! 티켓은 5분마다 1장씩 재생성됩니다.', flags: 64 });
+                return;
+            }
+            
+            await interaction.reply({ content: '👥 유저 대전 기능은 준비 중입니다!', flags: 64 });
+        }
+        
+        // 가위바위보 - 랭킹
+        else if (interaction.customId === 'rps_ranking') {
+            await interaction.reply({ content: '🏆 가위바위보 랭킹 기능은 준비 중입니다!', flags: 64 });
+        }
+        
+        // 가위바위보 메뉴로 돌아가기
+        else if (interaction.customId === 'rps_menu') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // RPS 게임 데이터 초기화 체크
+            if (!user.rpsGameData) {
+                user.rpsGameData = {
+                    botTickets: RPS_GAME.maxTickets,
+                    userTickets: RPS_GAME.maxTickets,
+                    lastBotTicketRegen: new Date(),
+                    lastUserTicketRegen: new Date(),
+                    totalGames: 0,
+                    wins: 0,
+                    losses: 0,
+                    draws: 0,
+                    currentStreak: 0,
+                    bestStreak: 0,
+                    totalWinnings: 0,
+                    totalLosses: 0
+                };
+                await user.save();
+            }
+            
+            // 티켓 재생성 체크
+            await regenerateRpsTickets(user);
+            
+            const rpsEmbed = new EmbedBuilder()
+                .setColor('#FF6B6B')
+                .setTitle('✊✌️✋ 가위바위보 대전')
+                .setDescription('봇 또는 다른 유저와 가위바위보 대결을 펼쳐보세요!')
+                .addFields(
+                    { name: '🎫 봇 대전 티켓', value: `${user.rpsGameData.botTickets}/${RPS_GAME.maxTickets}`, inline: true },
+                    { name: '🎟️ 유저 대전 티켓', value: `${user.rpsGameData.userTickets}/${RPS_GAME.maxTickets}`, inline: true },
+                    { name: '🔥 현재 연승', value: `${user.rpsGameData.currentStreak}회`, inline: true },
+                    { name: '📊 전적', value: `${user.rpsGameData.wins}승 ${user.rpsGameData.losses}패 ${user.rpsGameData.draws}무`, inline: false },
+                    { name: '💰 순수익', value: `${(user.rpsGameData.totalWinnings - user.rpsGameData.totalLosses).toLocaleString()}G`, inline: true },
+                    { name: '🏆 최고 연승', value: `${user.rpsGameData.bestStreak}회`, inline: true }
+                )
+                .setFooter({ text: '티켓은 5분마다 1장씩 재생성됩니다' });
+            
+            const rpsButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('rps_bot')
+                        .setLabel('🤖 봇과 대전')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.rpsGameData.botTickets < 1),
+                    new ButtonBuilder()
+                        .setCustomId('rps_user')
+                        .setLabel('👥 유저와 대전')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(user.rpsGameData.userTickets < 1),
+                    new ButtonBuilder()
+                        .setCustomId('rps_ranking')
+                        .setLabel('🏆 랭킹')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 게임 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({ embeds: [rpsEmbed], components: [rpsButtons] });
+        }
+        
+        // 가위바위보 선택 처리
+        else if (interaction.customId.startsWith('rps_choice_')) {
+            const parts = interaction.customId.split('_');
+            const playerChoice = parts[2]; // rock, scissors, paper
+            const betAmount = parseInt(parts[3]);
+            
+            // 매크로 감지 시스템 기록
+            recordUserAction(interaction.user.id, 'rps_play', Date.now());
+            
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 골드 재확인
+            if (user.gold < betAmount) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 봇의 선택
+            const choices = ['rock', 'scissors', 'paper'];
+            const botChoice = choices[Math.floor(Math.random() * choices.length)];
+            
+            // 이모지 매핑
+            const choiceEmojis = {
+                rock: '✊',
+                scissors: '✌️',
+                paper: '✋'
+            };
+            
+            const choiceNames = {
+                rock: '바위',
+                scissors: '가위',
+                paper: '보'
+            };
+            
+            // 승부 판정
+            let result;
+            let winnings = 0;
+            let streakBonus = 0;
+            
+            if (playerChoice === botChoice) {
+                result = 'draw';
+                winnings = betAmount; // 무승부시 베팅금 반환
+            } else if (
+                (playerChoice === 'rock' && botChoice === 'scissors') ||
+                (playerChoice === 'scissors' && botChoice === 'paper') ||
+                (playerChoice === 'paper' && botChoice === 'rock')
+            ) {
+                result = 'win';
+                const baseWinnings = Math.floor(betAmount * RPS_GAME.winMultiplier);
+                
+                // 연승 보너스 계산
+                user.rpsGameData.currentStreak++;
+                if (user.rpsGameData.currentStreak > user.rpsGameData.bestStreak) {
+                    user.rpsGameData.bestStreak = user.rpsGameData.currentStreak;
+                }
+                
+                if (user.rpsGameData.currentStreak >= 3) {
+                    const streakMultiplier = Math.min(1 + (user.rpsGameData.currentStreak - 2) * 0.1, 2.0);
+                    streakBonus = Math.floor(baseWinnings * (streakMultiplier - 1));
+                }
+                
+                winnings = baseWinnings + streakBonus;
+            } else {
+                result = 'lose';
+                user.rpsGameData.currentStreak = 0;
+            }
+            
+            // 게임 통계 업데이트
+            user.gold -= betAmount;
+            user.gold += winnings;
+            user.rpsGameData.totalGames++;
+            user.rpsGameData.botTickets--;
+            
+            if (result === 'win') {
+                user.rpsGameData.wins++;
+                user.rpsGameData.totalWinnings += winnings;
+            } else if (result === 'lose') {
+                user.rpsGameData.losses++;
+                user.rpsGameData.totalLosses += betAmount;
+            } else {
+                user.rpsGameData.draws++;
+            }
+            
+            await user.save();
+            
+            // 결과 임베드
+            const resultColors = {
+                win: '#00ff00',
+                lose: '#ff0000',
+                draw: '#ffff00'
+            };
+            
+            const resultTitles = {
+                win: '🎉 승리!',
+                lose: '😢 패배!',
+                draw: '🤝 무승부!'
+            };
+            
+            const resultEmbed = new EmbedBuilder()
+                .setColor(resultColors[result])
+                .setTitle(resultTitles[result])
+                .setDescription(`**당신의 선택**: ${choiceEmojis[playerChoice]} ${choiceNames[playerChoice]}\n**봇의 선택**: ${choiceEmojis[botChoice]} ${choiceNames[botChoice]}`)
+                .addFields(
+                    { name: '💰 베팅 금액', value: `${betAmount.toLocaleString()}G`, inline: true },
+                    { name: '💸 결과', value: result === 'win' ? `+${winnings.toLocaleString()}G` : result === 'draw' ? '반환' : `-${betAmount.toLocaleString()}G`, inline: true },
+                    { name: '🔥 연승', value: `${user.rpsGameData.currentStreak}회`, inline: true }
+                );
+            
+            if (streakBonus > 0) {
+                resultEmbed.addFields({ name: '🎁 연승 보너스', value: `+${streakBonus.toLocaleString()}G`, inline: false });
+            }
+            
+            const playAgainButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('rps_bot')
+                        .setLabel('🎮 다시 하기')
+                        .setStyle(ButtonStyle.Primary)
+                        .setDisabled(user.rpsGameData.botTickets < 1),
+                    new ButtonBuilder()
+                        .setCustomId('rps_menu')
+                        .setLabel('🎯 게임 메뉴')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 메인 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({
+                embeds: [resultEmbed],
+                components: [playAgainButtons]
+            });
+        }
+        
+        // 슬롯머신 - 베팅 버튼 처리
+        else if (interaction.customId.startsWith('slot_bet_')) {
+            const betAmount = parseInt(interaction.customId.replace('slot_bet_', ''));
+            const user = await getUser(interaction.user.id);
+            
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            if (user.gold < betAmount) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 슬롯머신 통계 초기화
+            if (!user.slotStats) {
+                user.slotStats = {
+                    totalSpins: 0,
+                    totalBet: 0,
+                    totalWon: 0,
+                    biggestWin: 0,
+                    jackpotWins: 0,
+                    currentStreak: 0,
+                    bestStreak: 0,
+                    lastSpin: null
+                };
+            }
+            
+            // 매크로 감지 시스템 기록
+            recordUserAction(interaction.user.id, 'slot_spin', Date.now());
+            
+            // 매크로 방지 체크 (기존 시스템도 유지)
+            const suspicionScore = trackUserAction(interaction.user.id, 'slot_spin');
+            if (suspicionScore > 50) {
+                const captcha = generateCaptcha('math');
+                const captchaEmbed = new EmbedBuilder()
+                    .setColor('#FFA500')
+                    .setTitle('🤖 매크로 방지 검증')
+                    .setDescription(`의심스러운 패턴이 감지되었습니다.\n다음 문제를 풀어주세요:\n\n**${captcha.question}**`)
+                    .setFooter({ text: '30초 내에 답변해주세요.' });
+                
+                const captchaModal = new ModalBuilder()
+                    .setCustomId(`captcha_slot_${betAmount}_${captcha.answer}`)
+                    .setTitle('매크로 방지 검증');
+                
+                const answerInput = new TextInputBuilder()
+                    .setCustomId('captcha_answer')
+                    .setLabel('답을 입력하세요')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+                
+                captchaModal.addComponents(new ActionRowBuilder().addComponents(answerInput));
+                
+                await interaction.showModal(captchaModal);
+                return;
+            }
+            
+            await interaction.deferReply();
+            
+            // 임시 채널 생성
+            const tempChannel = await createTempGameChannel(interaction.guild, interaction.user.id, '슬롯머신');
+            
+            if (!tempChannel) {
+                await interaction.editReply({ content: '임시 채널 생성에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+                return;
+            }
+            
+            await interaction.editReply({ 
+                content: `🎰 슬롯머신 게임이 ${tempChannel}에서 시작됩니다!`,
+                flags: 64
+            });
+            
+            // 스핀 실행
+            const spinResult = await executeSlotSpin(user, betAmount);
+            
+            // 스핀 애니메이션 임베드
+            const spinningEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🎰 스핀 중...')
+                .setDescription('🔄 🔄 🔄')
+                .setFooter({ text: '행운을 빕니다! 🍀' });
+            
+            await tempChannel.send({ embeds: [spinningEmbed] });
+            
+            // 2초 후 결과 표시
+            setTimeout(async () => {
+                const resultEmbed = new EmbedBuilder()
+                    .setColor(spinResult.win > 0 ? '#00FF00' : '#FF0000')
+                    .setTitle(spinResult.isJackpot ? '🎉 잭팟! 🎉' : '🎰 김헌터 슬롯머신')
+                    .setDescription(`\n${spinResult.symbols.join(' ')}\n`)
+                    .addFields(
+                        { name: '💰 베팅', value: `${betAmount.toLocaleString()}G`, inline: true },
+                        { name: spinResult.win > 0 ? '🏆 당첨!' : '❌ 꽝', value: `${spinResult.win.toLocaleString()}G`, inline: true },
+                        { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                    );
+                
+                if (spinResult.isJackpot) {
+                    resultEmbed.addFields(
+                        { name: '🎊 잭팟 당첨!', value: `축하합니다! ${spinResult.win.toLocaleString()}G를 획득했습니다!`, inline: false }
+                    );
+                }
+                
+                const playAgainButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`slot_spin_temp_${betAmount}`)
+                            .setLabel('🔄 다시 스핀')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(user.gold < betAmount),
+                        new ButtonBuilder()
+                            .setCustomId('slot_change_bet')
+                            .setLabel('💰 베팅 변경')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('slot_end_session')
+                            .setLabel('🏁 게임 종료')
+                            .setStyle(ButtonStyle.Danger)
+                    );
+                
+                await tempChannel.send({ embeds: [resultEmbed], components: [playAgainButtons] });
+            }, 2000);
+        }
+        
+        // 슬롯머신 - 자동 스핀
+        else if (interaction.customId === 'slot_auto') {
+            const modal = new ModalBuilder()
+                .setCustomId('slot_auto_modal')
+                .setTitle('🔄 자동 스핀 설정');
+            
+            const betInput = new TextInputBuilder()
+                .setCustomId('bet_amount')
+                .setLabel('베팅 금액')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('1000, 5000, 10000, 50000, 100000 중 선택')
+                .setRequired(true);
+            
+            const countInput = new TextInputBuilder()
+                .setCustomId('spin_count')
+                .setLabel('스핀 횟수')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('1 ~ 100')
+                .setRequired(true);
+            
+            const speedInput = new TextInputBuilder()
+                .setCustomId('spin_speed')
+                .setLabel('스핀 속도 (1: 빠름, 2: 보통, 3: 느림)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('1, 2, 또는 3')
+                .setRequired(true);
+            
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(betInput),
+                new ActionRowBuilder().addComponents(countInput),
+                new ActionRowBuilder().addComponents(speedInput)
+            );
+            
+            await interaction.showModal(modal);
+        }
+        
+        // 슬롯머신 - 스핀 기록
+        else if (interaction.customId === 'slot_history') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const history = slotMachineHistory.get(interaction.user.id) || [];
+            
+            if (history.length === 0) {
+                await interaction.reply({ content: '아직 스핀 기록이 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const historyEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('📜 최근 스핀 기록')
+                .setDescription(history.slice(-10).map((spin, index) => 
+                    `${index + 1}. ${spin.symbols.join(' ')} | ${spin.win > 0 ? '✅' : '❌'} ${spin.win.toLocaleString()}G`
+                ).join('\n'))
+                .setFooter({ text: `총 ${history.length}회 스핀` });
+            
+            await interaction.reply({ embeds: [historyEmbed], flags: 64 });
+        }
+        
+        // 임시 채널 슬롯머신 - 다시 스핀
+        else if (interaction.customId.startsWith('slot_spin_temp_')) {
+            const betAmount = parseInt(interaction.customId.split('_')[3]);
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            if (user.gold < betAmount) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 매크로 감지 시스템 기록
+            recordUserAction(interaction.user.id, 'slot_spin', Date.now());
+            
+            // 매크로 방지 체크 (기존 시스템도 유지)
+            const suspicionScore = trackUserAction(interaction.user.id, 'slot_spin');
+            if (suspicionScore > 50) {
+                const captcha = generateCaptcha('math');
+                const captchaModal = new ModalBuilder()
+                    .setCustomId(`captcha_slot_${betAmount}_${captcha.answer}`)
+                    .setTitle('매크로 방지 검증');
+                
+                const answerInput = new TextInputBuilder()
+                    .setCustomId('captcha_answer')
+                    .setLabel(`다음 문제를 풀어주세요: ${captcha.question}`)
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+                
+                captchaModal.addComponents(new ActionRowBuilder().addComponents(answerInput));
+                await interaction.showModal(captchaModal);
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            
+            // 스핀 실행
+            const spinResult = await executeSlotSpin(user, betAmount);
+            
+            // 스핀 애니메이션
+            const spinningEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🎰 스핀 중...')
+                .setDescription('🔄 🔄 🔄')
+                .setFooter({ text: '행운을 빕니다! 🍀' });
+            
+            await interaction.editReply({ embeds: [spinningEmbed], components: [] });
+            
+            // 2초 후 결과 표시
+            setTimeout(async () => {
+                const resultEmbed = new EmbedBuilder()
+                    .setColor(spinResult.win > 0 ? '#00FF00' : '#FF0000')
+                    .setTitle(spinResult.isJackpot ? '🎉 잭팟! 🎉' : '🎰 김헌터 슬롯머신')
+                    .setDescription(`\n${spinResult.symbols.join(' ')}\n`)
+                    .addFields(
+                        { name: '💰 베팅', value: `${betAmount.toLocaleString()}G`, inline: true },
+                        { name: spinResult.win > 0 ? '🏆 당첨!' : '❌ 꽝', value: `${spinResult.win.toLocaleString()}G`, inline: true },
+                        { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                    );
+                
+                if (spinResult.isJackpot) {
+                    resultEmbed.addFields(
+                        { name: '🎊 잭팟 당첨!', value: `축하합니다! ${spinResult.win.toLocaleString()}G를 획득했습니다!`, inline: false }
+                    );
+                }
+                
+                const playAgainButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`slot_spin_temp_${betAmount}`)
+                            .setLabel('🔄 다시 스핀')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(user.gold < betAmount),
+                        new ButtonBuilder()
+                            .setCustomId('slot_change_bet')
+                            .setLabel('💰 베팅 변경')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('slot_end_session')
+                            .setLabel('🏁 게임 종료')
+                            .setStyle(ButtonStyle.Danger)
+                    );
+                
+                await interaction.editReply({ embeds: [resultEmbed], components: [playAgainButtons] });
+            }, 2000);
+        }
+        
+        // 임시 채널 슬롯머신 - 베팅 변경
+        else if (interaction.customId === 'slot_change_bet') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const betEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('💰 베팅 금액 선택')
+                .setDescription('새로운 베팅 금액을 선택하세요')
+                .addFields(
+                    { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                );
+            
+            const betButtons = new ActionRowBuilder()
+                .addComponents(
+                    ...SLOT_MACHINE.betAmounts.slice(0, 5).map(amount => 
+                        new ButtonBuilder()
+                            .setCustomId(`slot_spin_temp_${amount}`)
+                            .setLabel(`${amount.toLocaleString()}G`)
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(user.gold < amount)
+                    )
+                );
+            
+            await interaction.update({ embeds: [betEmbed], components: [betButtons] });
+        }
+        
+        // 임시 채널 슬롯머신 - 게임 종료
+        else if (interaction.customId === 'slot_end_session') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            const sessionStats = slotMachineHistory.get(interaction.user.id) || [];
+            const sessionWins = sessionStats.filter(s => s.win > 0).length;
+            const sessionBet = sessionStats.reduce((sum, s) => sum + s.bet, 0);
+            const sessionWon = sessionStats.reduce((sum, s) => sum + s.win, 0);
+            const sessionProfit = sessionWon - sessionBet;
+            
+            const endEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🏁 게임 종료')
+                .setDescription('슬롯머신 세션이 종료되었습니다!')
+                .addFields(
+                    { name: '🎲 총 스핀', value: `${sessionStats.length}회`, inline: true },
+                    { name: '✅ 당첨', value: `${sessionWins}회`, inline: true },
+                    { name: '💹 수익', value: `${sessionProfit.toLocaleString()}G`, inline: true },
+                    { name: '<:currency_emoji:1377404064316522778> 최종 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
+                )
+                .setFooter({ text: '다음에 또 도전해보세요! 🍀' });
+            
+            await interaction.update({ embeds: [endEmbed], components: [] });
+            
+            // 5초 후 채널 삭제
+            setTimeout(async () => {
+                const channel = interaction.channel;
+                if (channel && channel.name.startsWith('슬롯머신-')) {
+                    await deleteTempChannel(channel.id);
+                }
+            }, 5000);
+        }
+        
+        // 슬롯머신 - 잭팟 명예의 전당
+        else if (interaction.customId === 'slot_ranking') {
+            // 잭팟 당첨자 목록 (실제로는 DB에서 가져와야 함)
+            const jackpotWinners = [];
+            
+            const rankingEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🏆 잭팟 명예의 전당')
+                .setDescription(jackpotWinners.length > 0 
+                    ? jackpotWinners.map((winner, index) => 
+                        `${index + 1}. ${winner.nickname} - ${winner.amount.toLocaleString()}G (${winner.date})`
+                    ).join('\n')
+                    : '아직 잭팟 당첨자가 없습니다!')
+                .addFields(
+                    { name: '💰 현재 잭팟', value: `${SLOT_MACHINE.jackpot.currentAmount.toLocaleString()}G`, inline: true }
+                )
+                .setFooter({ text: '다음 주인공은 당신!' });
+            
+            await interaction.reply({ embeds: [rankingEmbed], flags: 64 });
+        }
+        
+        // 슬롯머신 메뉴로 돌아가기
+        else if (interaction.customId === 'slot_menu') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 슬롯머신 통계 초기화
+            if (!user.slotStats) {
+                user.slotStats = {
+                    totalSpins: 0,
+                    totalBet: 0,
+                    totalWon: 0,
+                    biggestWin: 0,
+                    jackpotWins: 0,
+                    currentStreak: 0,
+                    bestStreak: 0,
+                    lastSpin: null
+                };
+                await user.save();
+            }
+            
+            const netProfit = user.slotStats.totalWon - user.slotStats.totalBet;
+            const winRate = user.slotStats.totalSpins > 0 
+                ? Math.floor((user.slotStats.totalWon / user.slotStats.totalBet) * 100) || 0
+                : 0;
+            
+            const slotEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🎰 김헌터 슬롯머신')
+                .setDescription('🐕 김헌터를 3개 모으면 잭팟! 💰')
+                .addFields(
+                    { name: '💰 현재 잭팟', value: `${SLOT_MACHINE.jackpot.currentAmount.toLocaleString()}G`, inline: true },
+                    { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                    { name: '🎲 총 스핀', value: `${user.slotStats.totalSpins}회`, inline: true },
+                    { name: '📊 순수익', value: `${netProfit.toLocaleString()}G`, inline: true },
+                    { name: '💹 수익률', value: `${winRate}%`, inline: true },
+                    { name: '🏆 최고 당첨', value: `${user.slotStats.biggestWin.toLocaleString()}G`, inline: true }
+                )
+                .setFooter({ text: '행운을 빕니다! 🍀' });
+            
+            // 베팅 금액 선택 버튼
+            const betButtons = new ActionRowBuilder()
+                .addComponents(
+                    ...SLOT_MACHINE.betAmounts.slice(0, 5).map(amount => 
+                        new ButtonBuilder()
+                            .setCustomId(`slot_bet_${amount}`)
+                            .setLabel(`${amount.toLocaleString()}G`)
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(user.gold < amount)
+                    )
+                );
+            
+            const actionButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('slot_auto')
+                        .setLabel('🔄 자동 스핀')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(user.gold < SLOT_MACHINE.betAmounts[0]),
+                    new ButtonBuilder()
+                        .setCustomId('slot_history')
+                        .setLabel('📜 스핀 기록')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('slot_ranking')
+                        .setLabel('🏆 잭팟 명예의 전당')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 게임 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({ embeds: [slotEmbed], components: [betButtons, actionButtons] });
+        }
+        
+        // 던전 탐험 - 던전 입장
+        else if (interaction.customId === 'dungeon_enter') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            if (user.gold < DUNGEON_CRAWLER.entryFee) {
+                await interaction.reply({ content: '골드가 부족합니다!', flags: 64 });
+                return;
+            }
+            
+            // 이미 진행 중인 던전이 있는지 확인
+            if (dungeonSessions.has(interaction.user.id)) {
+                await interaction.reply({ content: '이미 던전 탐험을 진행 중입니다!', flags: 64 });
+                return;
+            }
+            
+            // 매크로 방지 체크
+            const suspicionScore = trackUserAction(interaction.user.id, 'dungeon_enter');
+            if (suspicionScore > 50) {
+                const captcha = generateCaptcha('emoji');
+                const captchaEmbed = new EmbedBuilder()
+                    .setColor('#FFA500')
+                    .setTitle('🤖 매크로 방지 검증')
+                    .setDescription(`의심스러운 패턴이 감지되었습니다.\n다음 문제를 풀어주세요:\n\n**${captcha.question}**`)
+                    .setFooter({ text: '30초 내에 답변해주세요.' });
+                
+                const captchaModal = new ModalBuilder()
+                    .setCustomId(`captcha_dungeon_${captcha.answer}`)
+                    .setTitle('매크로 방지 검증');
+                
+                const answerInput = new TextInputBuilder()
+                    .setCustomId('captcha_answer')
+                    .setLabel('답을 입력하세요')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+                
+                captchaModal.addComponents(new ActionRowBuilder().addComponents(answerInput));
+                
+                await interaction.showModal(captchaModal);
+                return;
+            }
+            
+            await interaction.deferReply();
+            
+            // 임시 채널 생성
+            const tempChannel = await createTempGameChannel(interaction.guild, interaction.user.id, '던전탐험');
+            
+            if (!tempChannel) {
+                await interaction.editReply({ content: '임시 채널 생성에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+                return;
+            }
+            
+            await interaction.editReply({ 
+                content: `🏰 던전 탐험이 ${tempChannel}에서 시작됩니다!`,
+                flags: 64
+            });
+            
+            // 입장료 차감
+            user.gold -= DUNGEON_CRAWLER.entryFee;
+            await user.save();
+            
+            // 던전 세션 생성
+            const session = {
+                userId: interaction.user.id,
+                floor: 1,
+                hp: DUNGEON_CRAWLER.baseHp,
+                maxHp: DUNGEON_CRAWLER.baseHp,
+                attack: DUNGEON_CRAWLER.baseAttack,
+                defense: DUNGEON_CRAWLER.baseDefense,
+                inventory: [],
+                goldEarned: 0,
+                monstersDefeated: 0,
+                startTime: new Date(),
+                channelId: tempChannel.id
+            };
+            
+            dungeonSessions.set(interaction.user.id, session);
+            
+            // 1층 시작
+            await startDungeonFloorTemp(tempChannel, session, 1);
+        }
+        
+        // 던전 탐험 - 가이드
+        else if (interaction.customId === 'dungeon_guide') {
+            const guideEmbed = new EmbedBuilder()
+                .setColor('#8B4513')
+                .setTitle('📖 던전 탐험 가이드')
+                .setDescription('던전 탐험의 모든 것!')
+                .addFields(
+                    { name: '🎮 게임 방식', value: '5층 던전을 탐험하며 몹스터를 처치하고 보물을 찾으세요.', inline: false },
+                    { name: '⚔️ 전투', value: '각 층에서 몹스터와 전투를 펼쳐야 합니다.\n승리 시 골드와 경험치를 획듍!', inline: false },
+                    { name: '🎲 도주', value: '50% 확률로 도망칠 수 있지만, 보상을 받을 수 없습니다.', inline: false },
+                    { name: '🎰 아이템', value: '각 층에서 아이템을 발견할 수 있습니다:\n🧪 체력 포션 - HP 회복\n⚔️ 공격력 증가 - 공격력 상승\n🛡️ 방어력 증가 - 방어력 상승\n🪀 탈출 로프 - 즉시 탈출\n🗝️ 보물 열쇠 - 보너스 보상', inline: false },
+                    { name: '👾 보스', value: '각 층마다 보스가 나타날 확률이 있습니다:\n1층: 10%\n2층: 15%\n3층: 20%\n4층: 25%\n5층: 30%', inline: false },
+                    { name: '💰 보상', value: '더 깊은 층으로 갈수록 더 많은 보상을 획듍합니다!', inline: false }
+                )
+                .setFooter({ text: '행운을 비네요, 모험가여!' });
+            
+            await interaction.reply({ embeds: [guideEmbed], flags: 64 });
+        }
+        
+        // 던전 탐험 - 랭킹
+        else if (interaction.customId === 'dungeon_ranking') {
+            const rankings = await User.find({ 'dungeonStats.maxFloor': { $gt: 0 } })
+                .sort({ 'dungeonStats.maxFloor': -1, 'dungeonStats.totalGoldEarned': -1 })
+                .limit(10);
+            
+            const rankingEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🏆 던전 탐험 랭킹')
+                .setDescription(rankings.length > 0 
+                    ? rankings.map((user, index) => 
+                        `${index + 1}. ${user.nickname || '이름없음'} - ${user.dungeonStats.maxFloor}층 | ${user.dungeonStats.totalGoldEarned.toLocaleString()}G`
+                    ).join('\n')
+                    : '아직 랭킹이 없습니다!')
+                .setFooter({ text: '당신도 도전해보세요!' });
+            
+            await interaction.reply({ embeds: [rankingEmbed], flags: 64 });
+        }
+        
+        // 던전 탐험 - 전투 선택
+        else if (interaction.customId === 'dungeon_fight') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            await executeDungeonBattle(interaction, session);
+        }
+        
+        // 던전 탐험 - 아이템 사용
+        else if (interaction.customId === 'dungeon_item') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session || session.inventory.length === 0) {
+                await interaction.reply({ content: '사용할 수 있는 아이템이 없습니다!', flags: 64 });
+                return;
+            }
+            
+            // 아이템 선택 메뉴 표시
+            const itemMenu = new StringSelectMenuBuilder()
+                .setCustomId('dungeon_use_item')
+                .setPlaceholder('사용할 아이템을 선택하세요');
+            
+            session.inventory.forEach((item, index) => {
+                const itemData = DUNGEON_CRAWLER.items[item];
+                itemMenu.addOptions({
+                    label: itemData.name,
+                    description: `효과: ${itemData.effect}`,
+                    value: `${index}_${item}`,
+                    emoji: itemData.emoji
+                });
+            });
+            
+            const row = new ActionRowBuilder().addComponents(itemMenu);
+            await interaction.reply({ content: '사용할 아이템을 선택하세요:', components: [row], flags: 64 });
+        }
+        
+        // 던전 탐험 - 도망
+        else if (interaction.customId === 'dungeon_run') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            const runSuccess = Math.random() < 0.5;
+            
+            if (runSuccess) {
+                await interaction.reply({ content: '🏃 도망에 성공했습니다! 다음 층으로 이동합니다.', flags: 64 });
+                
+                // 다음 층으로
+                session.floor++;
+                if (session.floor > DUNGEON_CRAWLER.maxFloor) {
+                    await endDungeonRun(interaction, session, true);
+                } else {
+                    await startDungeonFloor(interaction, session, session.floor);
+                }
+            } else {
+                // 도망 실패 - 피해 받음
+                const damage = Math.floor(Math.random() * 20) + 10;
+                session.hp -= damage;
+                
+                if (session.hp <= 0) {
+                    await interaction.reply({ content: '☠️ 도망에 실패하고 쓰러졌습니다...', flags: 64 });
+                    await endDungeonRun(interaction, session, false);
+                } else {
+                    await interaction.reply({ 
+                        content: `❌ 도망에 실패했습니다! ${damage}의 피해를 입었습니다. (HP: ${session.hp}/${session.maxHp})`, 
+                        flags: 64 
+                    });
+                    // 계속 전투
+                    setTimeout(() => startDungeonFloor(interaction, session, session.floor), 1000);
+                }
+            }
+        }
+        
+        // 던전 탐험 - 다음 층
+        else if (interaction.customId === 'dungeon_next') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            session.floor++;
+            
+            if (session.floor > DUNGEON_CRAWLER.maxFloor) {
+                await endDungeonRun(interaction, session, true);
+            } else {
+                await interaction.deferUpdate();
+                await startDungeonFloor(interaction, session, session.floor);
+            }
+        }
+        
+        // 던전 탐험 - 탈출
+        else if (interaction.customId === 'dungeon_escape') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            await endDungeonRun(interaction, session, true);
+        }
+        
+        // 던전 탐험 - 아이템 사용 선택 메뉴
+        else if (interaction.customId === 'dungeon_use_item') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            const [index, itemId] = interaction.values[0].split('_');
+            const item = DUNGEON_CRAWLER.items[itemId];
+            
+            if (!item) {
+                await interaction.reply({ content: '아이템을 찾을 수 없습니다.', flags: 64 });
+                return;
+            }
+            
+            // 아이템 효과 적용
+            let message = '';
+            switch (item.effect) {
+                case 'heal':
+                    const healAmount = Math.min(item.value, session.maxHp - session.hp);
+                    session.hp += healAmount;
+                    message = `${item.emoji} ${item.name}을 사용하여 HP를 ${healAmount} 회복했습니다! (HP: ${session.hp}/${session.maxHp})`;
+                    break;
+                case 'attack':
+                    session.attack += item.value;
+                    message = `${item.emoji} ${item.name}을 사용하여 공격력이 ${item.value} 증가했습니다! (공격력: ${session.attack})`;
+                    break;
+                case 'defense':
+                    session.defense += item.value;
+                    message = `${item.emoji} ${item.name}을 사용하여 방어력이 ${item.value} 증가했습니다! (방어력: ${session.defense})`;
+                    break;
+                case 'escape':
+                    message = `${item.emoji} ${item.name}을 사용하여 안전하게 탈출합니다!`;
+                    await interaction.reply({ content: message, flags: 64 });
+                    await endDungeonRun(interaction, session, true);
+                    return;
+                case 'treasure':
+                    const treasureGold = Math.floor(Math.random() * 5000) + 2000;
+                    session.goldEarned += treasureGold;
+                    message = `${item.emoji} ${item.name}으로 보물 상자를 열어 ${treasureGold.toLocaleString()}G를 획득했습니다!`;
+                    break;
+            }
+            
+            // 인벤토리에서 아이템 제거
+            session.inventory.splice(parseInt(index), 1);
+            
+            await interaction.reply({ content: message, flags: 64 });
+        }
+        
+        // 던전 메뉴로 돌아가기
+        else if (interaction.customId === 'dungeon_menu') {
+            const user = await getUser(interaction.user.id);
+            if (!user || !user.registered) {
+                await interaction.reply({ content: '먼저 회원가입을 해주세요!', flags: 64 });
+                return;
+            }
+            
+            // 던전 통계 초기화
+            if (!user.dungeonStats) {
+                user.dungeonStats = {
+                    totalRuns: 0,
+                    maxFloor: 0,
+                    totalGoldEarned: 0,
+                    totalDeaths: 0,
+                    bossKills: 0,
+                    itemsFound: 0,
+                    lastRun: null
+                };
+                await user.save();
+            }
+            
+            const dungeonEmbed = new EmbedBuilder()
+                .setColor('#8B4513')
+                .setTitle('🏰 던전 탐험')
+                .setDescription('5층 던전을 탐험하고 보물을 찾으세요!\n각 층마다 더 강력한 몬스터가 기다리고 있습니다.')
+                .addFields(
+                    { name: '💰 입장료', value: `${DUNGEON_CRAWLER.entryFee.toLocaleString()}G`, inline: true },
+                    { name: '🏰 최대 층수', value: `${DUNGEON_CRAWLER.maxFloor}층`, inline: true },
+                    { name: '<:currency_emoji:1377404064316522778> 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                    { name: '📊 최고 기록', value: `${user.dungeonStats.maxFloor}층`, inline: true },
+                    { name: '🎯 총 탐험', value: `${user.dungeonStats.totalRuns}회`, inline: true },
+                    { name: '💀 보스 처치', value: `${user.dungeonStats.bossKills}마리`, inline: true }
+                )
+                .setFooter({ text: '준비가 되셨나요? 던전이 당신을 기다립니다!' });
+            
+            const dungeonButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dungeon_enter')
+                        .setLabel('🏰 던전 입장')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(user.gold < DUNGEON_CRAWLER.entryFee),
+                    new ButtonBuilder()
+                        .setCustomId('dungeon_guide')
+                        .setLabel('📖 가이드')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('dungeon_ranking')
+                        .setLabel('🏆 랭킹')
+                        .setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder()
+                        .setCustomId('back_to_game_menu')
+                        .setLabel('🎮 게임 메뉴')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.update({ embeds: [dungeonEmbed], components: [dungeonButtons] });
+        }
+        
+        // 임시 채널 던전 - 전투
+        else if (interaction.customId === 'dungeon_fight_temp') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            // 매크로 방지 체크
+            const suspicionScore = trackUserAction(interaction.user.id, 'dungeon_fight');
+            if (suspicionScore > 50) {
+                const captcha = generateCaptcha('color');
+                const captchaModal = new ModalBuilder()
+                    .setCustomId(`captcha_dungeon_fight_${captcha.answer}`)
+                    .setTitle('매크로 방지 검증');
+                
+                const answerInput = new TextInputBuilder()
+                    .setCustomId('captcha_answer')
+                    .setLabel(`다음 문제를 풀어주세요: ${captcha.question}`)
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+                
+                captchaModal.addComponents(new ActionRowBuilder().addComponents(answerInput));
+                await interaction.showModal(captchaModal);
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            const channel = client.channels.cache.get(session.channelId);
+            if (!channel) return;
+            
+            await executeDungeonBattleTemp(channel, session);
+        }
+        
+        // 임시 채널 던전 - 아이템 사용
+        else if (interaction.customId === 'dungeon_item_temp') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session || session.inventory.length === 0) {
+                await interaction.reply({ content: '사용할 수 있는 아이템이 없습니다!', flags: 64 });
+                return;
+            }
+            
+            const itemMenu = new StringSelectMenuBuilder()
+                .setCustomId('dungeon_use_item_temp')
+                .setPlaceholder('사용할 아이템을 선택하세요');
+            
+            session.inventory.forEach((item, index) => {
+                const itemData = DUNGEON_CRAWLER.items[item];
+                itemMenu.addOptions({
+                    label: itemData.name,
+                    description: `효과: ${itemData.effect}`,
+                    value: `${index}_${item}`,
+                    emoji: itemData.emoji
+                });
+            });
+            
+            const row = new ActionRowBuilder().addComponents(itemMenu);
+            await interaction.reply({ content: '사용할 아이템을 선택하세요:', components: [row], flags: 64 });
+        }
+        
+        // 임시 채널 던전 - 도망
+        else if (interaction.customId === 'dungeon_run_temp') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            const channel = client.channels.cache.get(session.channelId);
+            if (!channel) return;
+            
+            const runSuccess = Math.random() < 0.5;
+            
+            if (runSuccess) {
+                await channel.send({ content: '🏃 도망에 성공했습니다! 다음 층으로 이동합니다.' });
+                
+                session.floor++;
+                if (session.floor > DUNGEON_CRAWLER.maxFloor) {
+                    await endDungeonRunTemp(channel, session, true);
+                } else {
+                    await startDungeonFloorTemp(channel, session, session.floor);
+                }
+            } else {
+                const damage = Math.floor(Math.random() * 20) + 10;
+                session.hp -= damage;
+                
+                if (session.hp <= 0) {
+                    await channel.send({ content: '☠️ 도망에 실패하고 쓰러졌습니다...' });
+                    await endDungeonRunTemp(channel, session, false);
+                } else {
+                    await channel.send({ content: `❌ 도망에 실패했습니다! ${damage}의 피해를 입었습니다. (HP: ${session.hp}/${session.maxHp})` });
+                    setTimeout(() => startDungeonFloorTemp(channel, session, session.floor), 1000);
+                }
+            }
+        }
+        
+        // 임시 채널 던전 - 다음 층
+        else if (interaction.customId === 'dungeon_next_temp') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            const channel = client.channels.cache.get(session.channelId);
+            if (!channel) return;
+            
+            session.floor++;
+            
+            if (session.floor > DUNGEON_CRAWLER.maxFloor) {
+                await endDungeonRunTemp(channel, session, true);
+            } else {
+                await startDungeonFloorTemp(channel, session, session.floor);
+            }
+        }
+        
+        // 임시 채널 던전 - 탈출
+        else if (interaction.customId === 'dungeon_escape_temp') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            await interaction.deferUpdate();
+            const channel = client.channels.cache.get(session.channelId);
+            if (!channel) return;
+            
+            await endDungeonRunTemp(channel, session, true);
+        }
+        
+        // 임시 채널 던전 - 아이템 사용 선택
+        else if (interaction.customId === 'dungeon_use_item_temp') {
+            const session = dungeonSessions.get(interaction.user.id);
+            if (!session) {
+                await interaction.reply({ content: '던전 세션이 만료되었습니다.', flags: 64 });
+                return;
+            }
+            
+            const [index, itemId] = interaction.values[0].split('_');
+            const item = DUNGEON_CRAWLER.items[itemId];
+            const channel = client.channels.cache.get(session.channelId);
+            if (!channel || !item) return;
+            
+            let message = '';
+            switch (item.effect) {
+                case 'heal':
+                    const healAmount = Math.min(item.value, session.maxHp - session.hp);
+                    session.hp += healAmount;
+                    message = `${item.emoji} ${item.name}을 사용하여 HP를 ${healAmount} 회복했습니다! (HP: ${session.hp}/${session.maxHp})`;
+                    break;
+                case 'attack':
+                    session.attack += item.value;
+                    message = `${item.emoji} ${item.name}을 사용하여 공격력이 ${item.value} 증가했습니다! (공격력: ${session.attack})`;
+                    break;
+                case 'defense':
+                    session.defense += item.value;
+                    message = `${item.emoji} ${item.name}을 사용하여 방어력이 ${item.value} 증가했습니다! (방어력: ${session.defense})`;
+                    break;
+                case 'escape':
+                    message = `${item.emoji} ${item.name}을 사용하여 안전하게 탈출합니다!`;
+                    await interaction.reply({ content: message, flags: 64 });
+                    await endDungeonRunTemp(channel, session, true);
+                    return;
+                case 'treasure':
+                    const treasureGold = Math.floor(Math.random() * 5000) + 2000;
+                    session.goldEarned += treasureGold;
+                    message = `${item.emoji} ${item.name}으로 보물 상자를 열어 ${treasureGold.toLocaleString()}G를 획득했습니다!`;
+                    break;
+            }
+            
+            session.inventory.splice(parseInt(index), 1);
+            await interaction.reply({ content: message, flags: 64 });
+        }
+        
+        // 던전 다시 도전
+        else if (interaction.customId === 'dungeon_restart') {
+            await interaction.deferUpdate();
+            await interaction.editReply({ content: '🏰 새로운 던전 탐험을 시작하려면 메뉴에서 다시 입장해주세요!', embeds: [], components: [] });
         }
         
         // 게임 메인 메뉴로 돌아가기
@@ -25242,6 +33597,15 @@ client.on('interactionCreate', async (interaction) => {
                         { name: '🎯 성공률', value: `${successRate}%`, inline: true },
                         { name: '🔥 연속 성공', value: `${user.energyFragments.consecutiveSuccess}회`, inline: true }
                     );
+                
+                // 일일 미션 완료 알림 추가
+                if (missionResult && missionResult.completed) {
+                    resultEmbed.addFields({
+                        name: '🎯 일일 미션 완료!',
+                        value: `✅ **조각 융합 미션 완료!**\n🎁 보상: ${missionResult.reward.gold.toLocaleString()} 골드, ${missionResult.reward.exp} EXP`,
+                        inline: false
+                    });
+                }
             } else {
                 // 실패
                 user.energyFragments.consecutiveSuccess = 0;
@@ -25272,6 +33636,9 @@ client.on('interactionCreate', async (interaction) => {
             // 융합 횟수 증가
             user.energyFragments.dailyFusions++;
             user.energyFragments.totalFusions++;
+            
+            // 일일 미션 업데이트 (조각 융합)
+            const missionResult = await updateDailyMission(user, 'fragment', 1);
             
             await user.save();
             
@@ -25404,6 +33771,248 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             await mushroomGame.endGame(interaction, userId);
+        }
+        
+        else if (interaction.customId.startsWith('mushroom_cancel_')) {
+            const userId = interaction.customId.split('_')[2];
+            if (userId !== interaction.user.id) return;
+            
+            mushroomMatchmakingQueue.delete(userId);
+            await interaction.update({
+                content: '❌ 매칭이 취소되었습니다.',
+                embeds: [],
+                components: []
+            });
+        }
+        
+        // 멀티플레이어 로비 참가
+        else if (interaction.customId.startsWith('mushroom_join_')) {
+            const lobbyId = interaction.customId.replace('mushroom_join_', '');
+            const session = Array.from(mushroomGame.sessions.values()).find(s => s.lobbyId === lobbyId);
+            
+            if (!session || session.gameStarted) {
+                return interaction.reply({ content: '❌ 참가할 수 없는 게임입니다.', ephemeral: true });
+            }
+            
+            const userId = interaction.user.id;
+            const user = await getUser(userId);
+            
+            if (session.players.has(userId)) {
+                return interaction.reply({ content: '❌ 이미 참가중입니다.', ephemeral: true });
+            }
+            
+            if (session.players.size >= MUSHROOM_GAME.gameSettings.maxPlayers) {
+                return interaction.reply({ content: '❌ 인원이 가득 찼습니다.', ephemeral: true });
+            }
+            
+            if (user.gold < MUSHROOM_GAME.gameSettings.entryFee) {
+                return interaction.reply({ content: `❌ 참가비 ${MUSHROOM_GAME.gameSettings.entryFee}G가 부족합니다.`, ephemeral: true });
+            }
+            
+            // 플레이어 추가
+            session.players.set(userId, {
+                userId: userId,
+                userName: user.nickname || interaction.user.username,
+                ready: true,
+                isHost: false,
+                totalReward: 0,
+                survivedRounds: 0,
+                isAlive: true
+            });
+            
+            mushroomGame.sessions.set(userId, session);
+            
+            // 권한 업데이트
+            if (session.tempChannel) {
+                await session.tempChannel.permissionOverwrites.edit(userId, {
+                    ViewChannel: true,
+                    SendMessages: true
+                });
+            }
+            
+            // 대기실 업데이트
+            const playerList = Array.from(session.players.values())
+                .map((p, i) => `${i + 1}. ${p.userName} ${p.isHost ? '(호스트)' : ''} ✅`)
+                .join('\n');
+                
+            const lobbyEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('🍄 버섯 사냥 멀티플레이어 대기실')
+                .setDescription(`호스트: ${session.hostName}\n\n참가비: ${MUSHROOM_GAME.gameSettings.entryFee}G\n인원: ${session.players.size}/${MUSHROOM_GAME.gameSettings.maxPlayers}명`)
+                .addFields(
+                    { name: '📋 참가자', value: playerList, inline: false }
+                )
+                .setFooter({ text: '30초 후 자동 시작됩니다' });
+            
+            const startEnabled = session.players.size >= MUSHROOM_GAME.gameSettings.minPlayers;
+            
+            const lobbyButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_join_${lobbyId}`)
+                        .setLabel('🎮 참가하기')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_start_multi_${lobbyId}`)
+                        .setLabel('🚀 게임 시작')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(!startEnabled),
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_leave_${lobbyId}`)
+                        .setLabel('🚪 나가기')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            
+            await interaction.update({
+                embeds: [lobbyEmbed],
+                components: [lobbyButtons]
+            });
+        }
+        
+        // 멀티플레이어 시작
+        else if (interaction.customId.startsWith('mushroom_start_multi_')) {
+            const lobbyId = interaction.customId.replace('mushroom_start_multi_', '');
+            const session = Array.from(mushroomGame.sessions.values()).find(s => s.lobbyId === lobbyId);
+            
+            if (!session || session.gameStarted) {
+                return interaction.reply({ content: '❌ 게임을 시작할 수 없습니다.', ephemeral: true });
+            }
+            
+            if (interaction.user.id !== session.hostId) {
+                return interaction.reply({ content: '❌ 호스트만 게임을 시작할 수 있습니다.', ephemeral: true });
+            }
+            
+            if (session.players.size < MUSHROOM_GAME.gameSettings.minPlayers) {
+                return interaction.reply({ content: `❌ 최소 ${MUSHROOM_GAME.gameSettings.minPlayers}명이 필요합니다.`, ephemeral: true });
+            }
+            
+            if (session.waitingTimer) {
+                clearTimeout(session.waitingTimer);
+            }
+            
+            await mushroomGame.startMultiplayerGame(session.tempChannel || interaction.channel, lobbyId);
+            await interaction.deferUpdate();
+        }
+        
+        // 멀티플레이어 나가기
+        else if (interaction.customId.startsWith('mushroom_leave_')) {
+            const lobbyId = interaction.customId.replace('mushroom_leave_', '');
+            const session = Array.from(mushroomGame.sessions.values()).find(s => s.lobbyId === lobbyId);
+            
+            if (!session || session.gameStarted) {
+                return interaction.reply({ content: '❌ 나갈 수 없습니다.', ephemeral: true });
+            }
+            
+            const userId = interaction.user.id;
+            
+            if (!session.players.has(userId)) {
+                return interaction.reply({ content: '❌ 참가하지 않은 게임입니다.', ephemeral: true });
+            }
+            
+            // 호스트가 나가면 게임 취소
+            if (userId === session.hostId) {
+                if (session.waitingTimer) clearTimeout(session.waitingTimer);
+                
+                const cancelEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ 게임 취소')
+                    .setDescription('호스트가 나가서 게임이 취소되었습니다.');
+                
+                await interaction.update({
+                    embeds: [cancelEmbed],
+                    components: []
+                });
+                
+                if (session.tempChannel) {
+                    setTimeout(() => session.tempChannel.delete().catch(console.error), 5000);
+                }
+                
+                session.players.forEach((p, id) => {
+                    mushroomGame.sessions.delete(id);
+                });
+                return;
+            }
+            
+            // 일반 플레이어 나가기
+            session.players.delete(userId);
+            mushroomGame.sessions.delete(userId);
+            
+            if (session.tempChannel) {
+                await session.tempChannel.permissionOverwrites.delete(userId).catch(console.error);
+            }
+            
+            // 대기실 업데이트
+            const playerList = Array.from(session.players.values())
+                .map((p, i) => `${i + 1}. ${p.userName} ${p.isHost ? '(호스트)' : ''} ✅`)
+                .join('\n');
+            
+            const lobbyEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('🍄 버섯 사냥 멀티플레이어 대기실')
+                .setDescription(`호스트: ${session.hostName}\n\n참가비: ${MUSHROOM_GAME.gameSettings.entryFee}G\n인원: ${session.players.size}/${MUSHROOM_GAME.gameSettings.maxPlayers}명`)
+                .addFields(
+                    { name: '📋 참가자', value: playerList || '없음', inline: false }
+                )
+                .setFooter({ text: '30초 후 자동 시작됩니다' });
+            
+            const startEnabled = session.players.size >= MUSHROOM_GAME.gameSettings.minPlayers;
+            
+            const lobbyButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_join_${lobbyId}`)
+                        .setLabel('🎮 참가하기')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_start_multi_${lobbyId}`)
+                        .setLabel('🚀 게임 시작')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(!startEnabled),
+                    new ButtonBuilder()
+                        .setCustomId(`mushroom_leave_${lobbyId}`)
+                        .setLabel('🚪 나가기')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            
+            await interaction.update({
+                embeds: [lobbyEmbed],
+                components: [lobbyButtons]
+            });
+        }
+        
+        // 멀티플레이어 버섯 선택
+        else if (interaction.customId.startsWith('mushroom_multi_select_')) {
+            const parts = interaction.customId.split('_');
+            const lobbyId = parts[3];
+            const position = parseInt(parts[4]);
+            
+            const session = Array.from(mushroomGame.sessions.values()).find(s => s.lobbyId === lobbyId);
+            if (!session || !session.gameStarted) return;
+            
+            const userId = interaction.user.id;
+            const player = session.players.get(userId);
+            
+            if (!player || !player.isAlive) {
+                return interaction.reply({ content: '❌ 게임에 참가할 수 없습니다.', ephemeral: true });
+            }
+            
+            if (session.playerChoices.has(userId)) {
+                return interaction.reply({ content: '❌ 이미 선택했습니다.', ephemeral: true });
+            }
+            
+            session.playerChoices.set(userId, position);
+            
+            await interaction.reply({ 
+                content: `🍄 ${position}번 버섯을 선택했습니다! 다른 플레이어를 기다리는 중...`, 
+                ephemeral: true 
+            });
+            
+            // 모든 생존자가 선택했는지 확인
+            const alivePlayers = Array.from(session.players.values()).filter(p => p.isAlive);
+            if (session.playerChoices.size >= alivePlayers.length) {
+                // 즉시 라운드 종료
+                await mushroomGame.processMultiplayerRoundEnd(session.tempChannel || interaction.channel, lobbyId);
+            }
         }
         
         else if (interaction.customId.startsWith('mushroom_cancel_')) {
@@ -25575,6 +34184,45 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ embeds: [helpEmbed], flags: 64 });
         }
         
+        // 상점 카테고리 메뉴 버튼
+        else if (interaction.customId === 'shop_category_menu') {
+            // 카테고리 선택 드롭다운 생성
+            const categoryOptions = Object.entries(SHOP_CATEGORIES).map(([key, category]) => ({
+                label: `${category.emoji} ${category.name}`,
+                description: `${category.name} 카테고리의 아이템들`,
+                value: key,
+                emoji: category.emoji
+            }));
+            
+            const categorySelect = new StringSelectMenuBuilder()
+                .setCustomId('shop_category')
+                .setPlaceholder('🎮 원하는 카테고리를 선택하세요!')
+                .addOptions(categoryOptions);
+                
+            const selectRow = new ActionRowBuilder().addComponents(categorySelect);
+            
+            const shopEmbed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle('🛒 김헌터 상점')
+                .setDescription('원하는 카테고리를 선택하여 아이템을 구매하세요!')
+                .addFields(
+                    { name: '⚔️ 무기', value: '다양한 무기들', inline: true },
+                    { name: '⛑️ 헬멧', value: '머리 방어구', inline: true },
+                    { name: '🛡️ 갑옷', value: '몸통 방어구', inline: true },
+                    { name: '🧤 장갑', value: '손 방어구', inline: true },
+                    { name: '👢 신발', value: '발 방어구', inline: true },
+                    { name: '💍 액세서리', value: '추가 능력치', inline: true },
+                    { name: '🍖 소비', value: '소비 아이템', inline: true },
+                    { name: '⚒️ 주문서', value: '강화 주문서', inline: true },
+                    { name: '🪙 코인', value: '특별 코인', inline: true }
+                );
+            
+            await interaction.update({
+                embeds: [shopEmbed],
+                components: [selectRow]
+            });
+        }
+        
         // 상점 구매 확인 버튼
         else if (interaction.customId.startsWith('confirm_buy_')) {
             const [_, __, category, itemIndex] = interaction.customId.split('_');
@@ -25632,6 +34280,9 @@ client.on('interactionCreate', async (interaction) => {
                 randomOptions: randomOptions
             });
             
+            // 일일 미션 업데이트 (상점 구매)
+            const missionResult = await updateDailyMission(user, 'shop', 1);
+            
             await user.save();
             
             const successEmbed = new EmbedBuilder()
@@ -25642,6 +34293,15 @@ client.on('interactionCreate', async (interaction) => {
                     { name: '지불한 골드', value: `${item.price.toLocaleString()}G`, inline: true },
                     { name: '남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
                 );
+            
+            // 일일 미션 완료 알림 추가
+            if (missionResult && missionResult.completed) {
+                successEmbed.addFields({
+                    name: '🎯 일일 미션 완료!',
+                    value: `✅ **상점 구매 미션 완료!**\n🎁 보상: ${missionResult.reward.gold.toLocaleString()} 골드, ${missionResult.reward.exp} EXP`,
+                    inline: false
+                });
+            }
             
             await interaction.update({ embeds: [successEmbed], components: [] });
         }
@@ -25934,6 +34594,205 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.update({ content: '스탯 초기화를 취소했습니다.', embeds: [], components: [] });
         }
         
+        // 공지 발송 버튼
+        else if (interaction.customId.startsWith('notice_send_')) {
+            const noticeId = interaction.customId.replace('notice_send_', '');
+            const notice = NOTICE_SYSTEM.savedNotices.get(noticeId);
+            
+            if (!notice) {
+                await interaction.reply({ 
+                    content: '❌ 해당 공지를 찾을 수 없습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 채널 선택 모달
+            const channelSelectModal = new ModalBuilder()
+                .setCustomId(`notice_channel_select_${noticeId}`)
+                .setTitle('📤 공지 발송 설정');
+            
+            const channelInput = new TextInputBuilder()
+                .setCustomId('channel_id')
+                .setLabel('채널 ID')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setPlaceholder('공지를 발송할 채널 ID를 입력하세요');
+            
+            const mentionInput = new TextInputBuilder()
+                .setCustomId('mention_type')
+                .setLabel('멘션 타입 (everyone/here/none)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setValue('none')
+                .setPlaceholder('everyone, here, 또는 none');
+            
+            channelSelectModal.addComponents(
+                new ActionRowBuilder().addComponents(channelInput),
+                new ActionRowBuilder().addComponents(mentionInput)
+            );
+            
+            await interaction.showModal(channelSelectModal);
+        }
+        
+        // 공지 삭제 버튼
+        else if (interaction.customId.startsWith('notice_edit_')) {
+            const noticeId = interaction.customId.replace('notice_edit_', '');
+            
+            if (!NOTICE_SYSTEM.savedNotices.has(noticeId)) {
+                await interaction.reply({ 
+                    content: '❌ 해당 공지를 찾을 수 없습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            const notice = NOTICE_SYSTEM.savedNotices.get(noticeId);
+            
+            // 수정 모달 생성
+            const modal = new ModalBuilder()
+                .setCustomId(`notice_edit_modal_${noticeId}_${notice.templateType}`)
+                .setTitle('📝 공지 수정');
+            
+            // 템플릿에 따른 필드 추가
+            const titleInput = new TextInputBuilder()
+                .setCustomId('title')
+                .setLabel('제목')
+                .setStyle(TextInputStyle.Short)
+                .setValue(notice.title)
+                .setRequired(true);
+            
+            const contentInput = new TextInputBuilder()
+                .setCustomId('content')
+                .setLabel('내용')
+                .setStyle(TextInputStyle.Paragraph)
+                .setValue(notice.content)
+                .setMaxLength(2000)
+                .setRequired(true);
+            
+            const tagsInput = new TextInputBuilder()
+                .setCustomId('tags')
+                .setLabel('태그 (쉼표로 구분)')
+                .setStyle(TextInputStyle.Short)
+                .setValue(notice.tags ? notice.tags.join(', ') : '')
+                .setRequired(false);
+            
+            // 기본 필드
+            const row1 = new ActionRowBuilder().addComponents(titleInput);
+            const row2 = new ActionRowBuilder().addComponents(contentInput);
+            const row3 = new ActionRowBuilder().addComponents(tagsInput);
+            
+            modal.addComponents(row1, row2, row3);
+            
+            // 템플릿별 추가 필드
+            if (notice.templateType === 'maintenance') {
+                const timeInput = new TextInputBuilder()
+                    .setCustomId('time')
+                    .setLabel('점검 시간')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(notice.time || '')
+                    .setRequired(false);
+                
+                const durationInput = new TextInputBuilder()
+                    .setCustomId('duration')
+                    .setLabel('예상 소요시간')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(notice.duration || '')
+                    .setRequired(false);
+                
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(timeInput),
+                    new ActionRowBuilder().addComponents(durationInput)
+                );
+            } else if (notice.templateType === 'event') {
+                const periodInput = new TextInputBuilder()
+                    .setCustomId('period')
+                    .setLabel('이벤트 기간')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(notice.period || '')
+                    .setRequired(false);
+                
+                modal.addComponents(new ActionRowBuilder().addComponents(periodInput));
+            } else if (notice.templateType === 'update') {
+                const versionInput = new TextInputBuilder()
+                    .setCustomId('version')
+                    .setLabel('버전')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(notice.version || '')
+                    .setRequired(false);
+                
+                const changesInput = new TextInputBuilder()
+                    .setCustomId('changes')
+                    .setLabel('변경사항')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setValue(notice.changes || '')
+                    .setRequired(false);
+                
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(versionInput),
+                    new ActionRowBuilder().addComponents(changesInput)
+                );
+            }
+            
+            await interaction.showModal(modal);
+        }
+        
+        else if (interaction.customId.startsWith('notice_delete_')) {
+            const noticeId = interaction.customId.replace('notice_delete_', '');
+            
+            if (!NOTICE_SYSTEM.savedNotices.has(noticeId)) {
+                await interaction.reply({ 
+                    content: '❌ 해당 공지를 찾을 수 없습니다!', 
+                    flags: 64 
+                });
+                return;
+            }
+            
+            // 확인 버튼
+            const confirmButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`notice_confirm_delete_${noticeId}`)
+                        .setLabel('🗑️ 삭제 확인')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('notice_cancel_delete')
+                        .setLabel('❌ 취소')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.reply({
+                content: '⚠️ 정말로 이 공지를 삭제하시겠습니까?',
+                components: [confirmButtons],
+                flags: 64
+            });
+        }
+        
+        // 공지 삭제 확인
+        else if (interaction.customId.startsWith('notice_confirm_delete_')) {
+            const noticeId = interaction.customId.replace('notice_confirm_delete_', '');
+            
+            if (NOTICE_SYSTEM.savedNotices.delete(noticeId)) {
+                await interaction.update({ 
+                    content: '✅ 공지가 삭제되었습니다.', 
+                    components: [] 
+                });
+            } else {
+                await interaction.update({ 
+                    content: '❌ 공지 삭제에 실패했습니다.', 
+                    components: [] 
+                });
+            }
+        }
+        
+        // 공지 삭제 취소
+        else if (interaction.customId === 'notice_cancel_delete') {
+            await interaction.update({ 
+                content: '🔙 공지 삭제가 취소되었습니다.', 
+                components: [] 
+            });
+        }
+        
         // 상점 페이지 네비게이션
         else if (interaction.customId.startsWith('shop_page_')) {
             const parts = interaction.customId.split('_');
@@ -26047,5 +34906,505 @@ client.on('interactionCreate', async (interaction) => {
 
 // 중복 제거됨 - 기존 spawnBoss, startBossBattle, handleBossDefeat 함수는 이미 위에 정의되어 있음
 
+// 사전강화 이벤트 안내 메시지
+async function sendPrelaunchEventMessage() {
+    try {
+        const channelId = '1386447256408035399';
+        
+        // 채널 존재 여부 먼저 확인
+        let channel;
+        try {
+            channel = await client.channels.fetch(channelId);
+        } catch (fetchError) {
+            if (fetchError.code === 50001) {
+                console.log('📛 사전강화 이벤트 채널 접근 권한이 없습니다. 채널 ID를 확인하거나 봇의 권한을 확인해주세요.');
+                return;
+            }
+            throw fetchError;
+        }
+        
+        if (!channel) {
+            console.log('사전강화 이벤트 채널을 찾을 수 없습니다.');
+            return;
+        }
+        
+        // 채널이 텍스트 채널인지 확인
+        if (!channel.isTextBased()) {
+            console.log('지정된 채널이 텍스트 채널이 아닙니다.');
+            return;
+        }
+        
+        const eventAttachment = new AttachmentBuilder(
+            path.join(__dirname, 'resource', 'event_01.jpg'), 
+            { name: 'event_01.jpg' }
+        );
+        
+        const eventEmbed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🎯 강화왕 김헌터 사전강화 이벤트')
+            .setDescription('**🔥 오픈 전 특별 이벤트가 진행 중입니다! 🔥**\n\n정식 오픈까지 남은 시간 동안 가상 아이템을 강화하고 포인트를 획득하세요!\n\n💎 **포인트 1점 = 1골드로 정식 오픈 시 지급됩니다!**')
+            .addFields(
+                { 
+                    name: '📌 이벤트 참여 방법', 
+                    value: '1️⃣ `/사전강화` 명령어 입력\n2️⃣ 강화할 아이템 선택\n3️⃣ 강화 성공 시 포인트 획득!', 
+                    inline: false 
+                },
+                { 
+                    name: '💰 포인트 전환', 
+                    value: '획득한 포인트는 1:1로 골드로 전환됩니다!\n예) 1,000P = 1,000 골드', 
+                    inline: false 
+                },
+                { 
+                    name: '🏆 최종 순위 보상 (2배 상향!)', 
+                    value: '🥇 1등: **스타벅스 아메리카노** + 40만골드\n🥈 2등: 300,000 골드\n🥉 3등: 200,000 골드\n🎖️ 4~10등: 100,000 골드', 
+                    inline: false 
+                },
+                {
+                    name: '🐕 댕댕봇 이벤트',
+                    value: '1시간에 5번 랜덤 출현!\n수학 문제를 맞추면 **강화 +1 보너스**',
+                    inline: false
+                },
+                {
+                    name: '⏰ 이벤트 기간',
+                    value: '카운트다운이 끝날 때까지!',
+                    inline: false
+                }
+            )
+            .setImage('attachment://event_01.jpg')
+            .setFooter({ text: '💡 지금 바로 참여하고 골드를 획득하세요!' })
+            .setTimestamp();
+        
+        const actionRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('prelaunch_event_info')
+                    .setLabel('🎮 이벤트 참여하기')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('prelaunch_leaderboard')
+                    .setLabel('🏅 순위 확인')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
+        await channel.send({ 
+            embeds: [eventEmbed], 
+            components: [actionRow],
+            files: [eventAttachment]
+        });
+        
+        console.log('📢 사전강화 이벤트 안내 메시지 전송 완료');
+        
+    } catch (error) {
+        console.error('사전강화 이벤트 메시지 전송 오류:', error);
+    }
+}
+
+// 20분마다 사전강화 이벤트 안내 메시지 전송
+client.once('ready', () => {
+    // 첫 메시지는 5초 후 전송
+    setTimeout(() => {
+        sendPrelaunchEventMessage();
+    }, 5000);
+    
+    // 이후 20분마다 전송
+    setInterval(() => {
+        sendPrelaunchEventMessage();
+    }, 20 * 60 * 1000); // 20분
+    
+    // 5분마다 사전강화 데이터 자동 저장
+    setInterval(() => {
+        if (global.prelaunchEventData && Object.keys(global.prelaunchEventData).length > 0) {
+            savePrelaunchData();
+            console.log('💾 사전강화 이벤트 데이터 자동 저장 완료');
+        }
+    }, 5 * 60 * 1000); // 5분
+});
+
+// 댕댕봇 답변 처리를 위한 메시지 이벤트
+client.on('messageCreate', async (message) => {
+    // 봇 메시지 무시
+    if (message.author.bot) return;
+    
+    // 댕댕봇 이벤트가 활성화되어 있고, 같은 채널인 경우
+    if (dogBotEvent.active && message.channel.id === dogBotEvent.currentChannel) {
+        const answer = parseInt(message.content);
+        
+        // 정답 확인
+        if (answer === dogBotEvent.currentProblem.answer) {
+            // 3분이 지났는지 확인
+            if (dogBotEvent.spawnTime && Date.now() - dogBotEvent.spawnTime > 180000) {
+                await message.reply('⏰ 멍멍! 이미 시간이 지났멍... 😔 다음에 댕댕이가 또 올게멍! 🐾');
+                return;
+            }
+            
+            // 이미 다른 사람이 맞췄는지 확인
+            if (dogBotEvent.currentUser) return;
+            
+            dogBotEvent.currentUser = message.author.id;
+            clearTimeout(dogBotEvent.timeout);
+            
+            // 유저 데이터 가져오기
+            if (!global.prelaunchEventData[message.author.id]) {
+                global.prelaunchEventData[message.author.id] = {
+                    points: 0,
+                    attempts: 0,
+                    currentItem: null,
+                    currentLevel: 0,
+                    successStreak: 0,
+                    failStreak: 0,
+                    achievements: [],
+                    lastAttempt: null,
+                    dailyAttempts: 0,
+                    lastDailyReset: new Date().toDateString()
+                };
+            }
+            
+            const userData = global.prelaunchEventData[message.author.id];
+            
+            // 현재 아이템이 있을 때만 +1 강화
+            let bonusMessage = '';
+            
+            // 디버그 로그 추가
+            console.log(`[댕댕봇] ${message.author.tag} 정답 - 현재 상태:`, {
+                currentItem: userData.currentItem ? userData.currentItem.name : 'None',
+                currentLevel: userData.currentLevel,
+                maxLevel: userData.currentItem ? userData.currentItem.maxLevel : 'N/A'
+            });
+            
+            // 댕댕봇 등장 카운터 (전역적으로 관리)
+            if (!global.dogBotCounter) global.dogBotCounter = 0;
+            global.dogBotCounter++;
+            
+            // 다양한 말투 배열
+            const happyBarks = [
+                '멍멍! 대단해멍! 🐾',
+                '왈왈! 천재견이 나타났멍! 🐕',
+                '멍! 짱이멍! 꼬리가 흔들려멍! 🐶',
+                '왕왕! 최고멍! 간식 주고 싶멍! 🦴',
+                '끙끙! 감동이멍! 핥아주고 싶멍! 👅',
+                '멍멍왕! 우리 친구 하자멍! 🐾',
+                '컹컹! 너무 좋아멍! 뒹굴뒹굴~ 🐕‍🦺'
+            ];
+            
+            const sadBarks = [
+                '끼잉... 미안해멍... 😢',
+                '낑낑... 댕댕이가 실수했멍... 🐾',
+                '으르렁... 나쁜 댕댕이 됐멍... 😔',
+                '킁킁... 혼날 것 같아멍... 🐕',
+                '우우... 꼬리 내려갔멍... 😞'
+            ];
+            
+            // 3.33% 확률 (30번 중 1번)로 패널티
+            const isPenalty = Math.random() < 0.0333;
+            
+            if (isPenalty && userData.currentItem && userData.currentLevel > 0) {
+                // 패널티: 레벨 -10~-20, 포인트 -444
+                const penaltyLevel = Math.floor(Math.random() * 11) + 10; // 10~20
+                const prevLevel = userData.currentLevel;
+                userData.currentLevel = Math.max(0, prevLevel - penaltyLevel);
+                userData.points = Math.max(0, userData.points - 444);
+                
+                const sadBark = sadBarks[Math.floor(Math.random() * sadBarks.length)];
+                bonusMessage = `\n😈 ${sadBark}\n**${userData.currentItem.name} +${prevLevel} → +${userData.currentLevel}** (-${penaltyLevel})\n💔 **포인트 -444**`;
+                
+                console.log(`[댕댕봇] 패널티 발동! -${penaltyLevel} 레벨, -444 포인트`);
+                
+            } else if (userData.currentItem && userData.currentLevel < userData.currentItem.maxLevel) {
+                // 보너스: 레벨 +1~+20
+                const bonusLevel = Math.floor(Math.random() * 20) + 1; // 1~20
+                const prevLevel = userData.currentLevel;
+                userData.currentLevel = Math.min(userData.currentItem.maxLevel, prevLevel + bonusLevel);
+                const actualBonus = userData.currentLevel - prevLevel;
+                
+                const happyBark = happyBarks[Math.floor(Math.random() * happyBarks.length)];
+                bonusMessage = `\n🎁 ${happyBark}\n**${userData.currentItem.name} +${prevLevel} → +${userData.currentLevel}** (+${actualBonus})`;
+                
+                // 보너스 포인트도 추가 (레벨에 비례)
+                userData.points += 100 * actualBonus;
+                
+                console.log(`[댕댕봇] 강화 보너스 적용: +${prevLevel} → +${userData.currentLevel} (+${actualBonus})`);
+                
+            } else if (!userData.currentItem) {
+                // 아이템이 없으면 포인트만 지급
+                userData.points += 500;
+                bonusMessage = '\n💰 아이템이 없으니 포인트를 많이 줄게멍! **500 포인트** 받아멍! 🦴';
+                console.log(`[댕댕봇] 아이템 없음 - 포인트만 지급`);
+            } else {
+                // 이미 최대 레벨이면 포인트만 지급
+                userData.points += 300;
+                bonusMessage = '\n💰 와우! 이미 최고멍! **300 포인트** 줄게멍! 🐕';
+                console.log(`[댕댕봇] 이미 최대 레벨 - 포인트만 지급`);
+            }
+            
+            // 데이터 즉시 저장
+            savePrelaunchData();
+            
+            const embed = new EmbedBuilder()
+                .setColor(isPenalty && userData.currentItem && userData.currentLevel > 0 ? '#FF0000' : '#00FF00')
+                .setTitle(isPenalty && userData.currentItem && userData.currentLevel > 0 ? '😱 으악! 나쁜 댕댕이가 나타났멍!' : '🎉 정답이멍! 멍멍! 🐾')
+                .setDescription(`${message.author}님이 정답을 맞췄멍! 🥳${bonusMessage}\n${isPenalty && userData.currentItem && userData.currentLevel > 0 ? '미안해멍... 댕댕이가 장난쳤멍... 🐾' : '착한 친구멍! 쓰다듬어 주고 싶멍~ 🐕'}`)
+                .setThumbnail('attachment://dog_bot.png')
+                .addFields({
+                    name: '🧮 문제와 정답멍!',
+                    value: `${dogBotEvent.currentProblem.question} = **${dogBotEvent.currentProblem.answer}** 멍!`,
+                    inline: false
+                })
+                .setFooter({ text: isPenalty && userData.currentItem && userData.currentLevel > 0 ? '댕댕이가 반성하고 있멍... 😔' : '댕댕이는 행복해멍! 🦴' })
+                .setTimestamp();
+            
+            // 프로필 이미지 첨부
+            const dogBotImagePath = path.join(__dirname, 'resource', 'dog_bot.png');
+            const files = [];
+            if (fs.existsSync(dogBotImagePath)) {
+                files.push(new AttachmentBuilder(dogBotImagePath, { name: 'dog_bot.png' }));
+            }
+            
+            await message.channel.send({ embeds: [embed], files });
+            
+            // 이벤트 초기화
+            dogBotEvent.active = false;
+            dogBotEvent.currentProblem = null;
+            dogBotEvent.currentChannel = null;
+            dogBotEvent.currentUser = null;
+            dogBotEvent.spawnTime = null;
+            
+            // 데이터 저장 예약
+            schedulePrelaunchSave();
+        }
+    }
+});
+
+// 던전 탐험 임시 채널 함수들
+async function startDungeonFloorTemp(channel, session, floor) {
+    const floorData = DUNGEON_CRAWLER.floors[floor];
+    const isLastFloor = floor === DUNGEON_CRAWLER.maxFloor;
+    
+    // 랜덤 몬스터 선택
+    const monster = floorData.monsters[Math.floor(Math.random() * floorData.monsters.length)];
+    
+    // 보스 출현 확률
+    const isBoss = Math.random() < floorData.bossChance;
+    const currentMonster = isBoss ? floorData.boss : monster;
+    
+    // 몬스터 HP 계산
+    const monsterHp = isBoss 
+        ? Math.floor(currentMonster.hp * (1 + (floor - 1) * 0.2))
+        : currentMonster.hp;
+    
+    // 아이템 발견 확률
+    const foundItem = Math.random() < 0.3;
+    if (foundItem) {
+        const itemKeys = Object.keys(DUNGEON_CRAWLER.items);
+        const randomItem = itemKeys[Math.floor(Math.random() * itemKeys.length)];
+        session.inventory.push(randomItem);
+    }
+    
+    const floorEmbed = new EmbedBuilder()
+        .setColor(isBoss ? '#FF0000' : '#8B4513')
+        .setTitle(`🏰 던전 ${floor}층`)
+        .setDescription(isBoss ? '⚠️ **보스가 나타났습니다!**' : `${currentMonster.emoji} ${currentMonster.name}이(가) 나타났습니다!`)
+        .addFields(
+            { name: '👤 당신의 상태', value: `HP: ${session.hp}/${session.maxHp}\n⚔️ 공격력: ${session.attack}\n🛡️ 방어력: ${session.defense}`, inline: true },
+            { name: '👾 몬스터 상태', value: `HP: ${monsterHp}\n⚔️ 공격력: ${currentMonster.attack}\n🛡️ 방어력: ${currentMonster.defense}`, inline: true },
+            { name: '🎒 인벤토리', value: session.inventory.length > 0 ? `${session.inventory.length}개 아이템 보유` : '비어있음', inline: true }
+        );
+    
+    if (foundItem) {
+        floorEmbed.addFields({ name: '🎁 아이템 발견!', value: '새로운 아이템을 발견했습니다!', inline: false });
+    }
+    
+    const actionButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('dungeon_fight_temp')
+                .setLabel('⚔️ 전투')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('dungeon_item_temp')
+                .setLabel('🎒 아이템 사용')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(session.inventory.length === 0),
+            new ButtonBuilder()
+                .setCustomId('dungeon_run_temp')
+                .setLabel('🏃 도망')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(isBoss),
+            new ButtonBuilder()
+                .setCustomId('dungeon_escape_temp')
+                .setLabel('🚪 탈출')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    
+    // 현재 몬스터 정보를 세션에 저장
+    session.currentMonster = {
+        ...currentMonster,
+        hp: monsterHp,
+        maxHp: monsterHp,
+        isBoss: isBoss
+    };
+    
+    await channel.send({ embeds: [floorEmbed], components: [actionButtons] });
+}
+
+async function executeDungeonBattleTemp(channel, session) {
+    const monster = session.currentMonster;
+    if (!monster) return;
+    
+    // 플레이어 공격
+    const playerDamage = Math.max(1, session.attack - monster.defense + Math.floor(Math.random() * 10));
+    monster.hp -= playerDamage;
+    
+    let battleResult = `⚔️ ${playerDamage}의 피해를 입혔습니다!\n`;
+    
+    if (monster.hp <= 0) {
+        // 몬스터 처치
+        session.monstersDefeated++;
+        const goldEarned = Math.floor(monster.gold * (1 + (session.floor - 1) * 0.5));
+        session.goldEarned += goldEarned;
+        
+        if (monster.isBoss) {
+            const user = await getUser(session.userId);
+            user.dungeonStats.bossKills++;
+            await user.save();
+        }
+        
+        const victoryEmbed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('🎉 전투 승리!')
+            .setDescription(`${monster.emoji} ${monster.name}을(를) 처치했습니다!`)
+            .addFields(
+                { name: '💰 획득 골드', value: `${goldEarned.toLocaleString()}G`, inline: true },
+                { name: '📊 현재 상태', value: `HP: ${session.hp}/${session.maxHp}`, inline: true }
+            );
+        
+        const continueButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('dungeon_next_temp')
+                    .setLabel(session.floor === DUNGEON_CRAWLER.maxFloor ? '🏆 클리어!' : '⬆️ 다음 층')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('dungeon_escape_temp')
+                    .setLabel('🚪 탈출')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
+        await channel.send({ embeds: [victoryEmbed], components: [continueButtons] });
+    } else {
+        // 몬스터 반격
+        const monsterDamage = Math.max(1, monster.attack - session.defense + Math.floor(Math.random() * 10));
+        session.hp -= monsterDamage;
+        battleResult += `❌ ${monsterDamage}의 피해를 받았습니다!`;
+        
+        if (session.hp <= 0) {
+            // 플레이어 사망
+            await endDungeonRunTemp(channel, session, false);
+        } else {
+            // 전투 계속
+            const battleEmbed = new EmbedBuilder()
+                .setColor('#FFA500')
+                .setTitle('⚔️ 전투 중!')
+                .setDescription(battleResult)
+                .addFields(
+                    { name: '👤 당신의 상태', value: `HP: ${session.hp}/${session.maxHp}`, inline: true },
+                    { name: '👾 몬스터 상태', value: `HP: ${monster.hp}/${monster.maxHp}`, inline: true }
+                );
+            
+            await channel.send({ embeds: [battleEmbed] });
+            
+            // 1초 후 다시 전투 화면 표시
+            setTimeout(() => startDungeonFloorTemp(channel, session, session.floor), 1000);
+        }
+    }
+}
+
+async function endDungeonRunTemp(channel, session, survived) {
+    const user = await getUser(session.userId);
+    if (!user) return;
+    
+    // 통계 업데이트
+    user.dungeonStats.totalRuns++;
+    user.dungeonStats.totalGoldEarned += session.goldEarned;
+    user.dungeonStats.itemsFound += session.inventory.length;
+    user.dungeonStats.lastRun = new Date();
+    
+    if (session.floor - 1 > user.dungeonStats.maxFloor) {
+        user.dungeonStats.maxFloor = session.floor - 1;
+    }
+    
+    if (!survived) {
+        user.dungeonStats.totalDeaths++;
+        session.goldEarned = Math.floor(session.goldEarned * 0.5); // 사망 시 50%만 획득
+    }
+    
+    // 골드 지급
+    user.gold += session.goldEarned;
+    await user.save();
+    
+    const resultEmbed = new EmbedBuilder()
+        .setColor(survived ? '#00FF00' : '#FF0000')
+        .setTitle(survived ? '🏆 던전 탐험 완료!' : '💀 던전에서 쓰러졌습니다...')
+        .setDescription(survived 
+            ? `${session.floor - 1}층까지 클리어했습니다!`
+            : `${session.floor}층에서 쓰러졌습니다...`)
+        .addFields(
+            { name: '💰 획득 골드', value: `${session.goldEarned.toLocaleString()}G`, inline: true },
+            { name: '⚔️ 처치한 몬스터', value: `${session.monstersDefeated}마리`, inline: true },
+            { name: '🎒 발견한 아이템', value: `${session.inventory.length}개`, inline: true }
+        )
+        .setFooter({ text: '5초 후 채널이 삭제됩니다.' });
+    
+    const restartButton = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('dungeon_restart')
+                .setLabel('🔄 다시 도전')
+                .setStyle(ButtonStyle.Primary)
+        );
+    
+    await channel.send({ embeds: [resultEmbed], components: [restartButton] });
+    
+    // 세션 정리
+    dungeonSessions.delete(session.userId);
+    
+    // 5초 후 채널 삭제
+    setTimeout(async () => {
+        await deleteTempChannel(channel.id);
+    }, 5000);
+}
+
 // 봇 로그인
-client.login(TOKEN); 
+client.login(TOKEN);
+
+// 프로세스 종료 시 데이터 저장
+process.on('SIGINT', () => {
+    console.log('\n⚠️ 봇 종료 중...');
+    
+    // 예약된 저장이 있으면 즉시 실행
+    if (prelaunchSaveTimeout) {
+        clearTimeout(prelaunchSaveTimeout);
+        savePrelaunchData();
+        console.log('✅ 예약된 사전강화 데이터 저장 완료');
+    }
+    
+    // 사전강화 데이터 저장
+    if (global.prelaunchEventData && Object.keys(global.prelaunchEventData).length > 0) {
+        savePrelaunchData();
+        console.log('✅ 사전강화 데이터 저장 완료');
+    }
+    
+    // 카운트다운 상태 저장
+    if (openCountdown.isActive) {
+        saveCountdownState();
+        console.log('✅ 카운트다운 상태 저장 완료');
+    }
+    
+    process.exit(0);
+});
+
+// 예기치 않은 종료 시에도 저장
+process.on('beforeExit', () => {
+    if (global.prelaunchEventData && Object.keys(global.prelaunchEventData).length > 0) {
+        savePrelaunchData();
+    }
+}); 

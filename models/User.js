@@ -27,6 +27,19 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+    registrationIP: {
+        type: String,
+        default: null
+    },
+    lastLoginIP: {
+        type: String,
+        default: null
+    },
+    ipHistory: [{
+        ip: String,
+        timestamp: { type: Date, default: Date.now },
+        action: String // 'register', 'login', 'verify' 등
+    }],
     gender: {
         type: String,
         required: false,
@@ -86,6 +99,16 @@ const userSchema = new mongoose.Schema({
         max: 20
     },
     lastTicketRegen: {
+        type: Date,
+        default: Date.now
+    },
+    // PvP 티켓 시스템 (duelTickets과 별개)
+    pvpTickets: {
+        type: Number,
+        default: 20,
+        max: 20
+    },
+    lastPvpTicketRegen: {
         type: Date,
         default: Date.now
     },
@@ -440,6 +463,131 @@ const userSchema = new mongoose.Schema({
                 startDate: { type: String, default: null }
             }
         }
+    },
+    
+    // 일일 미션 시스템
+    dailyMissions: {
+        hunting: { 
+            current: { type: Number, default: 0 }, 
+            target: { type: Number, default: 5 }, 
+            completed: { type: Boolean, default: false },
+            reward: { gold: { type: Number, default: 1000 }, exp: { type: Number, default: 100 } }
+        },
+        enhance: { 
+            current: { type: Number, default: 0 }, 
+            target: { type: Number, default: 3 }, 
+            completed: { type: Boolean, default: false },
+            reward: { gold: { type: Number, default: 1500 }, exp: { type: Number, default: 150 } }
+        },
+        shop: { 
+            current: { type: Number, default: 0 }, 
+            target: { type: Number, default: 1 }, 
+            completed: { type: Boolean, default: false },
+            reward: { gold: { type: Number, default: 500 }, exp: { type: Number, default: 50 } }
+        },
+        exercise: { 
+            current: { type: Number, default: 0 }, 
+            target: { type: Number, default: 1 }, 
+            completed: { type: Boolean, default: false },
+            reward: { gold: { type: Number, default: 800 }, exp: { type: Number, default: 80 } }
+        },
+        fragment: { 
+            current: { type: Number, default: 0 }, 
+            target: { type: Number, default: 1 }, 
+            completed: { type: Boolean, default: false },
+            reward: { gold: { type: Number, default: 2000 }, exp: { type: Number, default: 200 } }
+        },
+        lastReset: { type: String, default: null } // 마지막 리셋 날짜
+    },
+    
+    // 미니게임 통계
+    gameStats: {
+        dice: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        slot: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        rps: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        quiz: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        blackjack: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        oddeven: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        mushroom: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        chosung: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        },
+        wordchain: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
+        }
+    },
+    
+    // 가위바위보 게임 데이터
+    rpsGameData: {
+        botTickets: { type: Number, default: 20, max: 20 },
+        userTickets: { type: Number, default: 20, max: 20 },
+        lastBotTicketRegen: { type: Date, default: Date.now },
+        lastUserTicketRegen: { type: Date, default: Date.now },
+        totalBotGames: { type: Number, default: 0 },
+        totalUserGames: { type: Number, default: 0 },
+        botWins: { type: Number, default: 0 },
+        userWins: { type: Number, default: 0 },
+        draws: { type: Number, default: 0 },
+        currentStreak: { type: Number, default: 0 },
+        bestStreak: { type: Number, default: 0 }
+    },
+    
+    // 독버섯 게임 통계
+    mushroomStats: {
+        totalGames: { type: Number, default: 0 },      // 총 게임 횟수
+        wins: { type: Number, default: 0 },            // 1위 횟수
+        totalRounds: { type: Number, default: 0 },     // 총 생존 라운드
+        totalEarnings: { type: Number, default: 0 },   // 총 획득 골드
+        highestRound: { type: Number, default: 0 },    // 최고 라운드
+        perfectGames: { type: Number, default: 0 },    // 5라운드 완주 횟수
+        specialMushrooms: { type: Number, default: 0 }, // 특수 버섯 발견 횟수
+        lastPlayDate: { type: Date, default: null }    // 마지막 플레이 날짜
+    },
+    
+    // 슬롯머신 통계
+    slotStats: {
+        totalSpins: { type: Number, default: 0 },      // 총 스핀 횟수
+        totalBet: { type: Number, default: 0 },        // 총 베팅 금액
+        totalWon: { type: Number, default: 0 },        // 총 당첨 금액
+        biggestWin: { type: Number, default: 0 },      // 최고 당첨금
+        jackpotWins: { type: Number, default: 0 },     // 잭팟 당첨 횟수
+        currentStreak: { type: Number, default: 0 },   // 현재 연승
+        bestStreak: { type: Number, default: 0 },      // 최고 연승
+        lastSpin: { type: Date, default: null }        // 마지막 스핀 시간
+    },
+    
+    // 던전 탐험 통계
+    dungeonStats: {
+        totalRuns: { type: Number, default: 0 },       // 총 탐험 횟수
+        maxFloor: { type: Number, default: 0 },        // 최고 도달 층
+        totalGoldEarned: { type: Number, default: 0 }, // 총 획득 골드
+        totalDeaths: { type: Number, default: 0 },     // 총 사망 횟수
+        bossKills: { type: Number, default: 0 },       // 보스 처치 횟수
+        itemsFound: { type: Number, default: 0 },      // 발견한 아이템 수
+        lastRun: { type: Date, default: null }         // 마지막 탐험 시간
     }
 }, {
     timestamps: true

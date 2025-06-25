@@ -1,0 +1,39 @@
+{
+  "name": "kimhunter-bot-ide",
+  "version": "1.0.0",
+  "description": "김헌터 봇 통합 관리 IDE",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dist": "electron-builder --win"
+  },
+  "keywords": [
+    "bot",
+    "ide",
+    "manager"
+  ],
+  "author": "KimHunter",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.1",
+    "node-pty": "^1.0.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0"
+  },
+  "build": {
+    "appId": "com.kimhunter.botide",
+    "productName": "KimHunter Bot IDE",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    }
+  }
+}

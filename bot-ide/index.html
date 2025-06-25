@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>KimHunter Bot IDE</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <!-- 커스텀 타이틀바 -->
+    <div class="titlebar">
+        <div class="titlebar-drag">
+            <span class="titlebar-title">
+                <i class="fas fa-robot"></i> KimHunter Bot IDE
+            </span>
+        </div>
+        <div class="titlebar-buttons">
+            <button class="titlebar-button" id="minimize-btn"><i class="fas fa-minus"></i></button>
+            <button class="titlebar-button" id="maximize-btn"><i class="fas fa-square"></i></button>
+            <button class="titlebar-button close" id="close-btn"><i class="fas fa-times"></i></button>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 사이드바 -->
+        <div class="sidebar">
+            <div class="bot-status">
+                <h3>Bot Status</h3>
+                <div class="status-item" id="test-status">
+                    <i class="fas fa-circle status-icon offline"></i>
+                    <span>Test Bot</span>
+                    <button class="control-btn" id="test-control" data-bot="test">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </div>
+                <div class="status-item" id="production-status">
+                    <i class="fas fa-circle status-icon offline"></i>
+                    <span>Production Bot</span>
+                    <button class="control-btn" id="production-control" data-bot="production">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="actions">
+                <h3>Quick Actions</h3>
+                <button class="action-btn" id="deploy-btn">
+                    <i class="fas fa-rocket"></i> Deploy to Production
+                </button>
+                <button class="action-btn" id="restart-all-btn">
+                    <i class="fas fa-sync"></i> Restart All
+                </button>
+                <button class="action-btn" id="clear-logs-btn">
+                    <i class="fas fa-broom"></i> Clear Logs
+                </button>
+            </div>
+
+            <div class="stats">
+                <h3>Statistics</h3>
+                <div class="stat-item">
+                    <span class="stat-label">Test Commands:</span>
+                    <span class="stat-value" id="test-commands">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Prod Commands:</span>
+                    <span class="stat-value" id="prod-commands">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Test Errors:</span>
+                    <span class="stat-value error" id="test-errors">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Prod Errors:</span>
+                    <span class="stat-value error" id="prod-errors">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 메인 콘텐츠 -->
+        <div class="main-content">
+            <!-- 터미널 컨테이너 -->
+            <div class="terminals">
+                <div class="terminal-container">
+                    <div class="terminal-header">
+                        <span><i class="fas fa-terminal"></i> Test Bot Console</span>
+                        <div class="terminal-controls">
+                            <select class="log-filter" id="test-filter" onchange="filterLogs('test', this.value)">
+                                <option value="all">All Logs</option>
+                                <option value="info">Info Only</option>
+                                <option value="warning">Warnings</option>
+                                <option value="error">Errors</option>
+                            </select>
+                            <button class="terminal-btn" onclick="clearTerminal('test')" title="Clear Terminal">
+                                <i class="fas fa-eraser"></i>
+                            </button>
+                            <button class="terminal-btn" onclick="exportLogs('test')" title="Export Logs">
+                                <i class="fas fa-download"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="terminal" id="test-terminal"></div>
+                </div>
+
+                <div class="terminal-container">
+                    <div class="terminal-header">
+                        <span><i class="fas fa-terminal"></i> Production Bot Console</span>
+                        <div class="terminal-controls">
+                            <select class="log-filter" id="production-filter" onchange="filterLogs('production', this.value)">
+                                <option value="all">All Logs</option>
+                                <option value="info">Info Only</option>
+                                <option value="warning">Warnings</option>
+                                <option value="error">Errors</option>
+                            </select>
+                            <button class="terminal-btn" onclick="clearTerminal('production')" title="Clear Terminal">
+                                <i class="fas fa-eraser"></i>
+                            </button>
+                            <button class="terminal-btn" onclick="exportLogs('production')" title="Export Logs">
+                                <i class="fas fa-download"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="terminal" id="production-terminal"></div>
+                </div>
+            </div>
+
+            <!-- 하단 패널 -->
+            <div class="bottom-panel">
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('activity')">
+                        <i class="fas fa-chart-line"></i> Activity
+                    </button>
+                    <button class="tab" onclick="switchTab('deploy')">
+                        <i class="fas fa-history"></i> Deploy History
+                    </button>
+                    <button class="tab" onclick="switchTab('errors')">
+                        <i class="fas fa-exclamation-triangle"></i> Errors
+                    </button>
+                </div>
+                <div class="tab-content" id="activity-content">
+                    <canvas id="activity-chart"></canvas>
+                </div>
+                <div class="tab-content" id="deploy-content" style="display: none;">
+                    <div id="deploy-history"></div>
+                </div>
+                <div class="tab-content" id="errors-content" style="display: none;">
+                    <div id="error-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 상태바 -->
+    <div class="statusbar">
+        <span id="status-text">Ready</span>
+        <span class="statusbar-right">
+            <span id="uptime-test">Test: --:--:--</span> | 
+            <span id="uptime-prod">Prod: --:--:--</span>
+        </span>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>

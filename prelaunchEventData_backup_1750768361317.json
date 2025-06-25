@@ -1,0 +1,154 @@
+{
+  "424480594542592009": {
+    "points": 163,
+    "attempts": 5,
+    "currentItem": {
+      "name": "🌟 전설의 무기",
+      "emoji": "🌟",
+      "baseSuccess": 95,
+      "difficulty": "legendary",
+      "maxLevel": 30
+    },
+    "currentLevel": 3,
+    "successStreak": 3,
+    "failStreak": 0,
+    "achievements": [
+      "firstTry"
+    ],
+    "lastAttempt": 1750767778055,
+    "dailyAttempts": 1,
+    "lastDailyReset": "Tue Jun 24 2025"
+  },
+  "554235989103607818": {
+    "points": 92197,
+    "attempts": 1486,
+    "currentItem": {
+      "name": "🌟 전설의 무기",
+      "emoji": "🌟",
+      "baseSuccess": 50,
+      "difficulty": "legendary",
+      "maxLevel": 30
+    },
+    "currentLevel": 15,
+    "successStreak": 0,
+    "failStreak": 1,
+    "achievements": [
+      "firstTry",
+      "lucky7",
+      "persistence"
+    ],
+    "lastAttempt": 1750734231650,
+    "dailyAttempts": 1094,
+    "lastDailyReset": "Tue Jun 24 2025"
+  },
+  "563406206362845224": {
+    "points": 18698,
+    "attempts": 279,
+    "currentItem": {
+      "name": "🌟 전설의 무기",
+      "emoji": "🌟",
+      "baseSuccess": 95,
+      "difficulty": "legendary",
+      "maxLevel": 30
+    },
+    "currentLevel": 14,
+    "successStreak": 0,
+    "failStreak": 6,
+    "achievements": [
+      "firstTry",
+      "lucky7",
+      "persistence"
+    ],
+    "lastAttempt": 1750767130408,
+    "dailyAttempts": 226,
+    "lastDailyReset": "Tue Jun 24 2025"
+  },
+  "295980447849250817": {
+    "points": 152738,
+    "attempts": 2362,
+    "currentItem": {
+      "name": "🌟 전설의 무기",
+      "emoji": "🌟",
+      "baseSuccess": 95,
+      "difficulty": "legendary",
+      "maxLevel": 30
+    },
+    "currentLevel": 14,
+    "successStreak": 0,
+    "failStreak": 2,
+    "achievements": [
+      "firstTry",
+      "lucky7",
+      "persistence"
+    ],
+    "lastAttempt": 1750766502447,
+    "dailyAttempts": 2325,
+    "lastDailyReset": "Tue Jun 24 2025"
+  },
+  "364197967114272769": {
+    "points": 32417,
+    "attempts": 516,
+    "currentItem": {
+      "name": "🌟 전설의 무기",
+      "emoji": "🌟",
+      "baseSuccess": 95,
+      "difficulty": "legendary",
+      "maxLevel": 30
+    },
+    "currentLevel": 14,
+    "successStreak": 0,
+    "failStreak": 6,
+    "achievements": [
+      "firstTry",
+      "lucky7",
+      "persistence"
+    ],
+    "lastAttempt": 1750766726098,
+    "dailyAttempts": 475,
+    "lastDailyReset": "Tue Jun 24 2025"
+  },
+  "500709937270226954": {
+    "points": 138429,
+    "attempts": 2171,
+    "currentItem": {
+      "name": "🌟 전설의 무기",
+      "emoji": "🌟",
+      "baseSuccess": 95,
+      "difficulty": "legendary",
+      "maxLevel": 30
+    },
+    "currentLevel": 14,
+    "successStreak": 0,
+    "failStreak": 2,
+    "achievements": [
+      "firstTry",
+      "lucky7",
+      "persistence"
+    ],
+    "lastAttempt": 1750768356012,
+    "dailyAttempts": 2171,
+    "lastDailyReset": "Tue Jun 24 2025"
+  },
+  "592659577384730645": {
+    "points": 6413,
+    "attempts": 117,
+    "currentItem": {
+      "name": "🌟 전설의 무기",
+      "emoji": "🌟",
+      "baseSuccess": 95,
+      "difficulty": "legendary",
+      "maxLevel": 30
+    },
+    "currentLevel": 14,
+    "successStreak": 0,
+    "failStreak": 4,
+    "achievements": [
+      "firstTry",
+      "lucky7",
+      "persistence"
+    ],
+    "lastAttempt": 1750744882411,
+    "dailyAttempts": 117,
+    "lastDailyReset": "Tue Jun 24 2025"
+  }
+}

@@ -9,6 +9,7 @@ const connectDB = async () => {
         console.log('✅ MongoDB 연결 성공!');
     } catch (error) {
         console.error('❌ MongoDB 연결 실패:', error);
+        console.error('MongoDB 연결이 필요합니다. 봇을 종료합니다.');
         process.exit(1);
     }
 };
