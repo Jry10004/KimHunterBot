@@ -13741,11 +13741,15 @@ client.once('ready', async () => {
             saveCountdownState();
         }
         
-        // 기존 ObjectId 데이터 일괄 정리
-        await cleanupEquipmentData();
+        // 데이터베이스 마이그레이션 실행 (일회성)
+        const { runAllMigrations } = require('./database/migrations');
+        const migrationList = require('./database/migrationList');
+        await runAllMigrations(migrationList);
         
-        // 유물 데이터 수정
-        await fixArtifactData();
+        // 데이터 보호 시스템 활성화
+        const { scheduleAutoBackup, validateUserData } = require('./database/dataProtection');
+        scheduleAutoBackup();
+        console.log('🛡️ 데이터 보호 시스템 활성화 완료');
         
         // 게임 데이터 로드
         loadGameData();

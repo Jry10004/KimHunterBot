@@ -1,7 +1,7 @@
 const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: '../.env.production.private' });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // Import production commands from commands.js
 const { productionCommands } = require('./commands');

@@ -593,8 +593,20 @@ const userSchema = new mongoose.Schema({
     timestamps: true
 });
 
+// 데이터 보호 시스템 import
+const { backupUserData, validateUserData } = require('../database/dataProtection');
+
 // 장비 및 데이터 무결성 확인 pre-save 미들웨어
-userSchema.pre('save', function(next) {
+userSchema.pre('save', async function(next) {
+    // 데이터 변경 전 백업 (중요한 변경사항이 있을 때만)
+    if (this.isModified('level') || this.isModified('gold') || this.isModified('inventory') || this.isModified('equipment')) {
+        try {
+            await backupUserData(this.userId);
+        } catch (error) {
+            console.error('백업 중 오류 발생:', error);
+        }
+    }
+    
     const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
     
     // 장비 슬롯 데이터 타입 확인
