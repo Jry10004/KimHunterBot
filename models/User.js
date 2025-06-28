@@ -156,6 +156,19 @@ const userSchema = new mongoose.Schema({
         vitality: { type: Number, default: 10 },
         luck: { type: Number, default: 10 }
     },
+    // 최종 능력치 (기본 스탯 + 장비 스탯)
+    attack: {
+        type: Number,
+        default: 10
+    },
+    defense: {
+        type: Number,
+        default: 10
+    },
+    health: {
+        type: Number,
+        default: 100
+    },
     statPoints: {
         type: Number,
         default: 0
@@ -500,6 +513,29 @@ const userSchema = new mongoose.Schema({
         lastReset: { type: String, default: null } // 마지막 리셋 날짜
     },
     
+    // 일일미션 보상 수령 여부
+    dailyMissionRewardClaimed: { type: String, default: null }, // 날짜 문자열로 저장
+    
+    // 아이템 보유 현황
+    items: {
+        emblemEnhanceStone: { type: Number, default: 0 } // 엠블럼 강화석
+    },
+    
+    // 엠블럼 강화 시스템
+    emblemEnhancement: {
+        level: { type: Number, default: 0 }, // 현재 강화 레벨 (0~100)
+        stats: { // 강화로 얻은 추가 스탯
+            strength: { type: Number, default: 0 },
+            agility: { type: Number, default: 0 },
+            intelligence: { type: Number, default: 0 },
+            vitality: { type: Number, default: 0 },
+            luck: { type: Number, default: 0 }
+        },
+        totalAttempts: { type: Number, default: 0 }, // 총 시도 횟수
+        totalStonesUsed: { type: Number, default: 0 }, // 총 사용 강화석
+        maxLevel: { type: Number, default: 0 } // 최고 달성 레벨
+    },
+    
     // 미니게임 통계
     gameStats: {
         dice: { 
@@ -588,6 +624,77 @@ const userSchema = new mongoose.Schema({
         bossKills: { type: Number, default: 0 },       // 보스 처치 횟수
         itemsFound: { type: Number, default: 0 },      // 발견한 아이템 수
         lastRun: { type: Date, default: null }         // 마지막 탐험 시간
+    },
+    
+    // 낚시 시스템
+    fishing: {
+        // 낚시 장비
+        rod: { type: String, default: 'wooden' },       // 낚싯대 종류
+        bait: { type: Number, default: 10 },           // 일반 미끼 보유량
+        specialBaits: {                                 // 특수 미끼
+            shiny: { type: Number, default: 0 },
+            giant: { type: Number, default: 0 },
+            legendary: { type: Number, default: 0 }
+        },
+        
+        // 낚시터 해금
+        unlockedSpots: {
+            type: [String],
+            default: ['pond']                           // 기본: 마을 연못
+        },
+        
+        // 낚시 통계
+        stats: {
+            totalCaught: { type: Number, default: 0 },  // 총 낚은 물고기
+            totalEarned: { type: Number, default: 0 },  // 총 판매 수익
+            biggestCatch: {                             // 최대 크기 기록
+                fishId: { type: String, default: null },
+                size: { type: Number, default: 0 },
+                date: { type: Date, default: null }
+            },
+            rarestCatch: {                              // 가장 희귀한 물고기
+                fishId: { type: String, default: null },
+                rarity: { type: String, default: null },
+                date: { type: Date, default: null }
+            },
+            perfectSales: { type: Number, default: 0 }, // 완벽한 타이밍 판매
+            missedOpportunities: { type: Number, default: 0 } // 놓친 기회
+        },
+        
+        // 물고기 보관함
+        inventory: [{
+            fishId: { type: String, required: true },   // 물고기 ID
+            size: { type: Number, required: true },     // 크기 (cm)
+            quality: { type: String, default: 'normal' }, // normal, unique, legendary
+            caughtAt: { type: Date, default: Date.now }, // 낚은 시간
+            caughtSpot: { type: String, required: true } // 낚은 장소
+        }],
+        
+        // 도감
+        collection: {
+            discovered: {                               // 발견한 물고기들
+                type: Map,
+                of: {
+                    count: { type: Number, default: 0 },
+                    biggestSize: { type: Number, default: 0 },
+                    firstCaught: { type: Date, default: Date.now }
+                },
+                default: new Map()
+            },
+            uniqueVariants: {                           // 유니크 변이 발견
+                type: [String],
+                default: []
+            },
+            legendaryVariants: {                        // 전설 변이 발견
+                type: [String],
+                default: []
+            }
+        },
+        
+        // 낚시 쿨다운
+        lastFish: { type: Date, default: null },        // 마지막 낚시 시간
+        dailyLimit: { type: Number, default: 0 },      // 오늘 낚은 횟수
+        lastDailyReset: { type: String, default: null } // 일일 리셋 날짜
     }
 }, {
     timestamps: true

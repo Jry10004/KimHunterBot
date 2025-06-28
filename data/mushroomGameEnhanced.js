@@ -1,4 +1,5 @@
 // 🍄 독버섯 게임 향상된 멀티플레이 기능
+const MUSHROOM_GAME = require('./mushroomGame');
 
 // 특수 아이템 시스템
 class MushroomItemSystem {

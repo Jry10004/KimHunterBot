@@ -332,6 +332,70 @@ const productionCommands = [
         name: '권한테스트',
         description: '봇과 사용자의 권한을 확인합니다',
         type: 1
+    },
+    {
+        name: '관리자',
+        description: '관리자 패널을 엽니다 (관리자 전용)',
+        type: 1,
+        options: [
+            {
+                name: '엠블럼초기화',
+                description: '특정 유저의 엠블럼을 초기화합니다',
+                type: 1,
+                options: [
+                    {
+                        name: '유저',
+                        description: '엠블럼을 초기화할 유저',
+                        type: 6,
+                        required: true
+                    }
+                ]
+            },
+            {
+                name: '엠블럼지급',
+                description: '특정 유저에게 엠블럼을 지급합니다',
+                type: 1,
+                options: [
+                    {
+                        name: '유저',
+                        description: '엠블럼을 지급받을 유저',
+                        type: 6,
+                        required: true
+                    },
+                    {
+                        name: '계열',
+                        description: '엠블럼 계열',
+                        type: 3,
+                        required: true,
+                        choices: [
+                            { name: '⚔️ 전사', value: 'warrior' },
+                            { name: '🏹 궁수', value: 'archer' },
+                            { name: '🛡️ 수호자', value: 'defender' },
+                            { name: '🧙 마법사', value: 'wizard' },
+                            { name: '🗡️ 도적', value: 'rogue' }
+                        ]
+                    },
+                    {
+                        name: '등급',
+                        description: '엠블럼 등급 (0-4)',
+                        type: 4,
+                        required: true,
+                        min_value: 0,
+                        max_value: 4
+                    }
+                ]
+            },
+            {
+                name: '엠블럼현황',
+                description: '전체 엠블럼 보유 현황을 확인합니다',
+                type: 1
+            },
+            {
+                name: '엠블럼상점새로고침',
+                description: '영구 엠블럼 상점을 새로고침합니다',
+                type: 1
+            }
+        ]
     }
 ];
 

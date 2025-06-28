@@ -167,3 +167,11 @@ SYSTEM_FIXES.md
 # 로컬 백업
 backup/
 .env.production.private
+
+# Large files
+*.tar.gz
+*.zip
+*.rar
+
+# Backup directories
+backups/

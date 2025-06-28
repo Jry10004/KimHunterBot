@@ -1,7 +1,7 @@
 // 🛡️ 데이터 보호 시스템
 const fs = require('fs');
 const path = require('path');
-const User = require('../models/User');
+// User 모델은 나중에 동적으로 로드 (순환 참조 방지)
 
 // 보호된 필드 목록 - 절대 초기화되면 안 되는 필드들
 const PROTECTED_FIELDS = {
@@ -69,7 +69,9 @@ const WEEKLY_RESET_ALLOWED = [
 // 데이터 백업
 async function backupUserData(userId) {
     try {
-        const user = await User.findOne({ userId });
+        // 동적으로 User 모델 로드 (순환 참조 방지)
+        const User = require('../models/User');
+        const user = await User.findOne({ discordId: userId });
         if (!user) return null;
         
         const backupDir = path.join(__dirname, '..', 'backups', 'users');
