@@ -260,6 +260,22 @@ const userSchema = new mongoose.Schema({
         totalInvested: { type: Number, default: 0 }, // 총 투자 골드
         godBlessingUsed: { type: Date, default: null } // 강화신의 축복 사용일
     },
+    // PVP 최상위 필드들 (시스템 호환성을 위해)
+    pvpRating: { type: Number, default: 1000 },
+    pvpTier: { type: String, default: 'Bronze' },
+    pvpWins: { type: Number, default: 0 },
+    pvpLosses: { type: Number, default: 0 },
+    pvpTickets: { type: Number, default: 20 },
+    pvpWinStreak: { type: Number, default: 0 },
+    pvpMaxWinStreak: { type: Number, default: 0 },
+    pvpTotalGoldWon: { type: Number, default: 0 },
+    pvpTotalGoldLost: { type: Number, default: 0 },
+    pvpEnhancement: {
+        high: { type: Number, default: 0 },
+        middle: { type: Number, default: 0 },
+        low: { type: Number, default: 0 }
+    },
+    lastTicketRegen: { type: Date, default: null },
     // PVP 시스템
     pvp: {
         rating: { type: Number, default: 1000 }, // ELO 레이팅
@@ -282,6 +298,7 @@ const userSchema = new mongoose.Schema({
             opponentRating: Number, // 상대방 레이팅
             result: String, // 'win' or 'lose'
             ratingChange: Number, // 레이팅 변화량
+            goldChange: Number, // 골드 변화량
             date: { type: Date, default: Date.now }
         }],
         // PVP 전용 강화 시스템
