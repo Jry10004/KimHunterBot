@@ -17,10 +17,10 @@ module.exports = {
             });
         }
         
-        // 이메일 입력 모달 표시
+        // 이메일 및 닉네임 입력 모달 표시
         const modal = new ModalBuilder()
             .setCustomId('registration_email_modal')
-            .setTitle('회원가입 - 이메일 인증');
+            .setTitle('회원가입 - 정보 입력');
         
         const emailInput = new TextInputBuilder()
             .setCustomId('email_input')
@@ -30,8 +30,20 @@ module.exports = {
             .setRequired(true)
             .setMinLength(5)
             .setMaxLength(100);
+            
+        const nicknameInput = new TextInputBuilder()
+            .setCustomId('nickname_input')
+            .setLabel('게임 닉네임 (2~10자, 한글/영문/숫자)')
+            .setPlaceholder('김헌터')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMinLength(2)
+            .setMaxLength(10);
         
-        modal.addComponents(new ActionRowBuilder().addComponents(emailInput));
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(emailInput),
+            new ActionRowBuilder().addComponents(nicknameInput)
+        );
         
         await interaction.showModal(modal);
     },
@@ -41,12 +53,22 @@ module.exports = {
         if (interaction.customId !== 'registration_email_modal') return;
         
         const email = interaction.fields.getTextInputValue('email_input');
+        const nickname = interaction.fields.getTextInputValue('nickname_input');
         
         // 이메일 형식 검증
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             return await interaction.reply({
                 content: '❌ 올바른 이메일 형식이 아닙니다!',
+                ephemeral: true
+            });
+        }
+        
+        // 닉네임 형식 검증 (한글, 영문, 숫자만 허용)
+        const nicknameRegex = /^[가-힣a-zA-Z0-9]+$/;
+        if (!nicknameRegex.test(nickname)) {
+            return await interaction.reply({
+                content: '❌ 닉네임은 한글, 영문, 숫자만 사용할 수 있습니다!',
                 ephemeral: true
             });
         }
@@ -62,6 +84,14 @@ module.exports = {
                 });
             }
             
+            // 닉네임 중복 확인
+            const nicknameExists = await User.findOne({ nickname: nickname });
+            if (nicknameExists) {
+                return await interaction.editReply({
+                    content: '❌ 이미 사용 중인 닉네임입니다!'
+                });
+            }
+            
             // 인증 코드 생성
             const verificationCode = generateVerificationCode();
             const verificationExpires = new Date(Date.now() + 10 * 60 * 1000); // 10분 후 만료
@@ -74,9 +104,9 @@ module.exports = {
             
             // 임시 등록 정보 저장
             user.email = email;
+            user.nickname = nickname;  // 사용자가 입력한 닉네임 저장
             user.emailVerificationCode = verificationCode;
             user.emailVerificationExpires = verificationExpires;
-            user.nickname = interaction.user.username;
             
             await user.save();
             
@@ -293,31 +323,15 @@ module.exports = {
             
             await user.save();
             
-            // 닉네임 변경 시도
-            let nicknameChanged = false;
-            try {
-                const guild = interaction.guild;
-                const member = await guild.members.fetch(interaction.user.id);
-                
-                // 김헌터로 닉네임 변경
-                await member.setNickname('김헌터');
-                nicknameChanged = true;
-            } catch (nicknameError) {
-                console.error('닉네임 변경 실패:', nicknameError);
-            }
-            
             // 회원가입 완료 메시지
             const successEmbed = new EmbedBuilder()
                 .setColor('#00ff00')
                 .setTitle('🎉 회원가입 완료!')
-                .setDescription(
-                    nicknameChanged 
-                        ? `${interaction.user.username}님, 강화왕 김헌터의 세계에 오신 것을 환영합니다!\n닉네임이 **김헌터**로 변경되었습니다!`
-                        : `${interaction.user.username}님, 강화왕 김헌터의 세계에 오신 것을 환영합니다!\n\n⚠️ 닉네임 변경 권한이 없어 닉네임을 변경하지 못했습니다.`
-                );
+                .setDescription(`${user.nickname}님, 강화왕 김헌터의 세계에 오신 것을 환영합니다!`);
             
             // 기본 정보 필드
             const fields = [
+                { name: '🎮 게임 닉네임', value: user.nickname, inline: true },
                 { name: '💰 시작 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
                 { name: '📊 레벨', value: 'Lv.1', inline: true },
                 { name: '✉️ 이메일', value: user.email, inline: true }
