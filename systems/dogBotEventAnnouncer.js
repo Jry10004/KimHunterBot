@@ -5,11 +5,11 @@ const { DOGBOT_RESCUE_EVENT, getCurrentFloor, getHPPercentage, createProgressBar
 class DogBotEventAnnouncer {
     constructor() {
         this.announcementInterval = null;
-        this.announcementChannelId = '1386447256408035399';
+        this.announcementChannelId = process.env.DOGBOT_CHANNEL_ID || process.env.EVENT_CHANNEL_ID || '1386447256408035399';
         this.intervalTime = 20 * 60 * 1000; // 20분
         this.isAnnouncementRunning = false; // 중복 실행 방지
         this.lastAnnouncementTime = 0; // 마지막 공지 시간
-        console.log('[DogBotEventAnnouncer] 인스턴스 생성됨');
+        console.log('[DogBotEventAnnouncer] 인스턴스 생성됨, 채널 ID:', this.announcementChannelId);
     }
 
     // 공지 시작

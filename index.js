@@ -4590,11 +4590,12 @@ client.once('ready', async () => {
                     dogBotAnnouncer.startAnnouncements(client);
                 }
                 
-                // 인질 시스템이 이미 실행 중이 아닌 경우에만 시작
-                if (!dogBotHostageSystem.isHostageSystemRunning) {
-                    console.log('🚨 인질 시스템을 시작합니다...');
-                    dogBotHostageSystem.startHostageSystem(client);
-                }
+                // 인질 시스템 비활성화
+                // if (!dogBotHostageSystem.isHostageSystemRunning) {
+                //     console.log('🚨 인질 시스템을 시작합니다...');
+                //     dogBotHostageSystem.startHostageSystem(client);
+                // }
+                console.log('ℹ️ 인질 시스템은 비활성화되었습니다.');
             } else {
                 console.log('💤 댕댕봇 구출 이벤트가 비활성화 상태입니다.');
                 console.log('   /댕댕봇구출시작 명령어로 이벤트를 시작하세요.');
