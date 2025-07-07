@@ -56,7 +56,7 @@ const TIC_TAC_TOE_GAME = {
     // 게임 보드 이미지 생성 (Jimp)
     async createBoardImage(board, player1, player2, winPattern = [], lastMove = null) {
         // 450x450 크기의 보드 생성
-        const boardImage = new Jimp(450, 450, 0x2C2F33FF);
+        const boardImage = new Jimp({ width: 450, height: 450, color: 0x2C2F33FF });
         
         // 격자선 그리기
         const lineColor = 0x4A4D52FF;
@@ -138,7 +138,7 @@ const TIC_TAC_TOE_GAME = {
                     profileImage.resize(130, 130);
                     
                     // 원형 마스크 생성
-                    const mask = new Jimp(130, 130, 0x00000000);
+                    const mask = new Jimp({ width: 130, height: 130, color: 0x00000000 });
                     const centerX = 65;
                     const centerY = 65;
                     const radius = 65;
@@ -183,7 +183,7 @@ const TIC_TAC_TOE_GAME = {
                         
                         // NEW! 표시
                         const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-                        const newBadge = new Jimp(50, 20, 0xFF0000FF);
+                        const newBadge = new Jimp({ width: 50, height: 20, color: 0xFF0000FF });
                         newBadge.print(font, 5, 2, 'NEW!');
                         boardImage.composite(newBadge, x + 80, y - 10);
                     }

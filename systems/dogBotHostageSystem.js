@@ -28,12 +28,12 @@ class DogBotHostageSystem {
         // 즉시 한 번 체크
         this.checkAndCreateHostage(client);
 
-        // 6시간마다 체크
+        // 2시간마다 체크
         this.hostageInterval = setInterval(() => {
             this.checkAndCreateHostage(client);
         }, DOGBOT_RESCUE_EVENT.hostage.checkInterval);
 
-        console.log('✅ 댕댕봇 인질 시스템 시작 (6시간마다)');
+        console.log('✅ 댕댕봇 인질 시스템 시작 (2시간마다, 쿨타임 15분)');
     }
 
     // 인질 시스템 중지
@@ -89,8 +89,17 @@ class DogBotHostageSystem {
                 return;
             }
 
+            // 제외할 유저 필터링
+            const validParticipants = participants.filter(userId => 
+                !DOGBOT_RESCUE_EVENT.hostage.excludedUsers.includes(userId)
+            );
+
+            if (validParticipants.length === 0) {
+                return;
+            }
+
             // 랜덤 참여자 선택
-            const randomUser = participants[Math.floor(Math.random() * participants.length)];
+            const randomUser = validParticipants[Math.floor(Math.random() * validParticipants.length)];
 
             // 채널 가져오기
             const channel = await client.channels.fetch(DOGBOT_RESCUE_EVENT.hostage.channelId);
@@ -150,13 +159,13 @@ class DogBotHostageSystem {
                     `**${scenario.description}**\n` +
                     `💬 개발자: *"${scenario.action}"*\n\n` +
                     `**🏃 탈출 방법**\n` +
-                    `30분 내에 아무 메시지나 입력해서 ${scenario.escape}\n\n` +
+                    `15분 내에 아무 메시지나 입력해서 ${scenario.escape}\n\n` +
                     `⚠️ **실패 시**\n` +
                     `개발자가 기뻐하며 디버그 타워를 **${DOGBOT_RESCUE_EVENT.hostage.healAmount.toLocaleString()} HP** 수리합니다!`
                 )
                 .addFields({
                     name: '⏰ 제한 시간',
-                    value: '30분',
+                    value: '15분',
                     inline: true
                 }, {
                     name: '💬 필요 행동',

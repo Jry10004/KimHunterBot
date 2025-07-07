@@ -717,6 +717,13 @@ async function handleTicTacToeButton(interaction) {
                         if (winner.tictactoeData.currentStreak > winner.tictactoeData.bestStreak) {
                             winner.tictactoeData.bestStreak = winner.tictactoeData.currentStreak;
                         }
+                        winner.tictactoeData.lastPlayed = new Date();
+                        
+                        // gameStats 업데이트
+                        if (!winner.gameStats) winner.gameStats = {};
+                        if (!winner.gameStats.tictactoe) winner.gameStats.tictactoe = { played: 0, won: 0 };
+                        winner.gameStats.tictactoe.played++;
+                        winner.gameStats.tictactoe.won++;
                         
                         await winner.save();
                     }
@@ -736,6 +743,12 @@ async function handleTicTacToeButton(interaction) {
                         }
                         loser.tictactoeData.losses++;
                         loser.tictactoeData.currentStreak = 0;
+                        loser.tictactoeData.lastPlayed = new Date();
+                        
+                        // gameStats 업데이트
+                        if (!loser.gameStats) loser.gameStats = {};
+                        if (!loser.gameStats.tictactoe) loser.gameStats.tictactoe = { played: 0, won: 0 };
+                        loser.gameStats.tictactoe.played++;
                         
                         await loser.save();
                     }
@@ -919,6 +932,13 @@ async function handleTicTacToeButton(interaction) {
                         }
                         user1.tictactoeData.draws++;
                         user1.tictactoeData.currentStreak = 0;
+                        user1.tictactoeData.lastPlayed = new Date();
+                        
+                        // gameStats 업데이트
+                        if (!user1.gameStats) user1.gameStats = {};
+                        if (!user1.gameStats.tictactoe) user1.gameStats.tictactoe = { played: 0, won: 0 };
+                        user1.gameStats.tictactoe.played++;
+                        
                         await user1.save();
                     }
                     if (user2) {
@@ -936,6 +956,13 @@ async function handleTicTacToeButton(interaction) {
                         }
                         user2.tictactoeData.draws++;
                         user2.tictactoeData.currentStreak = 0;
+                        user2.tictactoeData.lastPlayed = new Date();
+                        
+                        // gameStats 업데이트
+                        if (!user2.gameStats) user2.gameStats = {};
+                        if (!user2.gameStats.tictactoe) user2.gameStats.tictactoe = { played: 0, won: 0 };
+                        user2.gameStats.tictactoe.played++;
+                        
                         await user2.save();
                     }
                 } else {
@@ -961,6 +988,14 @@ async function handleTicTacToeButton(interaction) {
                         if (winner.tictactoeData.currentStreak > winner.tictactoeData.bestStreak) {
                             winner.tictactoeData.bestStreak = winner.tictactoeData.currentStreak;
                         }
+                        winner.tictactoeData.lastPlayed = new Date();
+                        
+                        // gameStats 업데이트
+                        if (!winner.gameStats) winner.gameStats = {};
+                        if (!winner.gameStats.tictactoe) winner.gameStats.tictactoe = { played: 0, won: 0 };
+                        winner.gameStats.tictactoe.played++;
+                        winner.gameStats.tictactoe.won++;
+                        
                         await winner.save();
                     }
                     if (loser && result.rewards.loser > 0) {
@@ -978,6 +1013,13 @@ async function handleTicTacToeButton(interaction) {
                         }
                         loser.tictactoeData.losses++;
                         loser.tictactoeData.currentStreak = 0;
+                        loser.tictactoeData.lastPlayed = new Date();
+                        
+                        // gameStats 업데이트
+                        if (!loser.gameStats) loser.gameStats = {};
+                        if (!loser.gameStats.tictactoe) loser.gameStats.tictactoe = { played: 0, won: 0 };
+                        loser.gameStats.tictactoe.played++;
+                        
                         await loser.save();
                     }
                 }

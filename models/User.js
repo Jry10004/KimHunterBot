@@ -743,7 +743,23 @@ const userSchema = new mongoose.Schema({
         wordchain: { 
             played: { type: Number, default: 0 }, 
             won: { type: Number, default: 0 } 
+        },
+        tictactoe: { 
+            played: { type: Number, default: 0 }, 
+            won: { type: Number, default: 0 } 
         }
+    },
+    
+    // 틱택토 게임 데이터
+    tictactoeData: {
+        wins: { type: Number, default: 0 },
+        losses: { type: Number, default: 0 },
+        draws: { type: Number, default: 0 },
+        currentStreak: { type: Number, default: 0 },
+        bestStreak: { type: Number, default: 0 },
+        botWins: { type: Number, default: 0 },
+        userWins: { type: Number, default: 0 },
+        lastPlayed: { type: Date, default: null }
     },
     
     // 가위바위보 게임 데이터
