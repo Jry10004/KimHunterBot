@@ -238,7 +238,12 @@ const TIC_TAC_TOE_GAME = {
         }
         
         // 버퍼로 변환
-        const buffer = await boardImage.getBufferAsync(Jimp.MIME_PNG);
+        const buffer = await new Promise((resolve, reject) => {
+            boardImage.getBuffer(Jimp.MIME_PNG, (err, buffer) => {
+                if (err) reject(err);
+                else resolve(buffer);
+            });
+        });
         const attachment = new AttachmentBuilder(buffer, { name: 'tictactoe.png' });
         
         return attachment;
