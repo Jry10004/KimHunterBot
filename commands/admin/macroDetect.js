@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, AttachmentBuilder } = require('discord.js');
-const antiMacro = require('../systems/antiMacro');
-const macroMonitor = require('../systems/macroMonitor');
+const antiMacro = require('../../systems/antiMacro');
+const macroMonitor = require('../../systems/macroMonitor');
 
 module.exports = {
     data: new SlashCommandBuilder()

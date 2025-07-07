@@ -286,6 +286,19 @@ async function startGame(interaction, player1, player2) {
         
         // 채널에 사용자 멘션
         await tempChannel.send(`<@${player1.discordId}> vs <@${player2.discordId}> - 틱택토 게임이 시작됩니다!`);
+        
+        // 원래 채널에 게임 시작 알림
+        if (interaction.channel) {
+            await interaction.channel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('⭕ 틱택토 게임 시작!')
+                        .setDescription(`${player1.nickname || player1.discordId} vs ${player2.nickname || player2.discordId}`)
+                        .addFields({ name: '🎮 게임 채널', value: `<#${tempChannel.id}>`, inline: false })
+                        .setColor('#00FF00')
+                ]
+            });
+        }
 
         // 게임 생성 - tempChannel에 메시지 전송
         const game = TIC_TAC_TOE_GAME.createGame(discordPlayer1, discordPlayer2, tempChannel);
@@ -564,12 +577,18 @@ async function handleTicTacToeButton(interaction) {
                 });
             }
             
-            // 게임 시작
-            await interaction.reply({
-                content: '🎮 게임을 시작합니다!',
-                flags: 64
+            // 대기 메시지 삭제를 위해 먼저 응답
+            await interaction.update({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('🎮 게임 시작 중...')
+                        .setDescription('잠시만 기다려주세요. 게임 채널을 생성하고 있습니다.')
+                        .setColor('#00FF00')
+                ],
+                components: []
             });
             
+            // 게임 시작
             await startGame(interaction, session.host, session.participant);
         }
         
