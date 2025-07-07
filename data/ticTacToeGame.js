@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
-const { Jimp } = require('jimp');
+const { Jimp, JimpMime } = require('jimp');
 const axios = require('axios');
 
 // 틱택토 게임 시스템 (Jimp 버전)
@@ -181,10 +181,9 @@ const TIC_TAC_TOE_GAME = {
                             }
                         }
                         
-                        // NEW! 표시
-                        const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+                        // NEW! 표시 (폰트 없이 간단한 표시)
                         const newBadge = new Jimp({ width: 50, height: 20, color: 0xFF0000FF });
-                        newBadge.print(font, 5, 2, 'NEW!');
+                        // 간단한 사각형으로 NEW 표시
                         boardImage.composite(newBadge, x + 80, y - 10);
                     }
                     
@@ -204,18 +203,13 @@ const TIC_TAC_TOE_GAME = {
                         }
                     }
                     
-                    // 플레이어 이름 추가
-                    const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-                    const nameText = player.username.substring(0, 10);
-                    const textWidth = Jimp.measureText(font, nameText);
-                    boardImage.print(font, x + 65 - textWidth / 2, y + 135, nameText);
+                    // 플레이어 이름 표시 생략 (폰트 문제로 임시 제거)
                     
                 } catch (error) {
                     const player = board[i] === 'X' ? player1 : player2;
                     console.error('프로필 이미지 로드 실패:', player.username, player.avatar, error.message);
                     
-                    // 프로필 로드 실패시 기본 X/O 표시
-                    const font = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE);
+                    // 프로필 로드 실패시 기본 색상 표시
                     const symbol = board[i];
                     const color = symbol === 'X' ? 0xFF6B6BFF : 0x4ECDC4FF;
                     
@@ -226,20 +220,40 @@ const TIC_TAC_TOE_GAME = {
                         }
                     }
                     
-                    boardImage.print(font, x + 45, y + 35, symbol);
-                    
-                    // 플레이어 이름도 표시
-                    const smallFont = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-                    const nameText = player.username.substring(0, 10);
-                    const textWidth = Jimp.measureText(smallFont, nameText);
-                    boardImage.print(smallFont, x + 65 - textWidth / 2, y + 135, nameText);
+                    // X/O 모양 그리기 (폰트 없이)
+                    if (symbol === 'X') {
+                        // X 모양 그리기
+                        const lineWidth = 10;
+                        for (let offset = -lineWidth/2; offset < lineWidth/2; offset++) {
+                            for (let i = 20; i < 110; i++) {
+                                boardImage.setPixelColor(0xFFFFFFFF, x + i, y + i + offset);
+                                boardImage.setPixelColor(0xFFFFFFFF, x + i, y + 130 - i + offset);
+                            }
+                        }
+                    } else {
+                        // O 모양 그리기
+                        const centerX = x + 65;
+                        const centerY = y + 65;
+                        const radius = 45;
+                        const lineWidth = 10;
+                        for (let angle = 0; angle < 360; angle++) {
+                            const rad = angle * Math.PI / 180;
+                            for (let r = radius - lineWidth/2; r < radius + lineWidth/2; r++) {
+                                const px = Math.round(centerX + r * Math.cos(rad));
+                                const py = Math.round(centerY + r * Math.sin(rad));
+                                if (px >= x && px < x + 130 && py >= y && py < y + 130) {
+                                    boardImage.setPixelColor(0xFFFFFFFF, px, py);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
         
         // 버퍼로 변환
         const buffer = await new Promise((resolve, reject) => {
-            boardImage.getBuffer(Jimp.MIME_PNG, (err, buffer) => {
+            boardImage.getBuffer(JimpMime.png, (err, buffer) => {
                 if (err) reject(err);
                 else resolve(buffer);
             });
