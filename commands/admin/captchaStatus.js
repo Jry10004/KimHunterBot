@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const antiMacro = require('../systems/antiMacro');
+const antiMacro = require('../../systems/antiMacro');
 
 module.exports = {
     data: new SlashCommandBuilder()

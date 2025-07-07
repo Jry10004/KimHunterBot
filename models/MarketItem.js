@@ -130,7 +130,7 @@ marketItemSchema.methods.updatePrice = async function(newPrice, volume = 0) {
             volume: todayHistory.reduce((sum, h) => sum + (h.volume || 0), 0),
             avgPrice: prices.reduce((a, b) => a + b, 0) / prices.length,
             changeAmount: newPrice - oldPrice,
-            changePercent: ((newPrice - oldPrice) / oldPrice * 100),
+            changePercent: oldPrice > 0 ? ((newPrice - oldPrice) / oldPrice * 100) : 0,
             lastUpdate: new Date()
         };
     }
