@@ -44,8 +44,7 @@
     "node-cache": "^5.1.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
-    "winston": "^3.11.0",
-    "zlib": "^1.0.5"
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "@babel/core": "^7.23.0",
