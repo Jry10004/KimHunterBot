@@ -8,6 +8,7 @@ class DogBotStateManager {
         this.statePath = DATA_FILES.DOGBOT_RESCUE_STATE();
         this.state = this.getDefaultState(); // 기본 상태로 초기화
         this.saveInterval = null;
+        this.isLoaded = false; // 로드 완료 플래그 추가
         
         // 테스트 환경 초기화
         if (process.env.NODE_ENV === 'test' || process.env.BOT_TOKEN === process.env.TEST_BOT_TOKEN) {
@@ -15,15 +16,45 @@ class DogBotStateManager {
             console.log('[DogBot] 테스트 환경 초기화, 경로:', this.statePath);
         }
         
-        this.loadState();
+        // 동기적으로 초기 로드 시도
+        this.initializeState();
     }
 
-    // 상태 로드
+    // 동기적 초기 상태 로드
+    initializeState() {
+        const fsSync = require('fs');
+        try {
+            if (fsSync.existsSync(this.statePath)) {
+                const data = fsSync.readFileSync(this.statePath, 'utf8');
+                this.state = JSON.parse(data);
+                console.log('[DogBot] 초기 상태 로드 완료');
+                console.log('[DogBot] 현재 층:', this.state.status.currentFloor);
+                console.log('[DogBot] 총 공격:', this.state.statistics.totalAttacks);
+                console.log('[DogBot] 총 데미지:', this.state.statistics.totalDamage);
+                this.isLoaded = true;
+            } else {
+                console.log('[DogBot] 상태 파일이 없음, 기본값 사용');
+                this.state = this.getDefaultState();
+                // 동기적으로 파일 생성
+                fsSync.writeFileSync(this.statePath, JSON.stringify(this.state, null, 2));
+            }
+            
+            // 자동 저장 설정 (30초마다)
+            if (this.saveInterval) clearInterval(this.saveInterval);
+            this.saveInterval = setInterval(() => this.saveState(), 30000);
+        } catch (error) {
+            console.error('[DogBot] 초기 상태 로드 실패:', error);
+            this.state = this.getDefaultState();
+        }
+    }
+
+    // 비동기 상태 로드 (나중에 사용)
     async loadState() {
         try {
             const data = await fs.readFile(this.statePath, 'utf8');
             this.state = JSON.parse(data);
             console.log('[DogBot] 상태 로드 완료');
+            this.isLoaded = true;
             
             // 자동 저장 설정 (30초마다)
             if (this.saveInterval) clearInterval(this.saveInterval);
@@ -233,5 +264,18 @@ class DogBotStateManager {
 
 // 싱글톤 인스턴스
 const stateManager = new DogBotStateManager();
+
+// 프로세스 종료 시 상태 저장
+process.on('SIGINT', async () => {
+    console.log('[DogBot] 프로세스 종료, 상태 저장 중...');
+    await stateManager.saveState();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    console.log('[DogBot] 프로세스 종료, 상태 저장 중...');
+    await stateManager.saveState();
+    process.exit(0);
+});
 
 module.exports = stateManager;
