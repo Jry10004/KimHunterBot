@@ -4533,8 +4533,12 @@ client.once('ready', async () => {
         // MongoDB 연결
         await connectDB();
 
-        // 웹 서버 시작 (IP 수집용)
-        startWebServer();
+        // 웹 서버 시작 (IP 수집용) - 테스트 환경에서는 비활성화
+        if (process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) {
+            startWebServer();
+        } else {
+            console.log('🌐 웹 서버가 테스트 환경에서는 비활성화됩니다.');
+        }
 
         // 사전강화 데이터 로드
         global.prelaunchEventData = loadPrelaunchData();
@@ -4649,16 +4653,35 @@ client.once('ready', async () => {
 
                 // 길드별로 명령어 등록 (즉시 사용 가능)
                 let totalRegistered = 0;
-                for (const guild of client.guilds.cache.values()) {
-                    try {
-                        const data = await rest.put(
-                            Routes.applicationGuildCommands(CLIENT_ID, guild.id),
-                            { body: commands }
-                        );
-                        console.log(`✅ ${guild.name} 서버에 ${data.length}개 명령어 등록 완료`);
-                        totalRegistered++;
-                    } catch (error) {
-                        console.error(`❌ ${guild.name} 서버 명령어 등록 실패:`, error.message);
+                
+                // 테스트 환경에서는 테스트 서버에만 등록
+                if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+                    const testGuildId = process.env.PRODUCTION_GUILD_ID;
+                    if (testGuildId) {
+                        try {
+                            const data = await rest.put(
+                                Routes.applicationGuildCommands(CLIENT_ID, testGuildId),
+                                { body: commands }
+                            );
+                            console.log(`✅ 테스트 서버에 ${data.length}개 명령어 등록 완료`);
+                            totalRegistered++;
+                        } catch (error) {
+                            console.error(`❌ 테스트 서버 명령어 등록 실패:`, error.message);
+                        }
+                    }
+                } else {
+                    // 프로덕션 환경에서는 모든 서버에 등록
+                    for (const guild of client.guilds.cache.values()) {
+                        try {
+                            const data = await rest.put(
+                                Routes.applicationGuildCommands(CLIENT_ID, guild.id),
+                                { body: commands }
+                            );
+                            console.log(`✅ ${guild.name} 서버에 ${data.length}개 명령어 등록 완료`);
+                            totalRegistered++;
+                        } catch (error) {
+                            console.error(`❌ ${guild.name} 서버 명령어 등록 실패:`, error.message);
+                        }
                     }
                 }
 
