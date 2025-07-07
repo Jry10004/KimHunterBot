@@ -2,63 +2,65 @@
 const BOSS_SYSTEM = {
     // 보스 목록
     bosses: [
+        // 초급 보스 (레벨 10-30)
+        {
+            id: 'goblin_chief',
+            name: '고블린 족장',
+            emoji: '👺',
+            level: 20,
+            hp: 30000,
+            requiredLevel: 10,
+            attack: 150,
+            defense: 100,
+            rewards: {
+                exp: 10000,
+                gold: 20000,
+                items: [
+                    { id: 'goblin_axe', chance: 0.2 },
+                    { id: 'chief_necklace', chance: 0.1 },
+                    { id: 'goblin_tooth', chance: 0.5 }
+                ]
+            },
+            skills: [
+                { name: '난폭한 휘두르기', damage: 300, chance: 0.4 },
+                { name: '고블린 부대 소환', damage: 200, chance: 0.3 },
+                { name: '족장의 분노', damage: 400, chance: 0.1 }
+            ]
+        },
+        {
+            id: 'skeleton_king',
+            name: '해골 왕',
+            emoji: '💀',
+            level: 30,
+            hp: 50000,
+            requiredLevel: 20,
+            attack: 250,
+            defense: 150,
+            rewards: {
+                exp: 20000,
+                gold: 40000,
+                items: [
+                    { id: 'bone_crown', chance: 0.15 },
+                    { id: 'undead_essence', chance: 0.2 },
+                    { id: 'skeleton_bone', chance: 0.4 }
+                ]
+            },
+            skills: [
+                { name: '망자의 저주', damage: 400, chance: 0.4 },
+                { name: '해골 부대 소환', damage: 350, chance: 0.3 },
+                { name: '죽음의 파동', damage: 600, chance: 0.15 }
+            ]
+        },
+        // 중급 보스 (레벨 40-60)
         {
             id: 'shadow_assassin',
             name: '그림자 암살자',
             emoji: '🗡️',
-            level: 60,
-            hp: 120000,
+            level: 50,
+            hp: 100000,
             requiredLevel: 40,
-            attack: 500,
-            defense: 300,
-            rewards: {
-                exp: 50000,
-                gold: 100000,
-                items: [
-                    { id: 'shadow_blade', chance: 0.1 },
-                    { id: 'assassin_cloak', chance: 0.15 },
-                    { id: 'dark_essence', chance: 0.3 }
-                ]
-            },
-            skills: [
-                { name: '그림자 베기', damage: 800, chance: 0.3 },
-                { name: '암살', damage: 1500, chance: 0.1 },
-                { name: '은신', effect: 'dodge', chance: 0.2 }
-            ]
-        },
-        {
-            id: 'frost_dragon',
-            name: '서리 드래곤',
-            emoji: '🐉',
-            level: 80,
-            hp: 200000,
-            requiredLevel: 60,
-            attack: 700,
-            defense: 400,
-            rewards: {
-                exp: 100000,
-                gold: 200000,
-                items: [
-                    { id: 'dragon_scale', chance: 0.15 },
-                    { id: 'frost_heart', chance: 0.1 },
-                    { id: 'ice_crystal', chance: 0.4 }
-                ]
-            },
-            skills: [
-                { name: '서리 숨결', damage: 1000, chance: 0.4 },
-                { name: '얼음 폭풍', damage: 1200, chance: 0.2 },
-                { name: '용의 분노', damage: 2000, chance: 0.05 }
-            ]
-        },
-        {
-            id: 'demon_lord',
-            name: '데몬 로드',
-            emoji: '👹',
-            level: 100,
-            hp: 300000,
-            requiredLevel: 80,
-            attack: 1000,
-            defense: 500,
+            attack: 400,
+            defense: 250,
             rewards: {
                 exp: 200000,
                 gold: 500000,
@@ -78,11 +80,11 @@ const BOSS_SYSTEM = {
             id: 'ancient_golem',
             name: '고대 골렘',
             emoji: '🗿',
-            level: 70,
-            hp: 250000,
+            level: 60,
+            hp: 150000,
             requiredLevel: 50,
-            attack: 400,
-            defense: 800,
+            attack: 350,
+            defense: 600,
             rewards: {
                 exp: 80000,
                 gold: 150000,
@@ -98,15 +100,16 @@ const BOSS_SYSTEM = {
                 { name: '지진', damage: 1300, chance: 0.15 }
             ]
         },
+        // 상급 보스 (레벨 70-90)
         {
-            id: 'void_emperor',
-            name: '공허의 황제',
-            emoji: '👑',
-            level: 120,
-            hp: 500000,
-            requiredLevel: 100,
-            attack: 1500,
-            defense: 700,
+            id: 'frost_dragon',
+            name: '서리 드래곤',
+            emoji: '🐉',
+            level: 80,
+            hp: 250000,
+            requiredLevel: 70,
+            attack: 700,
+            defense: 400,
             rewards: {
                 exp: 500000,
                 gold: 1000000,
@@ -121,28 +124,134 @@ const BOSS_SYSTEM = {
                 { name: '차원 균열', damage: 2500, chance: 0.1 },
                 { name: '황제의 진노', damage: 5000, chance: 0.01 }
             ]
+        },
+        {
+            id: 'fire_elemental',
+            name: '화염 엘리멘탈',
+            emoji: '🔥',
+            level: 90,
+            hp: 300000,
+            requiredLevel: 80,
+            attack: 900,
+            defense: 350,
+            rewards: {
+                exp: 150000,
+                gold: 300000,
+                items: [
+                    { id: 'fire_core', chance: 0.1 },
+                    { id: 'flame_armor', chance: 0.08 },
+                    { id: 'burning_essence', chance: 0.3 }
+                ]
+            },
+            skills: [
+                { name: '화염 폭발', damage: 1300, chance: 0.35 },
+                { name: '불길 편', damage: 1500, chance: 0.2 },
+                { name: '용암 폭풍', damage: 2000, chance: 0.08 }
+            ]
+        },
+        // 최상급 보스 (레벨 100)
+        {
+            id: 'demon_lord',
+            name: '데몬 로드',
+            emoji: '👹',
+            level: 100,
+            hp: 500000,
+            requiredLevel: 100,
+            attack: 1200,
+            defense: 600,
+            rewards: {
+                exp: 300000,
+                gold: 600000,
+                items: [
+                    { id: 'demon_sword', chance: 0.05 },
+                    { id: 'hell_armor', chance: 0.08 },
+                    { id: 'demon_horn', chance: 0.2 }
+                ]
+            },
+            skills: [
+                { name: '지옥불', damage: 1800, chance: 0.3 },
+                { name: '악마의 저주', damage: 1000, effect: 'debuff', chance: 0.35 },
+                { name: '최후의 심판', damage: 3000, chance: 0.05 }
+            ]
         }
     ],
 
     // 보스 아이템
     bossItems: {
+        // 고블린 족장 드롭
+        goblin_axe: {
+            name: '고블린 도끼',
+            type: 'weapon',
+            rarity: 'rare',
+            level: 20,
+            stats: { attack: 50 }
+        },
+        chief_necklace: {
+            name: '족장의 목걸이',
+            type: 'accessory',
+            rarity: 'rare',
+            level: 20,
+            stats: { luck: 20 }
+        },
+        goblin_tooth: {
+            name: '고블린 이빨',
+            type: 'material',
+            rarity: 'common'
+        },
+        
+        // 해골 왕 드롭
+        bone_crown: {
+            name: '해골 왕관',
+            type: 'helmet',
+            rarity: 'epic',
+            level: 30,
+            stats: { defense: 80, attack: 30 }
+        },
+        undead_essence: {
+            name: '언데드 정수',
+            type: 'material',
+            rarity: 'rare'
+        },
+        skeleton_bone: {
+            name: '해골 뼈',
+            type: 'material',
+            rarity: 'common'
+        },
+        
         // 그림자 암살자 드롭
         shadow_blade: {
             name: '그림자 검',
             type: 'weapon',
-            rarity: 'legendary',
-            level: 60,
-            stats: { attack: 300, dodge: 50 }
+            rarity: 'epic',
+            level: 50,
+            stats: { attack: 200, dodge: 40 }
         },
         assassin_cloak: {
             name: '암살자의 망토',
             type: 'armor',
-            rarity: 'epic',
-            level: 60,
-            stats: { defense: 150, dodge: 80 }
+            rarity: 'rare',
+            level: 50,
+            stats: { defense: 100, dodge: 60 }
         },
         dark_essence: {
             name: '어둠의 정수',
+            type: 'material',
+            rarity: 'rare'
+        },
+        
+        // 고대 골렘 드롭
+        golem_core: {
+            name: '골렘의 핵',
+            type: 'material',
+            rarity: 'epic'
+        },
+        ancient_stone: {
+            name: '고대의 돌',
+            type: 'material',
+            rarity: 'rare'
+        },
+        earth_essence: {
+            name: '대지의 정수',
             type: 'material',
             rarity: 'rare'
         },
@@ -166,6 +275,25 @@ const BOSS_SYSTEM = {
             rarity: 'rare'
         },
         
+        // 화염 엘리멘탈 드롭
+        fire_core: {
+            name: '화염의 핵',
+            type: 'material',
+            rarity: 'legendary'
+        },
+        flame_armor: {
+            name: '화염 갑옷',
+            type: 'armor',
+            rarity: 'legendary',
+            level: 90,
+            stats: { defense: 350, attack: 80 }
+        },
+        burning_essence: {
+            name: '타오르는 정수',
+            type: 'material',
+            rarity: 'epic'
+        },
+        
         // 데몬 로드 드롭
         demon_sword: {
             name: '마검 데모니아',
@@ -185,44 +313,6 @@ const BOSS_SYSTEM = {
             name: '악마의 뿔',
             type: 'material',
             rarity: 'epic'
-        },
-        
-        // 고대 골렘 드롭
-        golem_core: {
-            name: '골렘의 핵',
-            type: 'material',
-            rarity: 'legendary'
-        },
-        ancient_stone: {
-            name: '고대의 돌',
-            type: 'material',
-            rarity: 'rare'
-        },
-        earth_essence: {
-            name: '대지의 정수',
-            type: 'material',
-            rarity: 'rare'
-        },
-        
-        // 공허의 황제 드롭
-        void_crown: {
-            name: '공허의 왕관',
-            type: 'helmet',
-            rarity: 'mythic',
-            level: 120,
-            stats: { attack: 200, defense: 300, luck: 100 }
-        },
-        emperor_robe: {
-            name: '황제의 로브',
-            type: 'armor',
-            rarity: 'mythic',
-            level: 120,
-            stats: { defense: 500, dodge: 50 }
-        },
-        void_fragment: {
-            name: '공허의 파편',
-            type: 'material',
-            rarity: 'legendary'
         }
     },
 

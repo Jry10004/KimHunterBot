@@ -10,33 +10,6 @@ const MONSTER_BATTLE = {
         jackpot: { name: '정확한 레벨 예측', emoji: '💎', multiplier: 99.0 }
     },
 
-    // 몬스터 종류 (레벨대별 등장)
-    monsters: {
-        weak: [ // 1-50 레벨
-            { name: '슬라임', emoji: '🟢', minLevel: 1, maxLevel: 10 },
-            { name: '고블린', emoji: '👺', minLevel: 5, maxLevel: 20 },
-            { name: '늑대', emoji: '🐺', minLevel: 10, maxLevel: 30 },
-            { name: '오크', emoji: '🐗', minLevel: 20, maxLevel: 40 },
-            { name: '트롤', emoji: '👹', minLevel: 30, maxLevel: 50 }
-        ],
-        strong: [ // 51-100 레벨
-            { name: '오우거', emoji: '👾', minLevel: 51, maxLevel: 65 },
-            { name: '와이번', emoji: '🦅', minLevel: 60, maxLevel: 75 },
-            { name: '미노타우로스', emoji: '🐃', minLevel: 70, maxLevel: 85 },
-            { name: '리치', emoji: '💀', minLevel: 80, maxLevel: 95 },
-            { name: '드래곤', emoji: '🐉', minLevel: 90, maxLevel: 100 }
-        ]
-    },
-
-    // 배틀 애니메이션 GIF
-    battleAnimations: {
-        start: 'kim_battle_start.gif',
-        weak: 'kim_battle_weak.gif',
-        strong: 'kim_battle_strong.gif',
-        victory: 'kim_battle_victory.gif',
-        defeat: 'kim_battle_defeat.gif'
-    },
-
     // 특수 배틀 이벤트
     specialEvents: [
         {

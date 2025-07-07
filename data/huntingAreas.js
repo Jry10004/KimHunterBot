@@ -1,5 +1,36 @@
-// 드롭 아이템 데이터
+// 드롭 아이템 데이터 (지역별로 재구성)
 const DROP_ITEMS = {
+    // 지역별 드롭 테이블
+    area1: [ // 꽃잎 마을 근처
+        { id: "slime_jelly", name: "슬라임 젤리", emoji: "💧", rarity: "일반", value: 100 },
+        { id: "rabbit_foot", name: "토끼발", emoji: "🐰", rarity: "고급", value: 300 },
+        { id: "mushroom_spore", name: "버섯 포자", emoji: "🍄", rarity: "고급", value: 250 },
+        { id: "butterfly_dust", name: "나비 가루", emoji: "🦋", rarity: "일반", value: 150 },
+        { id: "wool_ball", name: "양털 뭉치", emoji: "🐑", rarity: "레어", value: 500 }
+    ],
+    area2: [ // 무지개 초원
+        { id: "rainbow_flower", name: "무지개 꽃잎", emoji: "🌈", rarity: "고급", value: 600 },
+        { id: "frog_tongue", name: "개구리 혓바닥", emoji: "🐸", rarity: "레어", value: 800 },
+        { id: "cat_whisker", name: "고양이 수염", emoji: "🐱", rarity: "고급", value: 700 },
+        { id: "crystal_antler", name: "크리스탈 뿔", emoji: "🦌", rarity: "에픽", value: 2000 },
+        { id: "unicorn_hair", name: "유니콘 갈기", emoji: "🦄", rarity: "레전드", value: 10000 }
+    ],
+    area3: [ // 속삭이는 숲
+        { id: "acorn", name: "도토리", emoji: "🌰", rarity: "일반", value: 400 },
+        { id: "owl_feather", name: "올빼미 깃털", emoji: "🦉", rarity: "고급", value: 1200 },
+        { id: "monkey_tail", name: "원숭이 꼬리털", emoji: "🐵", rarity: "레어", value: 1500 },
+        { id: "tree_essence", name: "나무정령 정수", emoji: "🌳", rarity: "에픽", value: 3500 },
+        { id: "bear_honey", name: "현자곰 꿀", emoji: "🍯", rarity: "에픽", value: 4000 }
+    ],
+    area4: [ // 반짝 크리스탈 동굴
+        { id: "crystal_shard", name: "크리스탈 조각", emoji: "💎", rarity: "고급", value: 2000 },
+        { id: "turtle_shell", name: "보석 거북 껍질", emoji: "🐢", rarity: "레어", value: 3000 },
+        { id: "diamond_dust", name: "다이아 가루", emoji: "✨", rarity: "에픽", value: 5000 },
+        { id: "wolf_fang", name: "크리스탈 늑대 송곳니", emoji: "🦷", rarity: "에픽", value: 6000 },
+        { id: "king_crown", name: "다이아몬드 왕관 조각", emoji: "👑", rarity: "레전드", value: 25000 }
+    ],
+    
+    // 기존 몬스터별 드롭 테이블 (하위 호환성 유지)
     // 꽃잎 마을 근처 드롭템
     "방울방울 슬라임": [
         { type: "scroll", name: "슬라임 젤리 주문서", rarity: "일반", dropRate: 1.2, effect: "무기에 회피력 +1~3", price: [500, 2500] },
@@ -104,12 +135,14 @@ const huntingAreas = [
         levelRange: "Lv.1-20",
         unlockLevel: 1,
         huntingGif: "kim_hunting.gif",
+        dropRate: 0.15,  // 15% 드롭율
+        dropTable: "area1",  // 드롭 테이블 키
         monsters: [
-            { name: "방울방울 슬라임", rarity: "일반", level: [1, 5], exp: [10, 25], gold: [5, 15], stats: { atk: 15, def: 5, dodge: 2, luck: 5 } },
-            { name: "토실토실 토끼", rarity: "일반", level: [3, 8], exp: [15, 35], gold: [8, 20], stats: { atk: 20, def: 8, dodge: 5, luck: 8 } },
-            { name: "꼬마 머쉬룸", rarity: "고급", level: [5, 12], exp: [25, 60], gold: [15, 35], stats: { atk: 35, def: 15, dodge: 8, luck: 12 } },
-            { name: "반짝 나비", rarity: "고급", level: [8, 15], exp: [40, 80], gold: [20, 45], stats: { atk: 30, def: 10, dodge: 15, luck: 20 } },
-            { name: "포근 양", rarity: "레어", level: [12, 20], exp: [70, 150], gold: [35, 80], stats: { atk: 50, def: 25, dodge: 10, luck: 25 } }
+            { name: "방울방울 슬라임", rarity: "일반", level: [1, 5], exp: [50, 100], gold: [5, 15], stats: { atk: 15, def: 5, dodge: 2, luck: 5 } },
+            { name: "토실토실 토끼", rarity: "일반", level: [3, 8], exp: [60, 140], gold: [8, 20], stats: { atk: 20, def: 8, dodge: 5, luck: 8 } },
+            { name: "꼬마 머쉬룸", rarity: "고급", level: [5, 12], exp: [100, 240], gold: [15, 35], stats: { atk: 35, def: 15, dodge: 8, luck: 12 } },
+            { name: "반짝 나비", rarity: "고급", level: [8, 15], exp: [160, 320], gold: [20, 45], stats: { atk: 30, def: 10, dodge: 15, luck: 20 } },
+            { name: "포근 양", rarity: "레어", level: [12, 20], exp: [280, 500], gold: [35, 80], stats: { atk: 50, def: 25, dodge: 10, luck: 25 } }
         ]
     },
     {
@@ -118,12 +151,14 @@ const huntingAreas = [
         levelRange: "Lv.18-35",
         unlockLevel: 18,
         huntingGif: "kim_hunting2.gif",
+        dropRate: 0.20,  // 20% 드롭율
+        dropTable: "area2",  // 드롭 테이블 키
         monsters: [
-            { name: "춤추는 꽃", rarity: "일반", level: [18, 23], exp: [80, 120], gold: [40, 60], stats: { atk: 60, def: 20, dodge: 8, luck: 10 } },
-            { name: "통통 개구리", rarity: "고급", level: [22, 28], exp: [120, 180], gold: [60, 90], stats: { atk: 80, def: 30, dodge: 12, luck: 15 } },
-            { name: "날으는 고양이", rarity: "고급", level: [25, 32], exp: [150, 220], gold: [75, 110], stats: { atk: 90, def: 25, dodge: 20, luck: 18 } },
-            { name: "크리스탈 사슴", rarity: "레어", level: [28, 35], exp: [200, 300], gold: [100, 150], stats: { atk: 120, def: 50, dodge: 15, luck: 25 } },
-            { name: "무지개 유니콘", rarity: "에픽", level: [32, 35], exp: [350, 450], gold: [200, 280], stats: { atk: 150, def: 60, dodge: 25, luck: 40 } }
+            { name: "춤추는 꽃", rarity: "일반", level: [18, 23], exp: [320, 480], gold: [40, 60], stats: { atk: 60, def: 20, dodge: 8, luck: 10 } },
+            { name: "통통 개구리", rarity: "고급", level: [22, 28], exp: [480, 720], gold: [60, 90], stats: { atk: 80, def: 30, dodge: 12, luck: 15 } },
+            { name: "날으는 고양이", rarity: "고급", level: [25, 32], exp: [600, 880], gold: [75, 110], stats: { atk: 90, def: 25, dodge: 20, luck: 18 } },
+            { name: "크리스탈 사슴", rarity: "레어", level: [28, 35], exp: [800, 1200], gold: [100, 150], stats: { atk: 120, def: 50, dodge: 15, luck: 25 } },
+            { name: "무지개 유니콘", rarity: "에픽", level: [32, 35], exp: [1400, 1500], gold: [200, 280], stats: { atk: 150, def: 60, dodge: 25, luck: 40 } }
         ]
     },
     {
@@ -132,12 +167,14 @@ const huntingAreas = [
         levelRange: "Lv.30-50",
         unlockLevel: 30,
         huntingGif: "kim_hunting3.gif",
+        dropRate: 0.25,  // 25% 드롭율
+        dropTable: "area3",  // 드롭 테이블 키
         monsters: [
-            { name: "수다쟁이 다람쥐", rarity: "일반", level: [30, 35], exp: [150, 200], gold: [70, 100], stats: { atk: 100, def: 35, dodge: 18, luck: 12 } },
-            { name: "까꿍 올빼미", rarity: "고급", level: [35, 42], exp: [200, 280], gold: [100, 140], stats: { atk: 130, def: 45, dodge: 22, luck: 20 } },
-            { name: "장난꾸러기 원숭이", rarity: "고급", level: [38, 45], exp: [250, 350], gold: [120, 170], stats: { atk: 140, def: 40, dodge: 28, luck: 25 } },
-            { name: "신비한 나무정령", rarity: "레어", level: [42, 48], exp: [400, 550], gold: [200, 280], stats: { atk: 180, def: 80, dodge: 20, luck: 35 } },
-            { name: "숲의 현자 곰", rarity: "에픽", level: [45, 50], exp: [600, 800], gold: [350, 450], stats: { atk: 220, def: 100, dodge: 15, luck: 45 } }
+            { name: "수다쟁이 다람쥐", rarity: "일반", level: [30, 35], exp: [600, 800], gold: [70, 100], stats: { atk: 100, def: 35, dodge: 18, luck: 12 } },
+            { name: "까꿍 올빼미", rarity: "고급", level: [35, 42], exp: [800, 1120], gold: [100, 140], stats: { atk: 130, def: 45, dodge: 22, luck: 20 } },
+            { name: "장난꾸러기 원숭이", rarity: "고급", level: [38, 45], exp: [1000, 1400], gold: [120, 170], stats: { atk: 140, def: 40, dodge: 28, luck: 25 } },
+            { name: "신비한 나무정령", rarity: "레어", level: [42, 48], exp: [1600, 2200], gold: [200, 280], stats: { atk: 180, def: 80, dodge: 20, luck: 35 } },
+            { name: "숲의 현자 곰", rarity: "에픽", level: [45, 50], exp: [2400, 3000], gold: [350, 450], stats: { atk: 220, def: 100, dodge: 15, luck: 45 } }
         ]
     },
     {
@@ -146,15 +183,17 @@ const huntingAreas = [
         levelRange: "Lv.45-70",
         unlockLevel: 45,
         huntingGif: "kim_hunting4.gif",
+        dropRate: 0.30,  // 30% 드롭율
+        dropTable: "area4",  // 드롭 테이블 키
         monsters: [
-            { name: "반짝이 크리스탈", rarity: "일반", level: [45, 50], exp: [400, 500], gold: [150, 200], stats: { atk: 200, def: 80, dodge: 5, luck: 8 } },
-            { name: "보석 거북이", rarity: "일반", level: [47, 52], exp: [450, 550], gold: [160, 220], stats: { atk: 220, def: 120, dodge: 3, luck: 6 } },
-            { name: "다이아 나비", rarity: "일반", level: [49, 54], exp: [500, 600], gold: [180, 250], stats: { atk: 180, def: 60, dodge: 15, luck: 12 } },
-            { name: "수정 고양이", rarity: "고급", level: [52, 57], exp: [700, 850], gold: [250, 350], stats: { atk: 280, def: 100, dodge: 20, luck: 15 } },
-            { name: "크리스탈 늑대", rarity: "고급", level: [56, 61], exp: [800, 950], gold: [300, 400], stats: { atk: 350, def: 140, dodge: 18, luck: 16 } },
-            { name: "다이아 골렘", rarity: "레어", level: [58, 63], exp: [1200, 1400], gold: [450, 600], stats: { atk: 450, def: 250, dodge: 8, luck: 20 } },
-            { name: "크리스탈 정령왕", rarity: "에픽", level: [64, 69], exp: [2000, 2300], gold: [800, 1000], stats: { atk: 650, def: 300, dodge: 28, luck: 30 } },
-            { name: "다이아몬드 킹", rarity: "레전드리", level: [66, 70], exp: [2800, 3200], gold: [1200, 1500], stats: { atk: 800, def: 400, dodge: 25, luck: 35 } }
+            { name: "반짝이 크리스탈", rarity: "일반", level: [45, 50], exp: [1500, 2000], gold: [150, 200], stats: { atk: 200, def: 80, dodge: 5, luck: 8 } },
+            { name: "보석 거북이", rarity: "일반", level: [47, 52], exp: [1700, 2200], gold: [160, 220], stats: { atk: 220, def: 120, dodge: 3, luck: 6 } },
+            { name: "다이아 나비", rarity: "일반", level: [49, 54], exp: [1900, 2400], gold: [180, 250], stats: { atk: 180, def: 60, dodge: 15, luck: 12 } },
+            { name: "수정 고양이", rarity: "고급", level: [52, 57], exp: [2800, 3400], gold: [250, 350], stats: { atk: 280, def: 100, dodge: 20, luck: 15 } },
+            { name: "크리스탈 늑대", rarity: "고급", level: [56, 61], exp: [3200, 3800], gold: [300, 400], stats: { atk: 350, def: 140, dodge: 18, luck: 16 } },
+            { name: "다이아 골렘", rarity: "레어", level: [58, 63], exp: [4800, 5600], gold: [450, 600], stats: { atk: 450, def: 250, dodge: 8, luck: 20 } },
+            { name: "크리스탈 정령왕", rarity: "에픽", level: [64, 69], exp: [8000, 9200], gold: [800, 1000], stats: { atk: 650, def: 300, dodge: 28, luck: 30 } },
+            { name: "다이아몬드 킹", rarity: "레전드리", level: [66, 70], exp: [9000, 10000], gold: [1200, 1500], stats: { atk: 800, def: 400, dodge: 25, luck: 35 } }
         ]
     }
 ];

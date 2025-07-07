@@ -1,0 +1,83 @@
+{
+  "status": {
+    "isActive": true,
+    "startTime": 1751847152438,
+    "currentFloor": 1,
+    "totalFloors": 5,
+    "rescueComplete": false
+  },
+  "floors": {
+    "1": {
+      "currentHP": 114382
+    },
+    "2": {
+      "currentHP": 180000
+    },
+    "3": {
+      "currentHP": 240000
+    },
+    "4": {
+      "currentHP": 300000
+    },
+    "5": {
+      "currentHP": 360000
+    }
+  },
+  "statistics": {
+    "totalAttacks": 3,
+    "totalDamage": 5618,
+    "participants": [
+      "364197967114272769",
+      "424480594542592009"
+    ],
+    "attackLog": [
+      {
+        "userId": "364197967114272769",
+        "damage": 2244,
+        "floor": 1,
+        "timestamp": 1751847283444,
+        "isCritical": false
+      },
+      {
+        "userId": "364197967114272769",
+        "damage": 2220,
+        "floor": 1,
+        "timestamp": 1751847319136,
+        "isCritical": false
+      },
+      {
+        "userId": "424480594542592009",
+        "damage": 1154,
+        "floor": 1,
+        "timestamp": 1751847849863,
+        "isCritical": false
+      }
+    ],
+    "mvp": {
+      "userId": "364197967114272769",
+      "damage": 4464
+    },
+    "floorMVP": {
+      "floor1": {
+        "userId": "364197967114272769",
+        "damage": 4464
+      }
+    },
+    "userDamage": {
+      "364197967114272769": 4464,
+      "424480594542592009": 1154
+    },
+    "userAttackCount": {
+      "364197967114272769": 2,
+      "424480594542592009": 1
+    },
+    "lastAttackTime": {
+      "364197967114272769": 1751847319136,
+      "424480594542592009": 1751847849863
+    }
+  },
+  "hostages": {
+    "activeHostages": {},
+    "hostageHistory": []
+  }
+}

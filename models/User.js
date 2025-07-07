@@ -98,6 +98,26 @@ const userSchema = new mongoose.Schema({
         default: 20,
         max: 20
     },
+    huntingStreak: {
+        type: Number,
+        default: 0
+    },
+    lastHuntingTime: {
+        type: Date,
+        default: null
+    },
+    totalHunts: {
+        type: Number,
+        default: 0
+    },
+    bossKills: {
+        type: Number,
+        default: 0
+    },
+    lastHuntingTicketRegen: {
+        type: Date,
+        default: Date.now
+    },
     lastTicketRegen: {
         type: Date,
         default: Date.now
@@ -406,6 +426,118 @@ const userSchema = new mongoose.Schema({
             default: 'list'
         }
     },
+    // 레이드 시스템
+    raidTickets: { type: Number, default: 3 },
+    lastRaidTicketRegen: { type: Date, default: Date.now },
+    raidStats: {
+        totalRaids: { type: Number, default: 0 },
+        victories: { type: Number, default: 0 },
+        defeats: { type: Number, default: 0 },
+        totalDamageDealt: { type: Number, default: 0 }
+    },
+    
+    // 보스 조각 인벤토리
+    bossFragments: {
+        type: Map,
+        of: Number,
+        default: new Map()
+    },
+    
+    // 보스 토큰 인벤토리
+    bossTokens: {
+        type: Map,
+        of: Number,
+        default: new Map()
+    },
+    
+    // 장착한 장신구들 (확장된 슬롯)
+    equippedAccessories: {
+        ring1: { // 반지 슬롯 1
+            id: String,
+            name: String,
+            setId: String,
+            tier: Number,
+            stats: {
+                type: Map,
+                of: Number
+            }
+        },
+        ring2: { // 반지 슬롯 2
+            id: String,
+            name: String,
+            setId: String,
+            tier: Number,
+            stats: {
+                type: Map,
+                of: Number
+            }
+        },
+        necklace: { // 목걸이 슬롯
+            id: String,
+            name: String,
+            setId: String,
+            tier: Number,
+            stats: {
+                type: Map,
+                of: Number
+            }
+        },
+        bracelet1: { // 팔찌 슬롯 1
+            id: String,
+            name: String,
+            setId: String,
+            tier: Number,
+            stats: {
+                type: Map,
+                of: Number
+            }
+        },
+        bracelet2: { // 팔찌 슬롯 2
+            id: String,
+            name: String,
+            setId: String,
+            tier: Number,
+            stats: {
+                type: Map,
+                of: Number
+            }
+        },
+        earring1: { // 귀걸이 슬롯 1
+            id: String,
+            name: String,
+            setId: String,
+            tier: Number,
+            stats: {
+                type: Map,
+                of: Number
+            }
+        },
+        earring2: { // 귀걸이 슬롯 2
+            id: String,
+            name: String,
+            setId: String,
+            tier: Number,
+            stats: {
+                type: Map,
+                of: Number
+            }
+        }
+    },
+    
+    // 장신구 인벤토리
+    accessoryInventory: [{
+        id: String,
+        name: String,
+        setId: String,
+        tier: Number,
+        slotType: String, // ring, necklace, bracelet, earring
+        stats: {
+            type: Map,
+            of: Number
+        },
+        obtainedAt: { type: Date, default: Date.now }
+    }],
+    
     // 운동하기 방치형 시스템
     fitness: {
         // 피트니스 스탯 (일반 스탯과 별개)
@@ -430,6 +562,7 @@ const userSchema = new mongoose.Schema({
         // 피로도 시스템
         fatigue: { type: Number, default: 0 },          // 현재 피로도 (0-100)
         lastRecovery: { type: Date, default: Date.now }, // 마지막 회복 시간
+        lastFatigueUpdate: { type: Date, default: Date.now }, // 마지막 피로도 업데이트 시간
         
         // 연속 운동 기록
         streak: { type: Number, default: 0 },           // 연속 일수
@@ -457,6 +590,26 @@ const userSchema = new mongoose.Schema({
             },
             date: { type: Date, default: Date.now }
         }],
+        
+        // 운동 인벤토리 (운동 관련 아이템 전용)
+        exerciseInventory: [{
+            name: { type: String, required: true },
+            type: { type: String }, // gym_pass, supplement, equipment
+            emoji: { type: String },
+            effect: { type: Object },
+            expiresAt: { type: Date },
+            quantity: { type: Number, default: 1 },
+            equipped: { type: Boolean, default: false }
+        }],
+        
+        // 운동 진행 상태
+        isExercising: { type: Boolean, default: false },
+        currentExercise: {
+            exerciseId: { type: String },
+            startTime: { type: Number },
+            endTime: { type: Number },
+            minutes: { type: Number }
+        },
         
         // 운동 잠금 해제
         unlockedExercises: {
@@ -712,7 +865,153 @@ const userSchema = new mongoose.Schema({
         lastFish: { type: Date, default: null },        // 마지막 낚시 시간
         dailyLimit: { type: Number, default: 0 },      // 오늘 낚은 횟수
         lastDailyReset: { type: String, default: null } // 일일 리셋 날짜
-    }
+    },
+    
+    // 상점 레벨 시스템 (봇 재부팅해도 유지)
+    shopLevels: {
+        weapon: {
+            level: { type: Number, default: 1 },
+            exp: { type: Number, default: 0 },
+            totalPulls: { type: Number, default: 0 }
+        },
+        armor: {
+            level: { type: Number, default: 1 },
+            exp: { type: Number, default: 0 },
+            totalPulls: { type: Number, default: 0 }
+        },
+        helmet: {
+            level: { type: Number, default: 1 },
+            exp: { type: Number, default: 0 },
+            totalPulls: { type: Number, default: 0 }
+        },
+        gloves: {
+            level: { type: Number, default: 1 },
+            exp: { type: Number, default: 0 },
+            totalPulls: { type: Number, default: 0 }
+        },
+        boots: {
+            level: { type: Number, default: 1 },
+            exp: { type: Number, default: 0 },
+            totalPulls: { type: Number, default: 0 }
+        },
+        shield: {
+            level: { type: Number, default: 1 },
+            exp: { type: Number, default: 0 },
+            totalPulls: { type: Number, default: 0 }
+        },
+        accessory: {
+            level: { type: Number, default: 1 },
+            exp: { type: Number, default: 0 },
+            totalPulls: { type: Number, default: 0 }
+        }
+    },
+    
+    // 사냥 토너먼트 관련
+    huntingTournament: {
+        // 주간 랭킹
+        weeklyScore: { type: Number, default: 0 },                  // 이번 주 점수
+        weeklyRank: { type: Number, default: 0 },                   // 이번 주 순위
+        lastWeekRank: { type: Number, default: 0 },                 // 지난 주 순위
+        weeklyRewards: [{                                            // 받은 주간 보상
+            week: String,
+            rank: Number,
+            rewards: Object,
+            claimedAt: Date
+        }],
+        weeklyBadge: { type: String, default: null },                // 현재 뱃지
+        
+        // 속도 사냥
+        speedHuntRecords: {
+            type: Map,
+            of: {
+                bestTime: { type: Number, default: Infinity },       // 최고 기록 (ms)
+                bestRank: { type: String, default: 'F' },            // 최고 랭크
+                attempts: { type: Number, default: 0 },              // 시도 횟수
+                lastAttempt: { type: Date, default: null }           // 마지막 시도
+            },
+            default: new Map()
+        },
+        dailySpeedAttempts: { type: Number, default: 0 },           // 오늘 시도 횟수
+        lastSpeedHuntDate: { type: String, default: null },         // 마지막 속도사냥 날짜
+        
+        // 특별 이벤트
+        worldBossDamage: { type: Number, default: 0 },              // 월드보스 누적 데미지
+        treasureGoblinsKilled: { type: Number, default: 0 },        // 보물 고블린 처치 수
+        specialTrophies: [{                                          // 특별 트로피
+            name: String,
+            emoji: String,
+            earnedAt: Date,
+            description: String
+        }]
+    },
+    
+    // 전리품 감정 시스템
+    lootAppraisal: {
+        unidentifiedItems: [{                                        // 미확인 아이템
+            grade: String,                                           // common, mysterious, ancient, divine
+            foundAt: Date,
+            fromMonster: String,
+            fromArea: Number
+        }],
+        totalAppraised: { type: Number, default: 0 },               // 총 감정 횟수
+        jackpotCount: { type: Number, default: 0 },                 // 대박 횟수
+        trashCount: { type: Number, default: 0 },                   // 쓰레기 횟수
+        bestFind: {                                                  // 최고 발견품
+            name: String,
+            value: Number,
+            date: Date
+        },
+        goldSpentOnAppraisal: { type: Number, default: 0 }          // 감정에 사용한 골드
+    },
+    
+    // 감정 창고 시스템
+    appraisalWarehouse: {
+        grade: { type: String, default: 'basic' },                   // 창고 등급
+        slots: { type: Number, default: 50 },                        // 보유 슬롯
+        items: [{                                                     // 보관 중인 아이템
+            id: String,
+            name: String,
+            emoji: String,
+            quantity: { type: Number, default: 1 },
+            appraisedPrice: Number,                                   // 감정 당시 가격
+            appraisedAt: Date,                                        // 감정 시각
+            strategy: String,                                         // 자동매매 전략
+            locked: { type: Boolean, default: false }                 // 실수 판매 방지
+        }],
+        certificates: [{                                              // 보유 감정 증서
+            id: String,
+            name: String,
+            value: Number,
+            createdAt: Date
+        }],
+        totalProfit: { type: Number, default: 0 },                   // 총 수익
+        totalLoss: { type: Number, default: 0 },                     // 총 손실
+        lastFeePayment: { type: Date, default: Date.now },           // 마지막 보관료 납부
+        feeDebt: { type: Number, default: 0 }                        // 미납 보관료
+    },
+    // 던전 탐험 시스템
+    dungeonProgress: {
+        lastFloor: { type: Number, default: 1 },                     // 마지막 도달 층
+        lastAttempt: { type: Date, default: null },                  // 마지막 시도 시간
+        bestFloor: { type: Number, default: 0 },                     // 최고 도달 층
+        totalAttempts: { type: Number, default: 0 },                 // 총 시도 횟수
+        totalClears: { type: Number, default: 0 },                   // 50층 완전 클리어 횟수
+        totalGoldEarned: { type: Number, default: 0 },               // 던전에서 획득한 총 골드
+        totalExpEarned: { type: Number, default: 0 },                // 던전에서 획득한 총 경험치
+        dungeonItems: [{                                              // 던전에서 획득한 특별 아이템
+            name: String,
+            type: String,
+            floor: Number,
+            date: { type: Date, default: Date.now }
+        }]
+    },
+    dungeonClears: { type: Number, default: 0 },                     // 던전 완전 클리어 횟수
+    titles: [{ type: String }],                                       // 획득한 칭호들
+    
+    // 휴식 보상 시스템
+    lastActivity: { type: Date, default: Date.now },                 // 마지막 활동 시간
+    restBonusActive: { type: Boolean, default: false },              // 휴식 보상 활성 여부
+    restBonusEndTime: { type: Date, default: null }                  // 휴식 보상 종료 시간
 }, {
     timestamps: true
 });
@@ -840,5 +1139,54 @@ userSchema.pre('save', async function(next) {
     
     next();
 });
+
+// Post-save hook for automatic backup
+userSchema.post('save', async function(doc) {
+    try {
+        // 중요한 데이터가 변경된 경우에만 백업
+        const importantFields = ['inventory', 'equipment', 'gold', 'level', 'stats'];
+        const wasModified = importantFields.some(field => doc.isModified?.(field) || doc.$isModified?.(field));
+        
+        if (wasModified || !doc.lastBackup || Date.now() - doc.lastBackup > 3600000) { // 1시간마다
+            const { backupUserData } = require('../database/dataProtection');
+            await backupUserData(doc.discordId);
+            doc.lastBackup = Date.now();
+        }
+    } catch (error) {
+        console.error(`백업 실패 - 유저 ${doc.discordId}:`, error);
+    }
+});
+
+// 데이터 유효성 검증 메서드
+userSchema.methods.validateInventoryIntegrity = function() {
+    const issues = [];
+    
+    // 인벤토리 검증
+    if (!this.inventory || !Array.isArray(this.inventory)) {
+        issues.push('인벤토리가 배열이 아님');
+        return issues;
+    }
+    
+    // 장비 슬롯 검증
+    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+    equipmentSlots.forEach(slot => {
+        const slotValue = this.equipment[slot];
+        if (slotValue !== -1 && slotValue !== undefined && slotValue !== null) {
+            const item = this.inventory.find(i => i.inventorySlot === slotValue);
+            if (!item) {
+                issues.push(`${slot} 슬롯에 존재하지 않는 아이템 참조`);
+            }
+        }
+    });
+    
+    // 중복 슬롯 검증
+    const slotNumbers = this.inventory.map(item => item.inventorySlot).filter(slot => slot !== undefined);
+    const uniqueSlots = new Set(slotNumbers);
+    if (slotNumbers.length !== uniqueSlots.size) {
+        issues.push('인벤토리에 중복된 슬롯 번호 존재');
+    }
+    
+    return issues;
+};
 
 module.exports = mongoose.model('User', userSchema);

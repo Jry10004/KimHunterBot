@@ -40,8 +40,30 @@ class SpectatorBettingSystem {
         };
     }
     
+    // 베팅 풀 확인
+    hasPool(gameId) {
+        return this.bettingPools.has(gameId);
+    }
+    
+    // 베팅 풀 가져오기
+    getPool(gameId) {
+        const pool = this.bettingPools.get(gameId);
+        if (pool) {
+            // betOptions가 없으면 options로 변환
+            if (!pool.options && pool.betOptions) {
+                pool.options = pool.betOptions;
+            }
+        }
+        return pool;
+    }
+    
     // 새 베팅 풀 생성
     createBettingPool(gameId, gameType, players) {
+        // 이미 풀이 있으면 반환
+        if (this.bettingPools.has(gameId)) {
+            return this.bettingPools.get(gameId);
+        }
+        
         const pool = {
             gameId,
             gameType,
@@ -63,6 +85,11 @@ class SpectatorBettingSystem {
         }, this.settings.refundTimeout);
         
         return pool;
+    }
+    
+    // 베팅 풀 존재 여부 확인
+    hasPool(gameId) {
+        return this.bettingPools.has(gameId);
     }
     
     // 베팅 옵션 생성
@@ -126,6 +153,33 @@ class SpectatorBettingSystem {
                     odds: this.calculatePvpOdds(player.rating, players)
                 });
             });
+        } else if (gameType === 'mushroom') {
+            // 독버섯 게임 베팅 옵션
+            // 승자 베팅 (최대 10명까지만 표시)
+            const displayPlayers = players.slice(0, 10);
+            displayPlayers.forEach(player => {
+                options.push({
+                    id: `winner_${player.id}`,
+                    type: 'winner',
+                    label: `${player.username} 승리`,
+                    odds: this.calculateOdds(players.length)
+                });
+            });
+            
+            // 생존자 수 베팅
+            options.push(
+                { id: 'survivors_1', type: 'survivors', label: '1명 생존', odds: 3.0 },
+                { id: 'survivors_2', type: 'survivors', label: '2명 생존', odds: 2.5 },
+                { id: 'survivors_3_plus', type: 'survivors', label: '3명 이상 생존', odds: 2.0 }
+            );
+            
+            // 라운드 수 베팅
+            options.push(
+                { id: 'rounds_under_5', type: 'rounds', label: '5라운드 이하', odds: 2.0 },
+                { id: 'rounds_over_5', type: 'rounds', label: '5라운드 초과', odds: 1.8 }
+            );
+            
+            console.log(`[SpectatorBetting] 독버섯 게임 베팅 옵션 생성 - 플레이어: ${players.length}명, 옵션 수: ${options.length}개`);
         }
         
         return options;
@@ -170,7 +224,9 @@ class SpectatorBettingSystem {
             return { success: false, error: `베팅 금액은 ${this.settings.minBet}~${this.settings.maxBet} 골드여야 합니다.` };
         }
         
-        const option = pool.betOptions.find(opt => opt.id === optionId);
+        // betOptions 또는 options 체크
+        const options = pool.betOptions || pool.options || [];
+        const option = options.find(opt => opt.id === optionId || opt.id === `winner_${optionId}`);
         if (!option) {
             return { success: false, error: '잘못된 베팅 옵션입니다.' };
         }
@@ -192,7 +248,13 @@ class SpectatorBettingSystem {
         
         pool.totalPot += amount;
         
-        return { success: true, bet: pool.bets.get(userId), totalPot: pool.totalPot };
+        return { 
+            success: true, 
+            bet: pool.bets.get(userId), 
+            totalPot: pool.totalPot,
+            option: option.label,
+            multiplier: option.odds
+        };
     }
     
     // 베팅 마감
@@ -233,7 +295,8 @@ class SpectatorBettingSystem {
                     const rounds = results.totalRounds;
                     if ((bet.optionId === 'rounds_under_5' && rounds <= 5) ||
                         (bet.optionId === 'rounds_5_10' && rounds > 5 && rounds <= 10) ||
-                        (bet.optionId === 'rounds_over_10' && rounds > 10)) {
+                        (bet.optionId === 'rounds_over_10' && rounds > 10) ||
+                        (bet.optionId === 'rounds_over_5' && rounds > 5)) {
                         won = true;
                     }
                     break;
@@ -250,6 +313,15 @@ class SpectatorBettingSystem {
                     const durationMinutes = results.duration / 60000;
                     if ((bet.optionId === 'duration_under_3' && durationMinutes < 3) ||
                         (bet.optionId === 'duration_over_3' && durationMinutes >= 3)) {
+                        won = true;
+                    }
+                    break;
+                    
+                case 'survivors':
+                    const survivorCount = results.survivors || 0;
+                    if ((bet.optionId === 'survivors_1' && survivorCount === 1) ||
+                        (bet.optionId === 'survivors_2' && survivorCount === 2) ||
+                        (bet.optionId === 'survivors_3_plus' && survivorCount >= 3)) {
                         won = true;
                     }
                     break;
@@ -512,6 +584,18 @@ class SpectatorBettingSystem {
             }
         }
         return active;
+    }
+    
+    // 관전자 수 조회
+    getSpectatorCount(gameId) {
+        const pool = this.bettingPools.get(gameId);
+        if (!pool) return 0;
+        return pool.bets.size;
+    }
+    
+    // 관전자가 있는지 확인
+    hasSpectators(gameId) {
+        return this.getSpectatorCount(gameId) > 0;
     }
 }
 

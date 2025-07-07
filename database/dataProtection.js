@@ -96,6 +96,7 @@ async function backupUserData(userId) {
 async function restoreUserData(userId, backupPath) {
     try {
         const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+        const User = require('../models/User');
         
         // 보호된 필드만 복원
         const updateData = {};
@@ -112,7 +113,7 @@ async function restoreUserData(userId, backupPath) {
             }
         }
         
-        await User.updateOne({ userId }, { $set: updateData });
+        await User.updateOne({ discordId: userId }, { $set: updateData });
         console.log(`✅ 유저 ${userId} 데이터 복원 완료`);
         return true;
     } catch (error) {
@@ -124,7 +125,8 @@ async function restoreUserData(userId, backupPath) {
 // 데이터 무결성 검사
 async function validateUserData(userId) {
     try {
-        const user = await User.findOne({ userId });
+        const User = require('../models/User');
+        const user = await User.findOne({ discordId: userId });
         if (!user) return { valid: false, reason: '유저를 찾을 수 없음' };
         
         const issues = [];
@@ -189,11 +191,12 @@ function scheduleAutoBackup() {
 async function backupAllUsers() {
     try {
         console.log('🔄 전체 유저 백업 시작...');
+        const User = require('../models/User');
         const users = await User.find({});
         let successCount = 0;
         
         for (const user of users) {
-            const result = await backupUserData(user.userId);
+            const result = await backupUserData(user.discordId);
             if (result) successCount++;
         }
         

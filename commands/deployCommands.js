@@ -26,7 +26,7 @@ const deployCommand = {
         if (!isAdmin(interaction.user.id)) {
             await interaction.reply({ 
                 content: '❌ 관리자만 사용할 수 있는 명령어입니다!', 
-                ephemeral: true 
+                flags: 64 
             });
             return;
         }
@@ -34,7 +34,7 @@ const deployCommand = {
         const subcommand = interaction.options.getSubcommand();
         
         if (subcommand === '베타') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 });
             
             try {
                 // Git 상태 확인
@@ -99,14 +99,14 @@ const deployCommand = {
                     { name: '🎮 프로덕션', value: '❌ 미배포', inline: true }
                 );
             
-            await interaction.reply({ embeds: [embed], ephemeral: true });
+            await interaction.reply({ embeds: [embed], flags: 64 });
         }
         
         else if (subcommand === '롤백') {
             // 롤백 로직 구현
             await interaction.reply({ 
                 content: '🔄 롤백 기능은 준비 중입니다...', 
-                ephemeral: true 
+                flags: 64 
             });
         }
     }

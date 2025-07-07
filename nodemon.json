@@ -1,10 +1,10 @@
 {
-  "watch": ["index.js", "commands/", "data/", "models/", "services/", "database/", ".env"],
+  "watch": ["handlers/", "systems/", "models/", "data/", "index.js"],
   "ext": "js,json",
-  "ignore": ["node_modules/**", "logs/**", "backups/**", "prelaunchEventData*.json", "countdownState.json"],
-  "delay": "1000",
-  "verbose": true,
+  "ignore": ["*.test.js", "node_modules/*", "data/dogBotRescueState.json", "prelaunchEventData.json"],
+  "delay": "2500",
   "env": {
     "NODE_ENV": "development"
-  }
+  },
+  "verbose": true
 }

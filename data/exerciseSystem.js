@@ -268,10 +268,11 @@ const EXERCISE_SYSTEM = {
     
     // 피로도 설정
     fatigue: {
-        maxFatigue: 100,
-        recoveryRate: 25, // 1시간당 회복량
-        exerciseLimit: 80, // 이 이상이면 운동 불가
-        warningLevel: 60  // 경고 레벨
+        maxFatigue: 3600,  // 최대 피로도 (60시간)
+        recoveryRate: 60,  // 1시간당 60분 회복
+        exerciseLimit: 3600, // 운동 가능 최대치
+        warningLevel: 2400,  // 경고 레벨 (40시간)
+        fatiguePerMinute: 1  // 1분당 1 피로도
     }
 };
 

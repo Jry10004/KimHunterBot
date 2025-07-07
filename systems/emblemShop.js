@@ -271,13 +271,15 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
     }
 
     if (interaction.customId === 'emblem_shop_category') {
+        await interaction.deferUpdate();
         const selectedCategory = interaction.values[0];
         const user = await getUser(interaction.user.id);
         
         if (!user || !user.registered) {
-            await interaction.reply({ 
+            await interaction.editReply({ 
                 content: '먼저 회원가입을 해주세요!', 
-                ephemeral: true 
+                embeds: [],
+                components: []
             });
             return;
         }
@@ -396,16 +398,66 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
 
         const actionRow = new ActionRowBuilder().addComponents(buttons);
 
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [categoryEmbed],
-            components: [actionRow],
-            ephemeral: true
+            components: [actionRow]
         });
     }
 
     if (interaction.customId === 'emblem_shop_back') {
         await interaction.deferUpdate();
-        await interaction.deleteReply();
+        
+        const user = await getUser(interaction.user.id);
+        if (!user || !user.registered) {
+            await interaction.editReply({ 
+                content: '먼저 회원가입을 해주세요!', 
+                embeds: [],
+                components: []
+            });
+            return;
+        }
+        
+        // 엠블럼 상점 메인 화면으로 돌아가기
+        const shopEmbed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🏆 엠블럼 상점')
+            .setDescription('엠블럼을 구매하여 특별한 칭호를 획듍하세요!');
+            
+        if (user.emblem) {
+            const currentType = Object.keys(EMBLEMS).find(type => 
+                EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+            );
+            shopEmbed.addFields({
+                name: 'ℹ️ 현재 엠블럼',
+                value: `${user.emblem} (${EMBLEMS[currentType]?.name || '알 수 없음'} 계열)`,
+                inline: false
+            });
+        }
+        
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('emblem_shop_category')
+            .setPlaceholder('엠블럼 카테고리를 선택하세요')
+            .addOptions([
+                { label: '전사 계열', value: 'warrior', emoji: '⚔️', description: '힘 주스탯' },
+                { label: '궁수 계열', value: 'archer', emoji: '🏹', description: '민첩 주스탯' },
+                { label: '마법사 계열', value: 'mage', emoji: '🧿', description: '지능 주스탯' },
+                { label: '수호자 계열', value: 'defender', emoji: '🛡️', description: '체력 주스탯' },
+                { label: '도적 계열', value: 'thief', emoji: '🗡️', description: '행운 주스탯' }
+            ]);
+            
+        const actionRow = new ActionRowBuilder().addComponents(selectMenu);
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('emblem')
+                    .setLabel('◀️ 돌아가기')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            
+        await interaction.editReply({
+            embeds: [shopEmbed],
+            components: [actionRow, backButton]
+        });
     }
 }
 
