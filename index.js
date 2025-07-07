@@ -2864,6 +2864,11 @@ const client = new Client({
 });
 
 // 봇 토큰 (환경변수에서 가져오거나 직접 입력)
+console.log('🔍 환경 변수 확인:', {
+    BOT_TOKEN: process.env.BOT_TOKEN ? 'SET' : 'NOT SET',
+    TOKEN: process.env.TOKEN ? 'SET' : 'NOT SET',
+    NODE_ENV: process.env.NODE_ENV
+});
 const TOKEN = process.env.BOT_TOKEN || process.env.TOKEN || 'YOUR_BOT_TOKEN_HERE';
 console.log('🔍 토큰 확인:', TOKEN ? `${TOKEN.substring(0, 10)}...` : 'TOKEN NOT FOUND');
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
