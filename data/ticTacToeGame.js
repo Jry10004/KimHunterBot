@@ -472,6 +472,18 @@ const TIC_TAC_TOE_GAME = {
         return null;
     },
     
+    // 유저의 모든 게임 강제 종료
+    forceEndUserGames(userId) {
+        const gamesToEnd = [];
+        for (const [gameId, game] of this.activeGames.entries()) {
+            if (game.player1.id === userId || game.player2.id === userId) {
+                gamesToEnd.push(gameId);
+            }
+        }
+        gamesToEnd.forEach(gameId => this.endGame(gameId));
+        return gamesToEnd.length;
+    },
+    
     // 타임아웃된 게임 정리
     cleanupTimedOutGames() {
         const now = Date.now();

@@ -98,10 +98,9 @@ async function startUserMatching(interaction) {
         // 이미 게임 중인지 확인
         const existingGame = TIC_TAC_TOE_GAME.findGameByUserId(userId);
         if (existingGame) {
-            return interaction.reply({
-                content: '❌ 이미 진행 중인 게임이 있습니다!',
-                flags: 64
-            });
+            // 기존 게임 강제 종료
+            TIC_TAC_TOE_GAME.forceEndUserGames(userId);
+            console.log(`[TicTacToe] 유저 ${userId}의 기존 게임 강제 종료`);
         }
 
         // 미니게임 채널로 이동
@@ -374,11 +373,9 @@ async function playWithBot(interaction) {
         // 기존 게임 확인
         const existingGame = TIC_TAC_TOE_GAME.findGameByUserId(interaction.user.id);
         if (existingGame) {
-            return interaction.update({
-                content: '❌ 이미 진행 중인 게임이 있습니다!',
-                embeds: [],
-                components: []
-            });
+            // 기존 게임 강제 종료
+            TIC_TAC_TOE_GAME.forceEndUserGames(interaction.user.id);
+            console.log(`[TicTacToe] 유저 ${interaction.user.id}의 기존 게임 강제 종료`);
         }
 
         // 임시 채널 생성
