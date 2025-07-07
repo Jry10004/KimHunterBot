@@ -717,7 +717,7 @@ async function handleMainInteraction(interaction) {
             
             // 회원가입 명령어
             else if (commandName === '회원가입') {
-                const registerCommand = require('./commands/register');
+                const registerCommand = require('./commands/utility/register');
                 return await registerCommand.execute(interaction);
             }
             
