@@ -354,7 +354,25 @@ async function startGame(interaction, player1, player2) {
 
     } catch (error) {
         console.error('게임 시작 오류:', error);
-        // 이미 응답된 상태이므로 추가 응답 불가
+        console.error('상세 오류:', error.stack);
+        
+        // 채널에 오류 메시지 전송 시도
+        try {
+            if (interaction.channel) {
+                await interaction.channel.send({
+                    content: '❌ 게임 시작 중 오류가 발생했습니다. 다시 시도해주세요.',
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor('#FF0000')
+                            .setTitle('⚠️ 틱택토 게임 오류')
+                            .setDescription(`오류: ${error.message}`)
+                            .setTimestamp()
+                    ]
+                });
+            }
+        } catch (sendError) {
+            console.error('오류 메시지 전송 실패:', sendError);
+        }
     }
 }
 

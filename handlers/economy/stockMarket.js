@@ -209,8 +209,8 @@ async function showStockMarket(interaction) {
             { name: '💰 보유 골드', value: `${formatNumber(portfolio.cash)}G`, inline: true },
             { name: '📊 총 자산 가치', value: `${formatNumber(portfolioValue)}G`, inline: true },
             { name: '📈 왕국 경제 지표', value: marketSummary.index, inline: true },
-            { name: '🔥 떠오르는 기업', value: marketSummary.topGainer, inline: true },
-            { name: '❄️ 하락하는 기업', value: marketSummary.topLoser, inline: true },
+            { name: '🔥 떠오르는 기업', value: marketSummary.topGainer.name ? `${marketSummary.topGainer.name} (+${marketSummary.topGainer.change.toFixed(1)}%)` : '없음', inline: true },
+            { name: '❄️ 하락하는 기업', value: marketSummary.topLoser.name ? `${marketSummary.topLoser.name} (${marketSummary.topLoser.change.toFixed(1)}%)` : '없음', inline: true },
             { name: '📰 왕국 속보', value: marketSummary.latestNews, inline: true }
         );
 
