@@ -832,7 +832,7 @@ async function handleMainInteraction(interaction) {
             if (interaction.isModalSubmit()) {
                 if (interaction.customId === 'registration_email_modal' || 
                     interaction.customId === 'verification_code_modal') {
-                    const registerCommand = require('./commands/register');
+                    const registerCommand = require('./commands/utility/register');
                     if (interaction.customId === 'registration_email_modal') {
                         return await registerCommand.handleModal(interaction);
                     } else {
@@ -894,7 +894,7 @@ async function handleMainInteraction(interaction) {
                     });
                 }
             } else if (interaction.isButton() && interaction.customId.startsWith('verify_email_')) {
-                const registerCommand = require('./commands/register');
+                const registerCommand = require('./commands/utility/register');
                 return await registerCommand.handleVerification(interaction);
             }
             // 공지 재작성 버튼 처리
