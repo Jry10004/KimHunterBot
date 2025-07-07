@@ -54,7 +54,7 @@ module.exports = {
             const rest = new REST({ version: '10' }).setToken(token);
             
             // commands.js에서 명령어 목록 가져오기
-            const commandsPath = path.join(__dirname, 'commands.js');
+            const commandsPath = path.join(__dirname, '..', 'commands.js');
             delete require.cache[require.resolve(commandsPath)];
             const { productionCommands } = require(commandsPath);
             
