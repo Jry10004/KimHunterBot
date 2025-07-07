@@ -772,7 +772,7 @@ async function handleMainInteraction(interaction) {
             
             // 매크로테스트 명령어
             else if (commandName === '매크로테스트') {
-                const macroTestCommand = require('./commands/macroTest');
+                const macroTestCommand = require('./commands/test/macroTest');
                 return await macroTestCommand.execute(interaction);
             }
             
