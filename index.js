@@ -2867,9 +2867,12 @@ const client = new Client({
 console.log('🔍 환경 변수 확인:', {
     BOT_TOKEN: process.env.BOT_TOKEN ? 'SET' : 'NOT SET',
     TOKEN: process.env.TOKEN ? 'SET' : 'NOT SET',
-    NODE_ENV: process.env.NODE_ENV
+    NODE_ENV: process.env.NODE_ENV,
+    ALL_KEYS: Object.keys(process.env).filter(key => key.includes('TOKEN') || key.includes('BOT'))
 });
-const TOKEN = process.env.BOT_TOKEN || process.env.TOKEN || 'YOUR_BOT_TOKEN_HERE';
+
+// Railway가 따옴표를 추가하는 경우를 처리
+const TOKEN = (process.env.BOT_TOKEN || process.env.TOKEN || '').replace(/^["']|["']$/g, '') || 'YOUR_BOT_TOKEN_HERE';
 console.log('🔍 토큰 확인:', TOKEN ? `${TOKEN.substring(0, 10)}...` : 'TOKEN NOT FOUND');
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
 // DEV_CHANNEL_IDS와 DEV_MODE는 config/constants.js에서 import됨
