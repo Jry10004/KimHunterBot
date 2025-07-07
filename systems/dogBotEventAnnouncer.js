@@ -162,8 +162,15 @@ class DogBotEventAnnouncer {
             } else if (hpPercentage <= 30) {
                 subtitle = '🔥 **보스가 약해졌습니다!** 조금만 더 힘내주세요!';
             } else if (stateManager.state.statistics.attackLog.length > 0) {
-                const lastAttack = stateManager.state.statistics.attackLog[stateManager.state.statistics.attackLog.length - 1];
-                const minutesAgo = Math.floor((Date.now() - lastAttack.timestamp) / 1000 / 60);
+                // 모든 lastAttackTime 중에서 가장 최근 시간 찾기
+                const lastAttackTimes = Object.values(stateManager.state.statistics.lastAttackTime || {});
+                const mostRecentAttack = lastAttackTimes.length > 0 ? Math.max(...lastAttackTimes) : 0;
+                
+                // attackLog의 마지막 항목과 비교하여 더 최근 것 사용
+                const lastLogAttack = stateManager.state.statistics.attackLog[stateManager.state.statistics.attackLog.length - 1];
+                const lastAttackTime = Math.max(mostRecentAttack, lastLogAttack ? lastLogAttack.timestamp : 0);
+                
+                const minutesAgo = Math.floor((Date.now() - lastAttackTime) / 1000 / 60);
                 if (minutesAgo >= 10) {
                     subtitle = `⏰ ${minutesAgo}분 동안 공격이 없었습니다! 댕댕봇이 기다리고 있어요!`;
                 } else {
