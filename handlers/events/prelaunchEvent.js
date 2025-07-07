@@ -196,7 +196,7 @@ function loadPrelaunchData() {
                     console.log('📛 사전강화 이벤트가 이미 종료되었습니다.');
                 }
                 
-                return parsedData;  // 전체 데이터 구조 반환
+                return eventData;  // eventData만 반환 (중첩 방지)
             } else {
                 // 기존 데이터 구조 처리 (하위 호환성)
                 let updated = false;

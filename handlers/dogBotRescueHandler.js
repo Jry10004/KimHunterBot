@@ -134,6 +134,9 @@ async function handleAttack(interaction) {
         userPrelaunchData = prelaunchData.eventData.eventData[userId];
     } else if (prelaunchData.eventData) {
         userPrelaunchData = prelaunchData.eventData[userId];
+    } else {
+        // 직접 접근 시도 (백업 파일 형식)
+        userPrelaunchData = prelaunchData[userId];
     }
     
     if (userPrelaunchData && userPrelaunchData.currentItem) {

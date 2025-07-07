@@ -43,81 +43,96 @@ function initializePriceHistory() {
     });
 }
 
-// Generate QuickChart URL for price chart
-function generatePriceChartUrl(history, companyName, currentPrice) {
-    let prices;
-    let timeLabels = [];
+// Generate QuickChart URL for price chart (improved version)
+function generatePriceChartUrl(history, companyName, currentPrice, symbol) {
+    const { getProfessionalChartUrl } = require('../../data/chartService');
     
-    // 히스토리가 없으면 가상 데이터 생성
-    if (!history || history.length < 2) {
-        // 현재 가격 기준으로 랜덤 데이터 생성
-        const basePrice = currentPrice || 100000;
-        prices = [];
-        const now = Date.now();
+    let prices = [];
+    let timeLabels = [];
+    const now = Date.now();
+    
+    // 히스토리가 있으면 실제 데이터 사용
+    if (history && history.length > 0) {
+        // 최근 20개 데이터 사용 (더 길고 전문적인 차트)
+        const recentHistory = history.slice(-20);
         
-        for (let i = 0; i < 10; i++) {
-            const variation = (Math.random() - 0.5) * 0.1; // ±5% 변동
-            prices.push(Math.floor(basePrice * (1 + variation)));
+        recentHistory.forEach(h => {
+            prices.push(h.price || currentPrice || 100000);
             
-            // 10분 간격으로 시간 생성
-            const time = new Date(now - (9 - i) * 10 * 60000);
+            const time = new Date(h.timestamp || now);
+            const today = new Date();
+            const isToday = time.toDateString() === today.toDateString();
+            
+            // 오늘이면 시간만, 아니면 날짜도 표시
+            if (isToday) {
+                const hours = time.getHours().toString().padStart(2, '0');
+                const minutes = time.getMinutes().toString().padStart(2, '0');
+                timeLabels.push(`${hours}:${minutes}`);
+            } else {
+                const month = (time.getMonth() + 1).toString().padStart(2, '0');
+                const day = time.getDate().toString().padStart(2, '0');
+                const hours = time.getHours().toString().padStart(2, '0');
+                timeLabels.push(`${month}/${day} ${hours}시`);
+            }
+        });
+        
+        // 부족한 데이터 채우기
+        const basePrice = prices.length > 0 ? prices[prices.length - 1] : (currentPrice || 100000);
+        while (prices.length < 20) {
+            const variation = (Math.random() - 0.5) * 0.05; // ±2.5% 변동
+            const newPrice = Math.floor(basePrice * (1 + variation));
+            prices.unshift(newPrice);
+            
+            const time = new Date(now - (20 - prices.length) * 3600000); // 1시간 간격
             const hours = time.getHours().toString().padStart(2, '0');
-            const minutes = time.getMinutes().toString().padStart(2, '0');
-            timeLabels.push(`${hours}:${minutes}`);
+            timeLabels.unshift(`${hours}:00`);
         }
     } else {
-        // 최근 10개 데이터만 사용 (URL 길이 제한)
-        const recentHistory = history.slice(-10);
-        prices = recentHistory.map(h => h.price || currentPrice || 100000);
+        // 히스토리가 없으면 시뮬레이션 데이터 생성
+        const basePrice = currentPrice || 100000;
+        let simulatedPrice = basePrice;
+        const trend = Math.random() > 0.5 ? 1 : -1;
         
-        // 히스토리에서 시간 추출
-        timeLabels = recentHistory.map(h => {
-            const time = new Date(h.timestamp || Date.now());
-            const hours = time.getHours().toString().padStart(2, '0');
-            const minutes = time.getMinutes().toString().padStart(2, '0');
-            return `${hours}:${minutes}`;
-        });
-    }
-    
-    // undefined 체크 및 기본값 설정
-    prices = prices.map(price => {
-        if (price === undefined || price === null || isNaN(price)) {
-            return currentPrice || 100000;
+        for (let i = 19; i >= 0; i--) {
+            const trendEffect = trend * Math.random() * 0.02;
+            const randomEffect = (Math.random() - 0.5) * 0.01;
+            simulatedPrice = Math.max(1, Math.floor(simulatedPrice * (1 + trendEffect + randomEffect)));
+            prices.push(simulatedPrice);
+            
+            const time = new Date(now - i * 3600000); // 1시간 간격
+            const today = new Date();
+            const isToday = time.toDateString() === today.toDateString();
+            
+            if (isToday) {
+                const hours = time.getHours().toString().padStart(2, '0');
+                timeLabels.push(`${hours}:00`);
+            } else {
+                const month = (time.getMonth() + 1).toString().padStart(2, '0');
+                const day = time.getDate().toString().padStart(2, '0');
+                timeLabels.push(`${month}/${day}`);
+            }
         }
-        return price;
-    });
-    
-    // 종목명이 undefined인 경우 처리
-    const safeName = companyName || '알 수 없는 종목';
+    }
     
     // 가격 변동률 계산
     const firstPrice = prices[0];
     const lastPrice = prices[prices.length - 1];
-    const changePercent = ((lastPrice - firstPrice) / firstPrice * 100).toFixed(1);
-    const isPositive = parseFloat(changePercent) >= 0;
-
-    // 직접 URL 형식으로 차트 생성 (더 짧은 URL)
-    const color = isPositive ? '75,192,192' : '255,99,132';
+    const changePercent = ((lastPrice - firstPrice) / firstPrice * 100).toFixed(2);
     
-    // 가격을 정수로 변환하고 문자열로 만들기
-    const priceStrings = prices.map(p => Math.floor(p).toString());
+    // 거래량 시뮬레이션 (실제 거래량이 없을 경우)
+    const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+    const volume = Math.floor(Math.random() * 50000 + 10000);
     
-    // 시간 라벨을 문자열로 변환 (따옴표 추가)
-    const labelStrings = timeLabels.map(label => `'${label}'`);
-    
-    // 짧은 URL 생성 - 시간 라벨 사용
-    const chartUrl = `https://quickchart.io/chart?c={type:'line',data:{labels:[${labelStrings.join(',')}],datasets:[{data:[${priceStrings.join(',')}],borderColor:'rgb(${color})',fill:false}]}}`;
-    
-    // URL이 너무 길면 더 단순화
-    if (chartUrl.length > 1500) {
-        const simplePrices = prices.filter((_, i) => i % 2 === 0); // 절반만 사용
-        const simpleLabels = timeLabels.filter((_, i) => i % 2 === 0);
-        const simplePriceStrings = simplePrices.map(p => Math.floor(p).toString());
-        const simpleLabelStrings = simpleLabels.map(label => `'${label}'`);
-        return `https://quickchart.io/chart?c={type:'line',data:{labels:[${simpleLabelStrings.join(',')}],datasets:[{data:[${simplePriceStrings.join(',')}]}]}}`;
-    }
-    
-    return chartUrl;
+    // 전문적인 차트 URL 생성
+    return getProfessionalChartUrl({
+        name: companyName || '알 수 없는 종목',
+        symbol: symbol || 'UNKNOWN',
+        prices: prices,
+        labels: timeLabels,
+        currentPrice: lastPrice,
+        changePercent: changePercent,
+        volume: volume
+    });
 }
 
 // Generate ASCII price chart (fallback)
@@ -237,7 +252,10 @@ async function showStockDetail(interaction, companyId) {
     const portfolio = await getPlayerPortfolio(user.discordId);
     const holding = portfolio.stocks.get(companyId);
     
-    const history = priceHistory.get(companyId) || [];
+    // 실제 가격 히스토리를 DB에서 가져오기
+    const marketPriceService = require('../../services/MarketPriceService');
+    const dbHistory = await marketPriceService.getStockPriceHistory(companyId, 24);
+    const history = dbHistory || priceHistory.get(companyId) || [];
     const indicators = calculateIndicators(history);
     
     // Create detail embed
@@ -268,21 +286,27 @@ async function showStockDetail(interaction, companyId) {
         );
     }
 
-    // Add price chart using QuickChart
-    const chartUrl = generatePriceChartUrl(history, company.name, company.currentPrice);
+    // Add price chart using improved QuickChart
+    const chartUrl = generatePriceChartUrl(history, company.name, company.currentPrice, company.symbol);
     if (chartUrl) {
         console.log('[차트 URL]', chartUrl);
         console.log('[히스토리 길이]', history ? history.length : 0);
         detailEmbed.setImage(chartUrl);
+        
+        // 차트 정보 추가
+        const chartInfo = history && history.length > 0 
+            ? `최근 ${Math.min(history.length, 20)}개 거래 기록 기반`
+            : '시뮬레이션 데이터 (실제 거래 후 업데이트됩니다)';
+        
         detailEmbed.addFields({ 
-            name: '📈 실시간 가격 차트', 
-            value: `최근 10개 거래 기록 ${history && history.length > 0 ? '' : '(시뮬레이션 데이터)'}`, 
+            name: '📊 가격 차트', 
+            value: chartInfo, 
             inline: false 
         });
     } else {
         // Fallback to ASCII chart
-        const chart = generatePriceChart(history);
-        detailEmbed.addFields({ name: '📈 가격 차트 (최근 40개 데이터)', value: chart, inline: false });
+        const chart = generatePriceChart(history, company.currentPrice);
+        detailEmbed.addFields({ name: '📈 가격 차트 (텍스트)', value: chart, inline: false });
     }
 
     // Add market sensitivity info

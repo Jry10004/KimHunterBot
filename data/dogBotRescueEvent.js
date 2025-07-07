@@ -87,9 +87,9 @@ const DOGBOT_RESCUE_EVENT = {
     
     // 인질 시스템
     hostage: {
-        checkInterval: 12 * 60 * 60 * 1000, // 12시간마다 (하루 2번)
-        responseTime: 10 * 60 * 1000, // 10분 응답 시간
-        healAmount: 5000, // 실패 시 회복량
+        checkInterval: 6 * 60 * 60 * 1000, // 6시간마다 (하루 4번)
+        responseTime: 30 * 60 * 1000, // 30분 응답 시간
+        healAmount: 10000, // 실패 시 회복량
         activeHostages: new Map(), // userId -> { startTime, responded }
         sleepStartHour: 0, // 수면 시작 시간 (오전 12시)
         sleepEndHour: 9, // 수면 종료 시간 (오전 9시)

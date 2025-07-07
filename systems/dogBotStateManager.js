@@ -1,11 +1,20 @@
 const fs = require('fs').promises;
 const path = require('path');
+const { DATA_FILES, initializeTestDataFolder } = require('../config/dataFiles');
 
 class DogBotStateManager {
     constructor() {
-        this.statePath = path.join(__dirname, '../data/dogBotRescueState.json');
+        // 환경별 데이터 파일 경로 사용
+        this.statePath = DATA_FILES.DOGBOT_RESCUE_STATE();
         this.state = this.getDefaultState(); // 기본 상태로 초기화
         this.saveInterval = null;
+        
+        // 테스트 환경 초기화
+        if (process.env.NODE_ENV === 'test' || process.env.BOT_TOKEN === process.env.TEST_BOT_TOKEN) {
+            initializeTestDataFolder();
+            console.log('[DogBot] 테스트 환경 초기화, 경로:', this.statePath);
+        }
+        
         this.loadState();
     }
 

@@ -28,12 +28,12 @@ class DogBotHostageSystem {
         // 즉시 한 번 체크
         this.checkAndCreateHostage(client);
 
-        // 12시간마다 체크
+        // 6시간마다 체크
         this.hostageInterval = setInterval(() => {
             this.checkAndCreateHostage(client);
         }, DOGBOT_RESCUE_EVENT.hostage.checkInterval);
 
-        console.log('✅ 댕댕봇 인질 시스템 시작 (12시간마다)');
+        console.log('✅ 댕댕봇 인질 시스템 시작 (6시간마다)');
     }
 
     // 인질 시스템 중지
@@ -150,13 +150,13 @@ class DogBotHostageSystem {
                     `**${scenario.description}**\n` +
                     `💬 개발자: *"${scenario.action}"*\n\n` +
                     `**🏃 탈출 방법**\n` +
-                    `10분 내에 아무 메시지나 입력해서 ${scenario.escape}\n\n` +
+                    `30분 내에 아무 메시지나 입력해서 ${scenario.escape}\n\n` +
                     `⚠️ **실패 시**\n` +
                     `개발자가 기뻐하며 디버그 타워를 **${DOGBOT_RESCUE_EVENT.hostage.healAmount.toLocaleString()} HP** 수리합니다!`
                 )
                 .addFields({
                     name: '⏰ 제한 시간',
-                    value: '10분',
+                    value: '30분',
                     inline: true
                 }, {
                     name: '💬 필요 행동',

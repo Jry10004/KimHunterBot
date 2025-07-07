@@ -8,7 +8,7 @@
   },
   "floors": {
     "1": {
-      "currentHP": 112210
+      "currentHP": 111569
     },
     "2": {
       "currentHP": 180000
@@ -24,8 +24,8 @@
     }
   },
   "statistics": {
-    "totalAttacks": 4,
-    "totalDamage": 7790,
+    "totalAttacks": 7,
+    "totalDamage": 8431,
     "participants": [
       "364197967114272769",
       "424480594542592009"
@@ -58,6 +58,27 @@
         "floor": 1,
         "timestamp": 1751848738281,
         "isCritical": false
+      },
+      {
+        "userId": "424480594542592009",
+        "damage": 109,
+        "floor": 1,
+        "timestamp": 1751857801936,
+        "isCritical": false
+      },
+      {
+        "userId": "424480594542592009",
+        "damage": 176,
+        "floor": 1,
+        "timestamp": 1751858409398,
+        "isCritical": false
+      },
+      {
+        "userId": "424480594542592009",
+        "damage": 356,
+        "floor": 1,
+        "timestamp": 1751859109600,
+        "isCritical": true
       }
     ],
     "mvp": {
@@ -72,15 +93,15 @@
     },
     "userDamage": {
       "364197967114272769": 6636,
-      "424480594542592009": 1154
+      "424480594542592009": 1795
     },
     "userAttackCount": {
       "364197967114272769": 3,
-      "424480594542592009": 1
+      "424480594542592009": 4
     },
     "lastAttackTime": {
       "364197967114272769": 1751848738281,
-      "424480594542592009": 1751847849863
+      "424480594542592009": 1751859109600
     }
   },
   "hostages": {

@@ -104,11 +104,11 @@ global.prelaunchEventEnded = false;
 
 console.log('🔍 서버 오픈 상태:', global.serverOpened ? '오픈됨' : '카운트다운 중');
 
-// 사전강화 데이터 로드
+// 사전강화 데이터 로드 - loadPrelaunchData 함수 사용
 try {
-    // require 캐시 삭제
-    delete require.cache[require.resolve('./prelaunchEventData.json')];
-    global.prelaunchEventData = require('./prelaunchEventData.json');
+    const loadedData = loadPrelaunchData();
+    // loadPrelaunchData는 이제 eventData만 반환하므로 직접 할당
+    global.prelaunchEventData = loadedData || {};
     console.log('📂 사전강화 데이터 로드 성공');
     // 하연94 데이터 확인
     if (global.prelaunchEventData['295980447849250817']) {
@@ -4562,6 +4562,11 @@ client.once('ready', async () => {
 
         // 백업 시스템 초기화
         const backupSystem = require('./systems/backupSystem');
+        
+        // 시장 가격 서비스 초기화
+        const marketPriceService = require('./services/MarketPriceService');
+        await marketPriceService.initialize();
+        console.log('📈 시장 가격 서비스가 초기화되었습니다.');
         backupSystem.startAutoBackup();
         console.log('✅ 자동 백업 시스템 활성화');
 

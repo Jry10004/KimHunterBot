@@ -230,18 +230,56 @@ async function showMarketPrices(interaction, marketType = null, categoryId = nul
 
     // 현재 아이템의 상세 정보
     const chartData = formatTradingViewData(currentItem.id);
-    const { getChartImageUrl } = require('../../data/chartService');
+    const { getProfessionalChartUrl, generateChartData } = require('../../data/chartService');
     
-    if (chartData) {
-        // 실제 차트 이미지 추가
-        const chartImageUrl = getChartImageUrl(
+    if (chartData || currentItem) {
+        // DB에서 실제 가격 히스토리 가져오기
+        const marketPriceService = require('../../services/MarketPriceService');
+        const dbHistory = await marketPriceService.getItemPriceHistory(currentItem.id, 48);
+        
+        let priceHistory;
+        if (dbHistory && dbHistory.length > 0) {
+            priceHistory = dbHistory;
+        } else {
+            // DB에 데이터가 없으면 시뮬레이션
+            priceHistory = [];
+            const now = Date.now();
+            let simulatedPrice = currentItem.currentPrice || currentItem.basePrice;
+            
+            // 48시간 동안의 데이터 생성 (2시간 간격)
+            for (let i = 23; i >= 0; i--) {
+                const time = new Date(now - i * 2 * 3600000); // 2시간 간격
+                const variation = (Math.random() - 0.5) * 0.08; // ±4% 변동
+                simulatedPrice = Math.max(currentItem.basePrice * 0.7, Math.min(currentItem.basePrice * 1.3, simulatedPrice * (1 + variation)));
+                
+                priceHistory.push({
+                    timestamp: time.getTime(),
+                    price: Math.floor(simulatedPrice)
+                });
+            }
+        }
+        
+        // 차트 데이터 생성
+        const chartDataGenerated = generateChartData(
             currentItem.id,
             currentItem.name,
-            chartData.symbol || currentItem.id.toUpperCase(),
-            parseFloat(chartData.currentPrice),
-            null,
-            chartType // 선택된 차트 타입 사용
+            chartData?.symbol || currentItem.id.toUpperCase(),
+            currentItem.currentPrice,
+            priceHistory,
+            24
         );
+        
+        // 전문적인 차트 URL 생성
+        const chartImageUrl = getProfessionalChartUrl({
+            name: currentItem.name,
+            symbol: chartData?.symbol || currentItem.id.toUpperCase(),
+            prices: chartDataGenerated.prices,
+            labels: chartDataGenerated.labels,
+            currentPrice: currentItem.currentPrice,
+            changePercent: currentItem.change.toFixed(2),
+            volume: currentItem.volume || Math.floor(Math.random() * 5000 + 1000)
+        });
+        
         embed.setImage(chartImageUrl);
         
         // 현재 아이템 정보
@@ -338,9 +376,9 @@ async function showMarketPrices(interaction, marketType = null, categoryId = nul
     }
 }
 
-// 길드 지분 시세 표시
+// 길드 지분 시세 표시 (개선된 버전)
 async function showStockMarket(interaction) {
-    const { getChartImageUrl } = require('../../data/chartService');
+    const { getProfessionalChartUrl, generateChartData } = require('../../data/chartService');
     
     // 길드 목록
     const stocks = [
@@ -360,14 +398,54 @@ async function showStockMarket(interaction) {
     
     // 첫 번째 주식의 실제 차트 이미지 생성
     const firstStock = stocks[0];
-    const chartImageUrl = getChartImageUrl(
-        firstStock.symbol.toLowerCase(), 
-        firstStock.name, 
+    
+    // DB에서 실제 가격 히스토리 가져오기
+    const marketPriceService = require('../../services/MarketPriceService');
+    const dbHistory = await marketPriceService.getStockPriceHistory(firstStock.symbol.toLowerCase(), 30 * 24);
+    
+    let priceHistory;
+    if (dbHistory && dbHistory.length > 0) {
+        priceHistory = dbHistory;
+    } else {
+        // DB에 데이터가 없으면 시뮬레이션
+        priceHistory = [];
+        const now = Date.now();
+        let simulatedPrice = firstStock.price;
+        
+        // 30일간의 일별 데이터 생성
+        for (let i = 29; i >= 0; i--) {
+            const time = new Date(now - i * 24 * 3600000); // 1일 간격
+            const trendEffect = firstStock.change > 0 ? 0.003 : -0.003; // 전체 트렌드 반영
+            const randomEffect = (Math.random() - 0.5) * 0.02;
+            simulatedPrice = Math.max(firstStock.price * 0.8, Math.min(firstStock.price * 1.2, simulatedPrice * (1 + trendEffect + randomEffect)));
+            
+            priceHistory.push({
+                timestamp: time.getTime(),
+                price: Math.floor(simulatedPrice)
+            });
+        }
+    }
+    
+    // 차트 데이터 생성
+    const chartData = generateChartData(
+        firstStock.symbol.toLowerCase(),
+        firstStock.name,
         firstStock.symbol,
         firstStock.price,
-        null, // 히스토리 데이터
-        'candlestick'
+        priceHistory,
+        30
     );
+    
+    // 전문적인 차트 URL 생성
+    const chartImageUrl = getProfessionalChartUrl({
+        name: firstStock.name,
+        symbol: firstStock.symbol,
+        prices: chartData.prices,
+        labels: chartData.labels,
+        currentPrice: firstStock.price,
+        changePercent: firstStock.change.toFixed(1),
+        volume: Math.floor(Math.random() * 10000000 + 1000000) // 거래량 시뮬레이션
+    });
     
     // 차트 이미지 설정
     embed.setImage(chartImageUrl);
@@ -459,33 +537,99 @@ async function showStockMarket(interaction) {
     });
 }
 
-// 물고기 시세 표시
+// 물고기 시세 표시 (개선된 버전)
 async function showFishMarket(interaction) {
-    const { getChartImageUrl } = require('../../data/chartService');
+    const { getProfessionalChartUrl } = require('../../data/chartService');
     
-    // 물고기 시세 차트 생성
-    const fishPrices = [
-        { id: 'tuna', name: '참치', price: 25000 },
-        { id: 'salmon', name: '연어', price: 18000 },
-        { id: 'mackerel', name: '고등어', price: 8000 }
+    // 물고기 시세 데이터 (더 자세한 정보)
+    const fishData = [
+        { id: 'tuna', name: '참치', symbol: 'TUNA', basePrice: 25000, rarity: 'legendary', emoji: '🐟' },
+        { id: 'salmon', name: '연어', symbol: 'SLMN', basePrice: 18000, rarity: 'epic', emoji: '🍣' },
+        { id: 'mackerel', name: '고등어', symbol: 'MCKR', basePrice: 8000, rarity: 'rare', emoji: '🐠' },
+        { id: 'catfish', name: '메기', symbol: 'CTFH', basePrice: 1500, rarity: 'uncommon', emoji: '🐡' },
+        { id: 'carp', name: '잉어', symbol: 'CARP', basePrice: 1000, rarity: 'common', emoji: '🐟' }
     ];
     
-    // 첫 번째 물고기의 차트 생성
-    const firstFish = fishPrices[0];
-    const chartImageUrl = getChartImageUrl(
-        firstFish.id,
-        firstFish.name,
-        firstFish.id.toUpperCase(),
-        firstFish.price,
-        null,
-        'line'
-    );
+    // 현재 선택된 물고기 (페이지네이션 고려)
+    const selectedFishIndex = 0; // 나중에 페이지네이션 추가 가능
+    const selectedFish = fishData[selectedFishIndex];
+    
+    // DB에서 실제 가격 히스토리 가져오기
+    const marketPriceService = require('../../services/MarketPriceService');
+    const dbHistory = await marketPriceService.getItemPriceHistory(selectedFish.id, 24);
+    
+    let priceHistory;
+    if (dbHistory && dbHistory.length > 0) {
+        priceHistory = dbHistory;
+    } else {
+        // DB에 데이터가 없으면 시뮬레이션
+        priceHistory = [];
+        const now = Date.now();
+        let currentPrice = selectedFish.basePrice;
+        
+        // 24시간 동안의 시간별 가격 데이터 생성
+        for (let i = 23; i >= 0; i--) {
+            const variation = (Math.random() - 0.5) * 0.15; // ±7.5% 변동
+            currentPrice = Math.max(selectedFish.basePrice * 0.5, Math.min(selectedFish.basePrice * 1.5, currentPrice * (1 + variation)));
+            
+            priceHistory.push({
+                timestamp: now - i * 3600000, // 1시간 간격
+                price: Math.floor(currentPrice)
+            });
+        }
+    }
+    
+    // 라벨 생성 (시간대별)
+    const labels = priceHistory.map(h => {
+        const time = new Date(h.timestamp);
+        const today = new Date();
+        const isToday = time.toDateString() === today.toDateString();
+        
+        if (isToday) {
+            return `${time.getHours()}시`;
+        } else {
+            return `${time.getMonth() + 1}/${time.getDate()}`;
+        }
+    });
+    
+    // 변동률 계산
+    const firstPrice = priceHistory[0].price;
+    const lastPrice = priceHistory[priceHistory.length - 1].price;
+    const changePercent = ((lastPrice - firstPrice) / firstPrice * 100).toFixed(2);
+    
+    // 전문적인 차트 생성
+    const chartImageUrl = getProfessionalChartUrl({
+        name: selectedFish.name,
+        symbol: selectedFish.symbol,
+        prices: priceHistory.map(h => h.price),
+        labels: labels,
+        currentPrice: lastPrice,
+        changePercent: changePercent,
+        volume: Math.floor(Math.random() * 1000 + 100) // 거래량
+    });
     
     const embed = new EmbedBuilder()
-        .setColor('#131722') // TradingView 다크 테마로 통일
-        .setTitle('🐟 물고기 시세 - Fish Market powered by AlphaVantage')
-        .setDescription('실시간 수산물 가격 • 크기와 신선도에 따라 변동')
-        .setImage(chartImageUrl) // 차트 이미지 추가
+        .setColor('#1E88E5') // 물고기 테마 색상
+        .setTitle('🐟 실시간 수산물 거래소')
+        .setDescription('수산물 시세 정보 • 24시간 실시간 업데이트')
+        .setImage(chartImageUrl)
+        .addFields(
+            {
+                name: `${selectedFish.emoji} ${selectedFish.name} (${selectedFish.symbol})`,
+                value: `**현재가**: ${lastPrice.toLocaleString()}G\n` +
+                       `**변동률**: ${changePercent >= 0 ? '+' : ''}${changePercent}%\n` +
+                       `**24시간 최고**: ${Math.max(...priceHistory.map(h => h.price)).toLocaleString()}G\n` +
+                       `**24시간 최저**: ${Math.min(...priceHistory.map(h => h.price)).toLocaleString()}G`,
+                inline: false
+            },
+            {
+                name: '📊 시장 분석',
+                value: `• **어획량 지수**: ${Math.floor(Math.random() * 50 + 50)}% (${Math.random() > 0.5 ? '증가' : '감소'} 추세)\n` +
+                       `• **신선도 프리미엄**: +${Math.floor(Math.random() * 20 + 10)}%\n` +
+                       `• **크기 보너스**: 대형 +30%, 특대형 +50%`,
+                inline: false
+            }
+        )
         .addFields(
             {
                 name: '🐟 일반 어종',
