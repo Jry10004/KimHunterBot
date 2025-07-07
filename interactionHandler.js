@@ -770,12 +770,6 @@ async function handleMainInteraction(interaction) {
                 return await cleanCommand.execute(interaction);
             }
             
-            // 매크로테스트 명령어
-            else if (commandName === '매크로테스트') {
-                const macroTestCommand = require('./commands/test/macroTest');
-                return await macroTestCommand.execute(interaction);
-            }
-            
             // 돈지급 명령어 (관리자 전용)
             else if (commandName === '돈지급') {
                 // 관리자 확인
