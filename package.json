@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "test-bot": "node -r dotenv/config index.js dotenv_config_path=.env.test",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
