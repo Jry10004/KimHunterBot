@@ -293,10 +293,28 @@ module.exports = {
             
             await user.save();
             
+            // 닉네임 변경 시도
+            let nicknameChanged = false;
+            try {
+                const guild = interaction.guild;
+                const member = await guild.members.fetch(interaction.user.id);
+                
+                // 김헌터로 닉네임 변경
+                await member.setNickname('김헌터');
+                nicknameChanged = true;
+            } catch (nicknameError) {
+                console.error('닉네임 변경 실패:', nicknameError);
+            }
+            
+            // 회원가입 완료 메시지
             const successEmbed = new EmbedBuilder()
                 .setColor('#00ff00')
                 .setTitle('🎉 회원가입 완료!')
-                .setDescription(`${interaction.user.username}님, 강화왕 김헌터의 세계에 오신 것을 환영합니다!`);
+                .setDescription(
+                    nicknameChanged 
+                        ? `${interaction.user.username}님, 강화왕 김헌터의 세계에 오신 것을 환영합니다!\n닉네임이 **김헌터**로 변경되었습니다!`
+                        : `${interaction.user.username}님, 강화왕 김헌터의 세계에 오신 것을 환영합니다!\n\n⚠️ 닉네임 변경 권한이 없어 닉네임을 변경하지 못했습니다.`
+                );
             
             // 기본 정보 필드
             const fields = [
