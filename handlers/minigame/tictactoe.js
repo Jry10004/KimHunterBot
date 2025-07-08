@@ -574,10 +574,17 @@ async function handleTicTacToeButton(interaction) {
                 components: [gameButtons]
             });
             
-            await interaction.reply({
-                content: '✅ 게임에 참가했습니다! 호스트가 게임을 시작할 때까지 기다려주세요.',
-                flags: 64
-            });
+            // defer 상태인지 확인
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({
+                    content: '✅ 게임에 참가했습니다! 호스트가 게임을 시작할 때까지 기다려주세요.'
+                });
+            } else {
+                await interaction.reply({
+                    content: '✅ 게임에 참가했습니다! 호스트가 게임을 시작할 때까지 기다려주세요.',
+                    flags: 64
+                });
+            }
         }
         
         // 게임 시작
@@ -688,10 +695,17 @@ async function handleTicTacToeButton(interaction) {
                 const forfeitGameId = customId.replace('tictactoe_forfeit_', '');
                 const game = TIC_TAC_TOE_GAME.getGame(forfeitGameId);
                 if (!game) {
-                    return interaction.reply({
-                        content: '❌ 게임을 찾을 수 없습니다.',
-                        flags: 64
-                    });
+                    // defer 상태인지 확인
+                    if (interaction.deferred || interaction.replied) {
+                        return interaction.editReply({
+                            content: '❌ 게임을 찾을 수 없습니다.'
+                        });
+                    } else {
+                        return interaction.reply({
+                            content: '❌ 게임을 찾을 수 없습니다.',
+                            flags: 64
+                        });
+                    }
                 }
                 
                 // 포기 처리
@@ -851,18 +865,22 @@ async function handleTicTacToeButton(interaction) {
                     
                     // 유저 대전에서도 게임 보드 업데이트
                     if (!result.gameOver) {
-                        const currentPlayer = gameData.currentTurn === 'X' ? gameData.player1 : gameData.player2;
+                        // 게임 데이터 다시 가져오기 (업데이트된 상태)
+                        const updatedGame = TIC_TAC_TOE_GAME.getGame(moveGameId);
+                        if (!updatedGame) return;
+                        
+                        const currentPlayer = updatedGame.currentTurn === 'X' ? updatedGame.player1 : updatedGame.player2;
                         const gameEmbed = new EmbedBuilder()
                             .setColor('#0099ff')
                             .setTitle('⭕ 틱택토 게임')
-                            .setDescription(`${currentPlayer.username}님의 차례입니다! (${gameData.currentTurn})`)
+                            .setDescription(`${currentPlayer.username}님의 차례입니다! (${updatedGame.currentTurn})`)
                             .addFields(
-                                { name: '❌ 플레이어', value: `${gameData.player1.username}`, inline: true },
-                                { name: '⭕ 플레이어', value: `${gameData.player2.username}`, inline: true }
+                                { name: '❌ 플레이어', value: `${updatedGame.player1.username}`, inline: true },
+                                { name: '⭕ 플레이어', value: `${updatedGame.player2.username}`, inline: true }
                             );
                         
-                        const boardImage = await TIC_TAC_TOE_GAME.createBoardImage(gameData.board, gameData.player1, gameData.player2, [], gameData.lastMovePosition);
-                        const buttons = TIC_TAC_TOE_GAME.createGameButtons(moveGameId, gameData.currentTurn, gameData.board);
+                        const boardImage = await TIC_TAC_TOE_GAME.createBoardImage(updatedGame.board, updatedGame.player1, updatedGame.player2, [], updatedGame.lastMovePosition);
+                        const buttons = TIC_TAC_TOE_GAME.createGameButtons(moveGameId, updatedGame.currentTurn, updatedGame.board);
                         
                         // 타격감을 위한 이펙트 메시지
                         const effectMessages = [
@@ -874,26 +892,31 @@ async function handleTicTacToeButton(interaction) {
                         ];
                         const randomEffect = effectMessages[Math.floor(Math.random() * effectMessages.length)];
                         
-                        await interaction.editReply({
-                            content: randomEffect,
-                            embeds: [gameEmbed],
-                            files: [boardImage],
-                            components: buttons
-                        });
-                        
-                        // 2초 후 이펙트 메시지 제거
-                        setTimeout(async () => {
-                            try {
-                                await interaction.editReply({
-                                    content: null,
-                                    embeds: [gameEmbed],
-                                    files: [boardImage],
-                                    components: buttons
-                                });
-                            } catch (error) {
-                                // 에러 무시
-                            }
-                        }, 2000);
+                        // 먼저 메시지 편집
+                        try {
+                            await interaction.message.edit({
+                                content: randomEffect,
+                                embeds: [gameEmbed],
+                                files: [boardImage],
+                                components: buttons
+                            });
+                            
+                            // 2초 후 이펙트 메시지 제거
+                            setTimeout(async () => {
+                                try {
+                                    await interaction.message.edit({
+                                        content: null,
+                                        embeds: [gameEmbed],
+                                        files: [boardImage],
+                                        components: buttons
+                                    });
+                                } catch (error) {
+                                    // 에러 무시
+                                }
+                            }, 2000);
+                        } catch (error) {
+                            console.error('틱택토 메시지 업데이트 오류:', error);
+                        }
                     }
                 }
                 
@@ -932,11 +955,16 @@ async function handleTicTacToeButton(interaction) {
                         result.winPattern || []
                     );
                     
-                    await interaction.editReply({
-                        embeds: [gameEndEmbed],
-                        files: [finalBoardImage],
-                        components: []
-                    });
+                    // 게임 종료 메시지도 message.edit 사용
+                    try {
+                        await interaction.message.edit({
+                            embeds: [gameEndEmbed],
+                            files: [finalBoardImage],
+                            components: []
+                        });
+                    } catch (error) {
+                        console.error('틱택토 게임 종료 메시지 업데이트 오류:', error);
+                    }
                 
                 const user1 = await User.findOne({ discordId: gameForReward.player1.id });
                 const user2 = await User.findOne({ discordId: gameForReward.player2.id });
