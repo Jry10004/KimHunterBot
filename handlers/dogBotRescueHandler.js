@@ -3,6 +3,22 @@ const { DOGBOT_RESCUE_EVENT, calculateDamage, getCurrentFloor, getHPPercentage, 
 const User = require('../models/User');
 const stateManager = require('../systems/dogBotStateManager');
 const announcer = require('../systems/dogBotEventAnnouncer');
+const fs = require('fs');
+const path = require('path');
+
+// 닉네임 캐시 로드
+let nicknameCache = {};
+try {
+    const cachePath = path.join(__dirname, '../data/userNicknameCache.json');
+    if (fs.existsSync(cachePath)) {
+        const cacheData = fs.readFileSync(cachePath, 'utf8');
+        nicknameCache = JSON.parse(cacheData);
+        delete nicknameCache.comment; // comment 필드 제거
+        console.log('[댕댕봇구출] 닉네임 캐시 로드:', Object.keys(nicknameCache).length + '개');
+    }
+} catch (error) {
+    console.error('[댕댕봇구출] 닉네임 캐시 로드 실패:', error);
+}
 
 // 쿨다운 관리
 const attackCooldowns = new Map();
@@ -479,8 +495,24 @@ async function showRanking(interaction) {
     for (let i = 0; i < Math.min(10, rankings.length); i++) {
         const rank = rankings[i];
         const medal = medals[i] || `**${i + 1}.**`;
-        const user = await User.findOne({ discordId: rank.userId });
-        const nickname = user?.nickname || '알 수 없음';
+        let nickname = '알 수 없음';
+        
+        // unknown이 아닌 경우에만 DB 조회
+        if (rank.userId !== 'unknown') {
+            const user = await User.findOne({ discordId: rank.userId });
+            if (user && user.nickname) {
+                nickname = user.nickname;
+            } else {
+                // DB에 없는 경우 Discord API로 직접 조회 시도
+                try {
+                    const discordUser = await interaction.client.users.fetch(rank.userId);
+                    nickname = discordUser.username || `익명유저`;
+                } catch (error) {
+                    // 파일 기반 캐시된 닉네임 확인
+                    nickname = nicknameCache[rank.userId] || `탈퇴유저`;
+                }
+            }
+        }
         
         rankingText += `${medal} **${nickname}**\n`;
         rankingText += `　　💥 총 데미지: **${rank.damage.toLocaleString()}**\n`;
@@ -496,8 +528,24 @@ async function showRanking(interaction) {
     for (let i = 0; i < attackRanking.length; i++) {
         const [userId, attackCount] = attackRanking[i];
         const medal = medals[i] || `**${i + 1}.**`;
-        const user = await User.findOne({ discordId: userId });
-        const nickname = user?.nickname || '알 수 없음';
+        let nickname = '알 수 없음';
+        
+        // unknown이 아닌 경우에만 DB 조회
+        if (userId !== 'unknown') {
+            const user = await User.findOne({ discordId: userId });
+            if (user && user.nickname) {
+                nickname = user.nickname;
+            } else {
+                // DB에 없는 경우 Discord API로 직접 조회 시도
+                try {
+                    const discordUser = await interaction.client.users.fetch(userId);
+                    nickname = discordUser.username || `익명유저`;
+                } catch (error) {
+                    // 파일 기반 캐시된 닉네임 확인
+                    nickname = nicknameCache[userId] || `탈퇴유저`;
+                }
+            }
+        }
         
         attackRankingText += `${medal} **${nickname}**\n`;
         attackRankingText += `　　⚔️ 공격 횟수: **${attackCount}회**\n`;

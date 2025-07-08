@@ -280,8 +280,24 @@ async function startGame(interaction, player1, player2) {
         });
 
         // Discord 유저 객체 가져오기 (force: true로 최신 정보 강제 로드)
-        const discordPlayer1 = await interaction.client.users.fetch(player1.discordId, { force: true });
-        const discordPlayer2 = await interaction.client.users.fetch(player2.discordId, { force: true });
+        let discordPlayer1, discordPlayer2;
+        try {
+            discordPlayer1 = await interaction.client.users.fetch(player1.discordId, { force: true });
+            discordPlayer2 = await interaction.client.users.fetch(player2.discordId, { force: true });
+        } catch (error) {
+            console.error('[TicTacToe] 유저 정보 가져오기 실패:', error);
+            // 에러 시 fallback 사용
+            discordPlayer1 = {
+                id: player1.discordId,
+                username: player1.nickname || 'Player 1',
+                displayAvatarURL: (options) => `https://cdn.discordapp.com/embed/avatars/${parseInt(player1.discordId) % 5}.png`
+            };
+            discordPlayer2 = {
+                id: player2.discordId,
+                username: player2.nickname || 'Player 2',
+                displayAvatarURL: (options) => `https://cdn.discordapp.com/embed/avatars/${parseInt(player2.discordId) % 5}.png`
+            };
+        }
         
         // 채널에 사용자 멘션
         await tempChannel.send(`<@${player1.discordId}> vs <@${player2.discordId}> - 틱택토 게임이 시작됩니다!`);
@@ -806,20 +822,30 @@ async function handleTicTacToeButton(interaction) {
                     result = await TIC_TAC_TOE_GAME.handleMove(moveGameId, position, userId, interaction.message);
                     
                     if (!result.success) {
-                        await interaction.followUp({
-                            content: `❌ ${result.error || result.reason}`,
-                            flags: 64
-                        });
+                        try {
+                            await interaction.editReply({
+                                content: `❌ ${result.error || result.reason}`,
+                                embeds: [],
+                                components: []
+                            });
+                        } catch (e) {
+                            // 응답 실패 무시
+                        }
                         return;
                     }
                 } else {
-                    result = await TIC_TAC_TOE_GAME.makeMove(moveGameId, position, userId);
+                    result = TIC_TAC_TOE_GAME.makeMove(moveGameId, position, userId);
                     
                     if (!result.success) {
-                        await interaction.followUp({
-                            content: `❌ ${result.error || result.reason}`,
-                            flags: 64
-                        });
+                        try {
+                            await interaction.editReply({
+                                content: `❌ ${result.error || result.reason}`,
+                                embeds: [],
+                                components: []
+                            });
+                        } catch (e) {
+                            // 응답 실패 무시
+                        }
                         return;
                     }
                     
@@ -1111,18 +1137,23 @@ async function handleTicTacToeButton(interaction) {
         console.error('틱택토 버튼 처리 오류:', error);
         
         // 이미 응답한 상태인지 확인
-        if (!interaction.replied && !interaction.deferred) {
-            return interaction.reply({
-                content: '❌ 처리 중 오류가 발생했습니다.',
-                flags: 64
-            });
-        } else if (interaction.deferred) {
-            return interaction.followUp({
-                content: '❌ 처리 중 오류가 발생했습니다.',
-                flags: 64
-            });
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ 처리 중 오류가 발생했습니다.',
+                    flags: 64
+                });
+            } else if (interaction.deferred) {
+                await interaction.editReply({
+                    content: '❌ 처리 중 오류가 발생했습니다.',
+                    embeds: [],
+                    components: []
+                });
+            }
+        } catch (replyError) {
+            // 응답 실패 무시
+            console.error('오류 응답 실패:', replyError);
         }
-        // 이미 응답했다면 아무것도 하지 않음
     }
 }
 

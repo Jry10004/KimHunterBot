@@ -524,6 +524,12 @@ async function handleMainInteraction(interaction) {
                 return await spawnBossCommand.execute(interaction);
             }
             
+            // 댕댕봇백업 명령어
+            else if (commandName === '댕댕봇백업') {
+                const dogBotBackupCommand = require('./commands/dogBotBackup');
+                return await dogBotBackupCommand.execute(interaction);
+            }
+            
             // 게임 관련 명령어들
             else if (commandName === '독버섯') {
                 await interaction.deferReply({ flags: 64 });
@@ -817,6 +823,12 @@ async function handleMainInteraction(interaction) {
                 return await interaction.editReply({
                     embeds: [embed]
                 });
+            }
+            
+            // 매크로감지 명령어 (관리자 전용)
+            else if (commandName === '매크로감지') {
+                const macroDetectCommand = require('./commands/admin/macroDetect');
+                return await macroDetectCommand.execute(interaction);
             }
         }
         

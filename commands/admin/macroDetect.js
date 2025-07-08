@@ -61,36 +61,56 @@ module.exports = {
                         .setRequired(true))),
 
     async execute(interaction) {
+        console.log('[매크로감지] 명령어 실행됨:', interaction.user.username);
+        
         // 관리자 확인
         const ADMIN_IDS = ['424480594542592009', '295980447849250817', '532128778175619084'];
         if (!ADMIN_IDS.includes(interaction.user.id)) {
+            console.log('[매크로감지] 관리자 아님:', interaction.user.id);
             return interaction.reply({ 
                 content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
-                ephemeral: true 
+                flags: 64 
             });
         }
 
         const subcommand = interaction.options.getSubcommand();
+        console.log('[매크로감지] 하위 명령어:', subcommand);
 
-        switch (subcommand) {
-            case '검사':
-                await handleDetection(interaction);
-                break;
-            case '상태':
-                await handleStatus(interaction);
-                break;
-            case '제재해제':
-                await handleUnban(interaction);
-                break;
-            case '화이트리스트':
-                await handleWhitelist(interaction);
-                break;
-            case '통계':
-                await handleStatistics(interaction);
-                break;
-            case '자동감지':
-                await handleAutoDetection(interaction);
-                break;
+        try {
+            switch (subcommand) {
+                case '검사':
+                    await handleDetection(interaction);
+                    break;
+                case '상태':
+                    await handleStatus(interaction);
+                    break;
+                case '제재해제':
+                    await handleUnban(interaction);
+                    break;
+                case '화이트리스트':
+                    await handleWhitelist(interaction);
+                    break;
+                case '통계':
+                    await handleStatistics(interaction);
+                    break;
+                case '자동감지':
+                    await handleAutoDetection(interaction);
+                    break;
+                default:
+                    console.log('[매크로감지] 알 수 없는 하위 명령어:', subcommand);
+                    await interaction.reply({
+                        content: '❌ 알 수 없는 하위 명령어입니다.',
+                        flags: 64
+                    });
+            }
+        } catch (error) {
+            console.error('[매크로감지] 명령어 실행 오류:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ 명령어 실행 중 오류가 발생했습니다.',
+                    flags: 64
+                });
+            }
         }
     }
 };

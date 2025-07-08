@@ -4394,24 +4394,61 @@ const commands = [
                         .setDescription('차단 해제할 IP 주소')
                         .setRequired(true))),
     new SlashCommandBuilder()
-        .setName('매크로테스트')
-        .setDescription('매크로 방지 시스템을 테스트합니다 (관리자 전용)')
-        .addStringOption(option =>
-            option.setName('타입')
-                .setDescription('테스트 유형을 선택하세요')
-                .setRequired(true)
-                .addChoices(
-                    { name: '기본 검증', value: 'basic' },
-                    { name: '빠른 클릭 패턴', value: 'rapid' },
-                    { name: '반복 패턴', value: 'pattern' },
-                    { name: '상태 확인', value: 'status' },
-                    { name: '특정 유저 초기화', value: 'reset' },
-                    { name: '전체 초기화', value: 'reset_all' }
-                ))
-        .addUserOption(option =>
-            option.setName('대상')
-                .setDescription('테스트 대상 유저 (비워두면 자신)')
-                .setRequired(false)),
+        .setName('매크로감지')
+        .setDescription('매크로 감지 시스템 관리 (관리자 전용)')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('검사')
+                .setDescription('특정 유저를 매크로 검사합니다')
+                .addUserOption(option =>
+                    option.setName('유저')
+                        .setDescription('검사할 유저')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('상태')
+                .setDescription('매크로 감지 시스템 상태를 확인합니다')
+                .addUserOption(option =>
+                    option.setName('유저')
+                        .setDescription('특정 유저의 상태 확인 (선택사항)')
+                        .setRequired(false)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('제재해제')
+                .setDescription('유저의 매크로 제재를 해제합니다')
+                .addUserOption(option =>
+                    option.setName('유저')
+                        .setDescription('제재를 해제할 유저')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('화이트리스트')
+                .setDescription('화이트리스트 관리')
+                .addStringOption(option =>
+                    option.setName('작업')
+                        .setDescription('수행할 작업')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: '추가', value: 'add' },
+                            { name: '제거', value: 'remove' },
+                            { name: '목록', value: 'list' }
+                        ))
+                .addUserOption(option =>
+                    option.setName('유저')
+                        .setDescription('대상 유저 (목록 조회시 불필요)')
+                        .setRequired(false)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('통계')
+                .setDescription('매크로 감지 시스템 전체 통계를 확인합니다'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('자동감지')
+                .setDescription('자동 감지 시스템을 켜거나 끕니다')
+                .addBooleanOption(option =>
+                    option.setName('활성화')
+                        .setDescription('자동 감지 활성화 여부')
+                        .setRequired(true))),
     new SlashCommandBuilder()
         .setName('공지작성')
         .setDescription('프로페셔널 공지사항을 작성합니다 (관리자 전용)')
@@ -4512,7 +4549,22 @@ const commands = [
         .setDescription('슬래시 명령어 수동 등록 (관리자 전용)'),
     new SlashCommandBuilder()
         .setName('보스소환테스트')
-        .setDescription('월드 보스를 테스트로 소환합니다 (관리자 전용)')
+        .setDescription('월드 보스를 테스트로 소환합니다 (관리자 전용)'),
+    new SlashCommandBuilder()
+        .setName('댕댕봇백업')
+        .setDescription('댕댕봇 구출 이벤트 백업 관리 (관리자 전용)')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('생성')
+                .setDescription('현재 상태를 백업합니다'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('복원')
+                .setDescription('최신 백업을 복원합니다'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('목록')
+                .setDescription('백업 목록을 확인합니다'))
 ];
 
 // 봇이 준비되었을 때
@@ -4579,38 +4631,46 @@ client.once('ready', async () => {
         const dogBotStateManager = require('./systems/dogBotStateManager');
         const dogBotAnnouncer = require('./systems/dogBotEventAnnouncer');
         const dogBotHostageSystem = require('./systems/dogBotHostageSystem');
+        const dogBotAutoBackup = require('./systems/dogBotAutoBackup');
         
-        // 3초 후 상태 확인 (로드 시간 대기)
+        // 자동 백업 시스템 초기화
+        await dogBotAutoBackup.initialize();
+        
+        // 데이터 무결성 한 번 더 확인
         setTimeout(async () => {
-            // 상태 파일 다시 로드
-            await dogBotStateManager.loadState();
-            
-            if (dogBotStateManager.state && 
-                dogBotStateManager.state.status && 
-                dogBotStateManager.state.status.isActive &&
-                !dogBotStateManager.state.status.rescueComplete) {
-                console.log('🐕 댕댕봇 구출 이벤트가 진행 중입니다.');
-                console.log(`   - 현재 층: ${dogBotStateManager.state.status.currentFloor}/5`);
-                console.log(`   - 참여자: ${dogBotStateManager.state.statistics.participants.length}명`);
+            if (dogBotStateManager.state && dogBotStateManager.state.statistics) {
+                // 먼저 데이터를 강제로 리로드
+                console.log('[DogBot] 봇 시작 - 데이터 강제 리로드 중...');
+                await dogBotStateManager.forceReloadData();
                 
-                // 자동 공지가 이미 실행 중이 아닌 경우에만 시작
-                if (!dogBotAnnouncer.isAnnouncementRunning) {
-                    console.log('📢 자동 공지를 시작합니다...');
-                    dogBotAnnouncer.startAnnouncements(client);
-                }
-                
-                // 인질 시스템 (테스트 환경에서는 비활성화)
-                if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-                    console.log('ℹ️ 인질 시스템은 테스트 환경에서 비활성화됩니다.');
-                } else if (!dogBotHostageSystem.isHostageSystemRunning) {
-                    console.log('🚨 인질 시스템을 시작합니다...');
-                    dogBotHostageSystem.startHostageSystem(client);
-                }
-            } else {
-                console.log('💤 댕댕봇 구출 이벤트가 비활성화 상태입니다.');
-                console.log('   /댕댕봇구출시작 명령어로 이벤트를 시작하세요.');
+                // 그 다음 데이터 무결성 검사
+                dogBotStateManager.validateAndRepairData();
+                console.log('[System] 댕댕봇 데이터 무결성 검사 완료');
             }
-        }, 3000);
+        }, 5000);
+        
+        // 댕댕봇 이벤트 상태는 이미 동기적으로 로드됨
+        if (dogBotStateManager.state && 
+            dogBotStateManager.state.status && 
+            dogBotStateManager.state.status.isActive &&
+            !dogBotStateManager.state.status.rescueComplete) {
+            console.log('🐕 댕댕봇 구출 이벤트가 진행 중입니다.');
+            console.log(`   - 현재 층: ${dogBotStateManager.state.status.currentFloor}/5`);
+            console.log(`   - 참여자: ${dogBotStateManager.state.statistics.participants.length}명`);
+            
+            // 자동 공지 시작 (재부팅 후에도 유지)
+            console.log('📢 자동 공지를 시작합니다...');
+            dogBotAnnouncer.startAnnouncements(client);
+            console.log('✅ 댕댕봇 구출 이벤트 자동 공지 시작 (20분 간격)');
+            
+            // 인질 시스템도 재시작
+            console.log('🚨 인질 시스템을 시작합니다...');
+            dogBotHostageSystem.startHostageSystem(client);
+            console.log('✅ 댕댕봇 인질 시스템 시작 (2시간마다, 쿨타임 15분)');
+        } else {
+            console.log('💤 댕댕봇 구출 이벤트가 비활성화 상태입니다.');
+            console.log('   /댕댕봇구출시작 명령어로 이벤트를 시작하세요.');
+        }
 
         ADMIN_IDS.forEach(adminId => {
             antiMacro.addToWhitelist(adminId);

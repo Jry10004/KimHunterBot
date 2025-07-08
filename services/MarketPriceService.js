@@ -179,28 +179,54 @@ class MarketPriceService {
             // 주식 가격 업데이트
             const stocks = await Stock.find({});
             for (const stock of stocks) {
-                const changePercent = (Math.random() - 0.5) * 0.04; // ±2% 변동
-                const newPrice = Math.floor(stock.currentPrice * (1 + changePercent));
-                const volume = Math.floor(Math.random() * 10000 + 1000);
-                
-                await stock.updatePrice(newPrice);
-                stock.volume = volume;
-                await stock.save();
+                try {
+                    const changePercent = (Math.random() - 0.5) * 0.04; // ±2% 변동
+                    const newPrice = Math.floor(stock.currentPrice * (1 + changePercent));
+                    const volume = Math.floor(Math.random() * 10000 + 1000);
+                    
+                    // 재시도 로직 추가
+                    let retries = 3;
+                    while (retries > 0) {
+                        try {
+                            // 최신 문서 다시 가져오기
+                            const freshStock = await Stock.findById(stock._id);
+                            if (!freshStock) break;
+                            
+                            await freshStock.updatePrice(newPrice);
+                            freshStock.volume = volume;
+                            await freshStock.save();
+                            break;
+                        } catch (err) {
+                            if (err.name === 'VersionError' && retries > 1) {
+                                retries--;
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                                continue;
+                            }
+                            throw err;
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[MarketPriceService] 주식 업데이트 실패 - ${stock.companyName}:`, error.message);
+                }
             }
 
             // 시장 아이템 가격 업데이트
             const marketItems = await MarketItem.find({});
             for (const item of marketItems) {
-                // 아이템 타입별 변동성 설정
-                let volatility = 0.02; // 기본 2%
-                if (item.itemType === 'fish') volatility = 0.05; // 물고기는 5%
-                if (item.metadata?.rarity === 'legendary') volatility = 0.08; // 전설은 8%
-                
-                const changePercent = (Math.random() - 0.5) * volatility * 2;
-                const newPrice = Math.floor(item.currentPrice * (1 + changePercent));
-                const volume = Math.floor(Math.random() * 100 + 10);
-                
-                await item.updatePrice(newPrice, volume);
+                try {
+                    // 아이템 타입별 변동성 설정
+                    let volatility = 0.02; // 기본 2%
+                    if (item.itemType === 'fish') volatility = 0.05; // 물고기는 5%
+                    if (item.metadata?.rarity === 'legendary') volatility = 0.08; // 전설은 8%
+                    
+                    const changePercent = (Math.random() - 0.5) * volatility * 2;
+                    const newPrice = Math.floor(item.currentPrice * (1 + changePercent));
+                    const volume = Math.floor(Math.random() * 100 + 10);
+                    
+                    await item.updatePrice(newPrice, volume);
+                } catch (error) {
+                    console.error(`[MarketPriceService] 아이템 업데이트 실패 - ${item.itemName}:`, error.message);
+                }
             }
 
             console.log(`[MarketPriceService] 가격 업데이트 완료 - 주식: ${stocks.length}개, 아이템: ${marketItems.length}개`);

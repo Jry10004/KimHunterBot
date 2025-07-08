@@ -1,5 +1,4 @@
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const Jimp = require('jimp');
 
 // 매크로 방지 시스템
 const ANTI_MACRO = {
@@ -257,9 +256,10 @@ async function generateCaptchaImage(captchaData) {
         const { imageWidth, imageHeight } = ANTI_MACRO.verificationConfig;
         const displayText = captchaData.display;
         
-        // 기본 이미지 생성
-        const image = await new Jimp(imageWidth, imageHeight, 0xF0F0F0FF);
-        const font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK);
+        // 기본 이미지 생성 (Jimp 1.6.0 문법)
+        const { Jimp: JimpClass } = require('jimp');
+        const image = new JimpClass({ width: imageWidth, height: imageHeight, color: 0xF0F0F0FF });
+        const font = await JimpClass.loadFont(JimpClass.Font.SANS_64_BLACK);
         
         // 배경 노이즈 (간단하게)
         for (let i = 0; i < 50; i++) {
@@ -301,29 +301,30 @@ async function generateCaptchaImage(captchaData) {
             const char = displayText[i];
             
             // 각 문자마다 개별 이미지
-            const charImage = await new Jimp(100, 100, 0x00000000);
+            const { Jimp: JimpClass } = require('jimp');
+            const charImage = new JimpClass({ width: 100, height: 100, color: 0x00000000 });
             
             // 문자 색상 (진한 색상들)
             const colors = [0x000000FF, 0x330000FF, 0x003300FF, 0x000033FF, 0x333300FF];
             const color = colors[Math.floor(Math.random() * colors.length)];
             
             // 문자 그리기
-            charImage.print(font, 10, 10, char);
+            charImage.print({ font, x: 10, y: 10, text: char });
             
             // 간단한 왜곡
             const angle = (Math.random() - 0.5) * 30;
-            charImage.rotate(angle);
+            charImage.rotate({ angle });
             
             // 크기 조정
             const scale = 0.8 + Math.random() * 0.3;
-            charImage.scale(scale);
+            charImage.scale({ factor: scale });
             
             // 위치 계산
             const x = i * charWidth + (charWidth - 64) / 2 + (Math.random() - 0.5) * 20;
             const y = (imageHeight - 64) / 2 + (Math.random() - 0.5) * 20;
             
             // 합성
-            image.composite(charImage, Math.floor(x), Math.floor(y));
+            image.composite(charImage, { x: Math.floor(x), y: Math.floor(y) });
         }
         
         // 추가 노이즈 점
@@ -334,14 +335,15 @@ async function generateCaptchaImage(captchaData) {
         }
         
         // 버퍼로 변환
-        return await image.getBufferAsync(Jimp.MIME_PNG);
+        return await image.getBuffer('image/png');
     } catch (error) {
         console.error('CAPTCHA 이미지 생성 오류:', error);
         // 에러 시 간단한 대체 이미지
-        const fallback = await new Jimp(300, 100, 0xFFFFFFFF);
-        const font = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
-        fallback.print(font, 50, 30, captchaData.display || 'ERROR');
-        return await fallback.getBufferAsync(Jimp.MIME_PNG);
+        const { Jimp: JimpClass } = require('jimp');
+        const fallback = new JimpClass({ width: 300, height: 100, color: 0xFFFFFFFF });
+        const font = await JimpClass.loadFont(JimpClass.Font.SANS_32_BLACK);
+        fallback.print({ font, x: 50, y: 30, text: captchaData.display || 'ERROR' });
+        return await fallback.getBuffer('image/png');
     }
 }
 

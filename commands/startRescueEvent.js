@@ -34,7 +34,10 @@ module.exports = {
         
         // 초기화 옵션
         if (shouldReset) {
-            await stateManager.resetState();
+            await stateManager.resetState(false); // false = 완전 초기화
+        } else {
+            // 기존 데이터 유지하면서 재시작
+            await stateManager.resetState(true); // true = 데이터 유지
         }
         
         // 이벤트 시작

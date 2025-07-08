@@ -283,32 +283,6 @@ const productionCommands = [
         ]
     },
     {
-        name: '매크로테스트',
-        description: '매크로 방지 시스템을 테스트합니다 (관리자 전용)',
-        type: 1,
-        options: [
-            {
-                name: '타입',
-                description: '테스트 유형을 선택하세요',
-                type: 3,
-                required: true,
-                choices: [
-                    { name: '기본 검증', value: 'basic' },
-                    { name: '빠른 클릭 패턴', value: 'rapid' },
-                    { name: '반복 패턴', value: 'pattern' },
-                    { name: '상태 확인', value: 'status' },
-                    { name: '초기화', value: 'reset' }
-                ]
-            },
-            {
-                name: '대상',
-                description: '테스트 대상 유저 (비워두면 자신)',
-                type: 6,
-                required: false
-            }
-        ]
-    },
-    {
         name: '매크로감지',
         description: '매크로 감지 시스템 관리 (관리자 전용)',
         type: 1,
@@ -707,6 +681,28 @@ const productionCommands = [
         name: '사전강화종료',
         description: '사전강화 이벤트를 종료하고 보상을 지급합니다 (관리자 전용)',
         type: 1
+    },
+    {
+        name: '댕댕봇백업',
+        description: '댕댕봇 구출 이벤트 백업 관리 (관리자 전용)',
+        type: 1,
+        options: [
+            {
+                name: '생성',
+                description: '현재 상태를 백업합니다',
+                type: 1
+            },
+            {
+                name: '복원',
+                description: '최신 백업을 복원합니다',
+                type: 1
+            },
+            {
+                name: '목록',
+                description: '백업 목록을 확인합니다',
+                type: 1
+            }
+        ]
     }
 ];
 

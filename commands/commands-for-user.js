@@ -235,33 +235,6 @@ const productionCommands = [
         ]
     },
     {
-        name: '매크로테스트',
-        description: '매크로 방지 시스템을 테스트합니다',
-        type: 1,
-        // 권한 제거
-        options: [
-            {
-                name: '타입',
-                description: '테스트 유형을 선택하세요',
-                type: 3,
-                required: true,
-                choices: [
-                    { name: '기본 검증', value: 'basic' },
-                    { name: '빠른 클릭 패턴', value: 'rapid' },
-                    { name: '반복 패턴', value: 'pattern' },
-                    { name: '상태 확인', value: 'status' },
-                    { name: '초기화', value: 'reset' }
-                ]
-            },
-            {
-                name: '대상',
-                description: '테스트 대상 유저 (비워두면 자신)',
-                type: 6,
-                required: false
-            }
-        ]
-    },
-    {
         name: '공지작성',
         description: '프로페셔널 공지사항을 작성합니다',
         type: 1,

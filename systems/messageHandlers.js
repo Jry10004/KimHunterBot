@@ -14,11 +14,12 @@ function setUpdatePopularityFunction(func) {
 
 // 테스트용 메시지 핸들러 (디버깅용)
 async function handleDebugMessage(message) {
-    console.log('[DEBUG messageCreate] 이벤트 트리거됨!');
-    console.log(`[DEBUG] 작성자: ${message.author.username} (${message.author.id})`);
-    console.log(`[DEBUG] 내용: ${message.content}`);
-    console.log(`[DEBUG] 채널 타입: ${message.channel.type}`);
-    console.log(`[DEBUG] 봇 여부: ${message.author.bot}`);
+    // 디버그 메시지 비활성화
+    // console.log('[DEBUG messageCreate] 이벤트 트리거됨!');
+    // console.log(`[DEBUG] 작성자: ${message.author.username} (${message.author.id})`);
+    // console.log(`[DEBUG] 내용: ${message.content}`);
+    // console.log(`[DEBUG] 채널 타입: ${message.channel.type}`);
+    // console.log(`[DEBUG] 봇 여부: ${message.author.bot}`);
 }
 
 // 메시지 반응 추가 핸들러

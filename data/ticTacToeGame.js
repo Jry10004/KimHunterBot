@@ -1,5 +1,4 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
-const Jimp = require('jimp');
 const axios = require('axios');
 
 // 틱택토 게임 시스템 (Jimp 버전)
@@ -55,8 +54,11 @@ const TIC_TAC_TOE_GAME = {
     
     // 게임 보드 이미지 생성 (Jimp)
     async createBoardImage(board, player1, player2, winPattern = [], lastMove = null) {
+        // Jimp 1.6.0 문법으로 수정
+        const { Jimp: JimpClass } = require('jimp');
+        
         // 450x450 크기의 보드 생성
-        const boardImage = new Jimp(450, 450, '#2C2F33');
+        const boardImage = new JimpClass({ width: 450, height: 450, color: 0x2C2F33FF });
         
         // 격자선 그리기
         const lineColor = 0x4A4D52FF;
@@ -132,13 +134,13 @@ const TIC_TAC_TOE_GAME = {
                             'Cache-Control': 'no-cache'
                         }
                     });
-                    const profileImage = await Jimp.read(Buffer.from(response.data));
+                    const profileImage = await JimpClass.read(Buffer.from(response.data));
                     
                     // 이미지 크기 조정 및 원형으로 만들기
                     profileImage.resize(130, 130);
                     
                     // 원형 마스크 생성
-                    const mask = new Jimp(130, 130, 0x00000000);
+                    const mask = new JimpClass({ width: 130, height: 130, color: 0x00000000 });
                     const centerX = 65;
                     const centerY = 65;
                     const radius = 65;
@@ -182,7 +184,7 @@ const TIC_TAC_TOE_GAME = {
                         }
                         
                         // NEW! 표시 (폰트 없이 간단한 표시)
-                        const newBadge = new Jimp(50, 20, 0xFF0000FF);
+                        const newBadge = new JimpClass({ width: 50, height: 20, color: 0xFF0000FF });
                         // 간단한 사각형으로 NEW 표시
                         boardImage.composite(newBadge, x + 80, y - 10);
                     }
@@ -252,7 +254,7 @@ const TIC_TAC_TOE_GAME = {
         }
         
         // 버퍼로 변환
-        const buffer = await boardImage.getBufferAsync(Jimp.MIME_PNG);
+        const buffer = await boardImage.getBuffer('image/png');
         const attachment = new AttachmentBuilder(buffer, { name: 'tictactoe.png' });
         
         return attachment;
