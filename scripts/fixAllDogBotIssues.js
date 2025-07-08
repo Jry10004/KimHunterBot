@@ -35,11 +35,26 @@ if (data.statistics.userDamage[oldId]) {
     console.log('\n✅ 데이터 병합 완료!');
 }
 
-// 2. floor3 -> 3 중복 제거
-if (data.statistics.floorMVP['floor3']) {
-    // floor3 데이터를 무조건 삭제 (3층 데이터는 '3'에만 저장)
+// 2. floor3 -> 3 중복 제거 및 더 높은 데미지 유지
+if (data.statistics.floorMVP['floor3'] && data.statistics.floorMVP['3']) {
+    // 두 개의 데이터 중 더 높은 데미지를 가진 것을 유지
+    const floor3Data = data.statistics.floorMVP['3'];
+    const floor3DupData = data.statistics.floorMVP['floor3'];
+    
+    if (floor3DupData.damage > floor3Data.damage) {
+        // floor3의 데미지가 더 높으면 그 데이터를 3으로 이동
+        data.statistics.floorMVP['3'] = floor3DupData;
+        console.log(`✅ 3층 MVP 업데이트: ${floor3Data.userId}(${floor3Data.damage}) -> ${floor3DupData.userId}(${floor3DupData.damage})`);
+    }
+    
+    // floor3는 항상 삭제
     delete data.statistics.floorMVP['floor3'];
     console.log('✅ 중복 MVP 데이터(floor3) 삭제 완료!');
+} else if (data.statistics.floorMVP['floor3'] && !data.statistics.floorMVP['3']) {
+    // floor3만 있고 3이 없으면 floor3를 3으로 이동
+    data.statistics.floorMVP['3'] = data.statistics.floorMVP['floor3'];
+    delete data.statistics.floorMVP['floor3'];
+    console.log('✅ floor3 데이터를 3으로 이동 완료!');
 }
 
 console.log('\n=== 수정 후 데이터 ===');

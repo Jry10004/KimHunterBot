@@ -585,10 +585,20 @@ async function showRanking(interaction) {
     const floorMVPs = Object.entries(stateManager.state.statistics.floorMVP);
     if (floorMVPs.length > 0) {
         let mvpText = '';
+        const processedFloors = new Set(); // 중복 방지
+        
         for (const [floor, mvp] of floorMVPs) {
             if (mvp.userId) {
-                const user = await User.findOne({ discordId: mvp.userId });
+                // floor3와 3을 같은 것으로 처리
                 const floorNum = floor.replace('floor', '');
+                
+                // 이미 처리한 층이면 건너뛰기
+                if (processedFloors.has(floorNum)) {
+                    continue;
+                }
+                processedFloors.add(floorNum);
+                
+                const user = await User.findOne({ discordId: mvp.userId });
                 mvpText += `**${floorNum}층**: ${user?.nickname || '알 수 없음'} (${mvp.damage.toLocaleString()})\n`;
             }
         }
