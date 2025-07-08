@@ -37,16 +37,9 @@ if (data.statistics.userDamage[oldId]) {
 
 // 2. floor3 -> 3 중복 제거
 if (data.statistics.floorMVP['floor3']) {
-    // 두 개 중 더 높은 데미지를 가진 것을 유지
-    const floor3Data = data.statistics.floorMVP['3'];
-    const floor3DupData = data.statistics.floorMVP['floor3'];
-    
-    if (!floor3Data || floor3DupData.damage > floor3Data.damage) {
-        data.statistics.floorMVP['3'] = floor3DupData;
-    }
-    
+    // floor3 데이터를 무조건 삭제 (3층 데이터는 '3'에만 저장)
     delete data.statistics.floorMVP['floor3'];
-    console.log('✅ 중복 MVP 데이터 정리 완료!');
+    console.log('✅ 중복 MVP 데이터(floor3) 삭제 완료!');
 }
 
 console.log('\n=== 수정 후 데이터 ===');

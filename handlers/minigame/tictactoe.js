@@ -505,10 +505,17 @@ async function handleTicTacToeButton(interaction) {
             const session = tictactoeGameSessions.get(sessionId);
             
             if (!session) {
-                return interaction.reply({
-                    content: '❌ 게임 세션을 찾을 수 없습니다.',
-                    flags: 64
-                });
+                // defer 상태인지 확인
+                if (interaction.deferred || interaction.replied) {
+                    return interaction.editReply({
+                        content: '❌ 게임 세션을 찾을 수 없습니다.'
+                    });
+                } else {
+                    return interaction.reply({
+                        content: '❌ 게임 세션을 찾을 수 없습니다.',
+                        flags: 64
+                    });
+                }
             }
             
             // 호스트는 참가할 수 없음
@@ -593,26 +600,47 @@ async function handleTicTacToeButton(interaction) {
             const session = tictactoeGameSessions.get(sessionId);
             
             if (!session) {
-                return interaction.reply({
-                    content: '❌ 게임 세션을 찾을 수 없습니다.',
-                    flags: 64
-                });
+                // defer 상태인지 확인
+                if (interaction.deferred || interaction.replied) {
+                    return interaction.editReply({
+                        content: '❌ 게임 세션을 찾을 수 없습니다.'
+                    });
+                } else {
+                    return interaction.reply({
+                        content: '❌ 게임 세션을 찾을 수 없습니다.',
+                        flags: 64
+                    });
+                }
             }
             
             // 호스트만 시작할 수 있음
             if (session.hostId !== userId) {
-                return interaction.reply({
-                    content: '❌ 호스트만 게임을 시작할 수 있습니다!',
-                    flags: 64
-                });
+                // defer 상태인지 확인
+                if (interaction.deferred || interaction.replied) {
+                    return interaction.editReply({
+                        content: '❌ 호스트만 게임을 시작할 수 있습니다!'
+                    });
+                } else {
+                    return interaction.reply({
+                        content: '❌ 호스트만 게임을 시작할 수 있습니다!',
+                        flags: 64
+                    });
+                }
             }
             
             // 참가자가 있는지 확인
             if (!session.participant) {
-                return interaction.reply({
-                    content: '❌ 아직 참가자가 없습니다!',
-                    flags: 64
-                });
+                // defer 상태인지 확인
+                if (interaction.deferred || interaction.replied) {
+                    return interaction.editReply({
+                        content: '❌ 아직 참가자가 없습니다!'
+                    });
+                } else {
+                    return interaction.reply({
+                        content: '❌ 아직 참가자가 없습니다!',
+                        flags: 64
+                    });
+                }
             }
             
             // 대기 메시지 삭제를 위해 먼저 응답

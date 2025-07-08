@@ -303,8 +303,8 @@ class DogBotStateManager {
             };
         }
         
-        // 층별 MVP
-        const floorKey = `floor${floor}`;
+        // 층별 MVP (숫자만 사용, floor 접두사 제거)
+        const floorKey = floor.toString();
         if (!this.state.statistics.floorMVP[floorKey]) {
             this.state.statistics.floorMVP[floorKey] = { userId: null, damage: 0 };
         }
