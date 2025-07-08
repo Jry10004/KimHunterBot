@@ -27,14 +27,14 @@ const TIC_TAC_TOE_GAME = {
             player1: {
                 id: player1.id,
                 username: player1.username,
-                avatar: player1.displayAvatarURL({ format: 'png', size: 128, dynamic: true }),
+                avatar: player1.displayAvatarURL({ format: 'png', size: 128 }), // dynamic 제거로 PNG 강제
                 discriminator: player1.discriminator || '0',
                 symbol: 'X'
             },
             player2: {
                 id: player2.id,
                 username: player2.username,
-                avatar: player2.displayAvatarURL({ format: 'png', size: 128, dynamic: true }),
+                avatar: player2.displayAvatarURL({ format: 'png', size: 128 }), // dynamic 제거로 PNG 강제
                 discriminator: player2.discriminator || '0',
                 symbol: 'O'
             },
@@ -119,6 +119,11 @@ const TIC_TAC_TOE_GAME = {
                     // URL이 전체 경로가 아닌 경우 처리
                     if (avatarUrl && !avatarUrl.startsWith('http')) {
                         avatarUrl = `https://cdn.discordapp.com${avatarUrl}`;
+                    }
+                    
+                    // WebP를 PNG로 변환 (Jimp가 WebP를 지원하지 않음)
+                    if (avatarUrl && avatarUrl.includes('.webp')) {
+                        avatarUrl = avatarUrl.replace('.webp', '.png');
                     }
                     
                     // 더 강력한 캐시 방지

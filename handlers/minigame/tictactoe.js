@@ -865,10 +865,10 @@ async function handleTicTacToeButton(interaction) {
                     
                     if (!result.success) {
                         try {
-                            await interaction.editReply({
+                            // 버튼을 유지하면서 에러 메시지만 표시
+                            await interaction.followUp({
                                 content: `❌ ${result.error || result.reason}`,
-                                embeds: [],
-                                components: []
+                                ephemeral: true
                             });
                         } catch (e) {
                             // 응답 실패 무시
@@ -880,10 +880,10 @@ async function handleTicTacToeButton(interaction) {
                     
                     if (!result.success) {
                         try {
-                            await interaction.editReply({
+                            // 버튼을 유지하면서 에러 메시지만 표시
+                            await interaction.followUp({
                                 content: `❌ ${result.error || result.reason}`,
-                                embeds: [],
-                                components: []
+                                ephemeral: true
                             });
                         } catch (e) {
                             // 응답 실패 무시
@@ -1192,6 +1192,13 @@ async function handleTicTacToeButton(interaction) {
     } catch (error) {
         console.error('틱택토 버튼 처리 오류:', error);
         
+        // 게임 이동 중 오류가 발생한 경우 버튼을 유지해야 함
+        if (customId.startsWith('tictactoe_move_')) {
+            // 아무 작업도 하지 않음 - 게임 상태 유지
+            console.log('[틱택토] 게임 이동 중 오류 발생, 게임 상태 유지');
+            return;
+        }
+        
         // 이미 응답한 상태인지 확인
         try {
             if (!interaction.replied && !interaction.deferred) {
@@ -1201,9 +1208,7 @@ async function handleTicTacToeButton(interaction) {
                 });
             } else if (interaction.deferred) {
                 await interaction.editReply({
-                    content: '❌ 처리 중 오류가 발생했습니다.',
-                    embeds: [],
-                    components: []
+                    content: '❌ 처리 중 오류가 발생했습니다.'
                 });
             }
         } catch (replyError) {
