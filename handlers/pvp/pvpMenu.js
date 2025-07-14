@@ -5,6 +5,24 @@ const { calculateCombatPower } = require('../common/combatPower');
 // PVP 메뉴 표시
 async function showPVPMenu(interaction) {
     console.log('[PVP Menu] showPVPMenu called');
+    
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.deferUpdate();
+            } else {
+                await interaction.deferReply({ flags: 64 });
+            }
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[PVP Menu] Interaction expired');
+            return;
+        }
+        console.error('[PVP Menu] Defer error:', error);
+    }
+    
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
         return await interaction.reply({ 
@@ -55,30 +73,30 @@ async function showPVPMenu(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-    // interaction이 이미 defer된 경우와 아닌 경우를 구분하여 처리
-    if (interaction.deferred || interaction.replied) {
-        return await interaction.editReply({ 
-            embeds: [pvpEmbed], 
-            components: [pvpButtons]
-        });
-    } else {
-        return await interaction.reply({ 
-            embeds: [pvpEmbed], 
-            components: [pvpButtons],
-            flags: 64 
-        });
-    }
+    // Always use editReply since we've deferred
+    return await interaction.editReply({ 
+        embeds: [pvpEmbed], 
+        components: [pvpButtons]
+    });
 }
 
 // PVP 공격 강화 메뉴
 async function showPVPEnhance(interaction) {
-    // Defer 처리
-    if (!interaction.deferred && !interaction.replied) {
-        if (interaction.isStringSelectMenu() || interaction.isButton()) {
-            await interaction.deferUpdate().catch(console.error);
-        } else {
-            await interaction.deferReply({ flags: 64 }).catch(console.error);
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.deferUpdate();
+            } else {
+                await interaction.deferReply({ flags: 64 });
+            }
         }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[PVP Enhance] Interaction expired');
+            return;
+        }
+        console.error('[PVP Enhance] Defer error:', error);
     }
     
     const user = await getUser(interaction.user.id);
@@ -162,9 +180,17 @@ async function showPVPEnhance(interaction) {
 
 // PVP 공격 강화 처리
 async function processPVPEnhance(interaction, position) {
-    // Defer 처리
-    if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate().catch(console.error);
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[PVP Enhance] Interaction expired');
+            return;
+        }
+        console.error('[PVP Enhance] Defer error:', error);
     }
     
     const user = await getUser(interaction.user.id);
@@ -215,6 +241,23 @@ async function processPVPEnhance(interaction, position) {
 
 // PVP 랭킹 표시
 async function showPVPRanking(interaction) {
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.deferUpdate();
+            } else {
+                await interaction.deferReply({ flags: 64 });
+            }
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[PVP Ranking] Interaction expired');
+            return;
+        }
+        console.error('[PVP Ranking] Defer error:', error);
+    }
+    
     const User = require('../../models/User');
     
     try {
@@ -223,9 +266,10 @@ async function showPVPRanking(interaction) {
             .limit(10);
         
         if (topUsers.length === 0) {
-            return await interaction.reply({ 
+            return await interaction.editReply({ 
                 content: '🏆 아직 PVP 기록이 없습니다!', 
-                flags: 64 
+                embeds: [],
+                components: []
             });
         }
         
@@ -233,8 +277,11 @@ async function showPVPRanking(interaction) {
         topUsers.forEach((user, index) => {
             const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}위`;
             const tierEmoji = getTierEmoji(user.pvp.tier);
-            rankingText += `${medal} **${user.nickname}** ${tierEmoji}\n`;
-            rankingText += `   레이팅: ${user.pvp.rating} | 승률: ${((user.pvp.wins / user.pvp.totalDuels) * 100).toFixed(1)}%\n\n`;
+            const totalGames = (user.pvp.wins || 0) + (user.pvp.losses || 0) + (user.pvp.draws || 0);
+            const winRate = totalGames > 0 ? ((user.pvp.wins / totalGames) * 100).toFixed(1) : '0.0';
+            const displayName = user.nickname || user.username || 'Unknown';
+            rankingText += `${medal} **${displayName}** ${tierEmoji}\n`;
+            rankingText += `   레이팅: ${user.pvp.rating} | 승률: ${winRate}%\n\n`;
         });
         
         const rankingEmbed = new EmbedBuilder()
@@ -251,15 +298,16 @@ async function showPVPRanking(interaction) {
                     .setStyle(ButtonStyle.Secondary)
             );
         
-        return await interaction.update({ 
+        return await interaction.editReply({ 
             embeds: [rankingEmbed],
             components: [buttons]
         });
     } catch (error) {
         console.error('PVP 랭킹 조회 오류:', error);
-        return await interaction.reply({ 
+        return await interaction.editReply({ 
             content: '❌ 랭킹 조회 중 오류가 발생했습니다!', 
-            flags: 64 
+            embeds: [],
+            components: []
         });
     }
 }

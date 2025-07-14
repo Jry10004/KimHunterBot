@@ -1,6 +1,7 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const User = require('../../models/User');
 const path = require('path');
+const MissionHelper = require('../../utils/missionHelper');
 
 // 몬스터 배틀 아레나 설정 (원본 그대로)
 const MONSTER_BATTLE = {
@@ -406,6 +407,8 @@ class MonsterBattleSystem {
 
         let specialEvent = null;
         let finalMultiplier = 1.0;
+        let bonusApplied = false;
+        let bonusAmount = 0;
 
         if (totalWin > 0) {
             stats.wins++;
@@ -437,10 +440,28 @@ class MonsterBattleSystem {
                 }
             }
 
+            // 버그 사냥꾼 칭호 효과 적용
+            const { applyMinigameBonus } = require('../common/specialEffects');
+            const originalWin = totalWin;
+            totalWin = applyMinigameBonus(totalWin, user);
+            
+            if (totalWin > originalWin) {
+                bonusApplied = true;
+                bonusAmount = totalWin - originalWin;
+                console.log(`[MonsterBattle] ${user.nickname || user.discordId} - 특수 효과 적용: ${originalWin} → ${totalWin} (+${bonusAmount})`);
+            }
+            
             user.gold += totalWin;
+            
+            // 미션 업데이트
+            await MissionHelper.updateMiniGame(interaction.user.id);
+            await MissionHelper.updateGoldEarned(interaction.user.id, totalWin);
         } else {
             stats.losses++;
             stats.currentStreak = 0;
+            
+            // 미션 업데이트 (패배해도 미니게임 플레이 카운트)
+            await MissionHelper.updateMiniGame(interaction.user.id);
         }
 
         user.oddEvenStats = stats;
@@ -485,6 +506,14 @@ class MonsterBattleSystem {
                 embed.addFields({
                     name: '🏆 당첨 내역',
                     value: winningBets.join('\n'),
+                    inline: false
+                });
+            }
+            
+            if (bonusApplied) {
+                embed.addFields({
+                    name: '🏷️ 칭호 효과',
+                    value: `**버그 사냥꾼** 효과로 +${bonusAmount.toLocaleString()}G 추가 획득!`,
                     inline: false
                 });
             }

@@ -48,6 +48,7 @@ const { RPS_GAME: RPS_GAME_MODULE, initializeSessions, startRpsMultiplayerGame, 
 const { registerDiscordEvents } = require('./systems/discordEvents');
 const { setUpdatePopularityFunction } = require('./systems/messageHandlers');
 const slotMachineSystem = require('./systems/slotMachine');
+const gameResultManager = require('./utils/gameResultManager');
 
 // 아이템 경매장 시스템
 const AUCTION_HOUSE = require('./systems/auctionHouse');
@@ -992,9 +993,10 @@ class PVPSystem {
             const player2Name = player2.isBot ? player2.user.nickname : player2.user.nickname || 'Player2';
 
             pvpChannel = await guild.channels.create({
-                name: `⚔️-pvp-${player1Name}-vs-${player2Name}`,
+                name: `⚔️│PVP│${player1Name} vs ${player2Name}`,
                 type: 0, // 텍스트 채널
                 parent: pvpCategory.id,
+                topic: `PVP 대전 | 🏆 승리: 레이팅 +25 | 💔 패배: 레이팅 -25 | 🎰 관전자 베팅 가능`,
                 permissionOverwrites: [
                     {
                         id: guild.id,
@@ -2763,7 +2765,7 @@ const EMBLEMS = {
             { name: '초보전사', price: 300000, level: 20, roleName: '초보전사' },
             { name: '튼튼한 기사', price: 500000, level: 35, roleName: '튼튼한 기사' },
             { name: '용맹한 검사', price: 1500000, level: 50, roleName: '용맹한 검사' },
-            { name: '맹령한 전사', price: 3000000, level: 65, roleName: '맹령한 전사' },
+            { name: '맹렬한 전사', price: 3000000, level: 65, roleName: '맹렬한 전사' },
             { name: '전설의 기사', price: 10000000, level: 80, roleName: '전설의 기사' }
         ]
     },
@@ -4088,26 +4090,32 @@ const commands = [
         .setDescription('데이터베이스 연결 테스트'),
 
     new SlashCommandBuilder()
-        .setName('이메일테스트')
-        .setDescription('이메일 전송 테스트'),
-
-    new SlashCommandBuilder()
         .setName('회원가입채널설정')
-        .setDescription('회원가입 채널에 안내 메시지를 게시합니다'),
+        .setDescription('[관리자] 회원가입 채널을 설정하고 안내 메시지를 게시합니다'),
 
     new SlashCommandBuilder()
-        .setName('인기도테스트')
-        .setDescription('테스트용 인기도 조작 명령어')
-        .addStringOption(option =>
-            option.setName('행동')
-                .setDescription('수행할 행동')
-                .setRequired(true)
-                .addChoices(
-                    { name: '인기도 증가 (+5)', value: 'add' },
-                    { name: '인기도 감소 (-5)', value: 'subtract' },
-                    { name: '일일 한도 리셋', value: 'reset' },
-                    { name: '인기도 확인', value: 'check' }
-                )),
+        .setName('주식채널설정')
+        .setDescription('[관리자] 주식 거래소 채널을 설정합니다'),
+
+    new SlashCommandBuilder()
+        .setName('상점채널설정')
+        .setDescription('[관리자] 상점 채널을 설정합니다'),
+
+    new SlashCommandBuilder()
+        .setName('공지채널설정')
+        .setDescription('[관리자] 공지사항 채널을 설정합니다'),
+
+    new SlashCommandBuilder()
+        .setName('보스채널설정')
+        .setDescription('[관리자] 보스레이드 채널을 설정합니다'),
+
+    new SlashCommandBuilder()
+        .setName('채널이름일괄변경')
+        .setDescription('[관리자] 모든 채널 이름을 새로운 형식으로 업데이트합니다'),
+
+    new SlashCommandBuilder()
+        .setName('필수채널생성')
+        .setDescription('[관리자] 봇 운영에 필요한 필수 채널들을 생성합니다'),
 
     new SlashCommandBuilder()
         .setName('전투력수정')
@@ -4158,52 +4166,16 @@ const commands = [
         .setDescription('PVP 랭킹을 확인합니다'),
 
     new SlashCommandBuilder()
-        .setName('집중력')
-        .setDescription('집중력 축복으로 장비를 강화합니다 (성공률 5% 증가)')
-        .addStringOption(option =>
-            option.setName('장비슬롯')
-                .setDescription('강화할 장비 슬롯')
-                .setRequired(true)
-                .addChoices(
-                    { name: '무기', value: 'weapon' },
-                    { name: '갑옷', value: 'armor' },
-                    { name: '투구', value: 'helmet' },
-                    { name: '장갑', value: 'gloves' },
-                    { name: '신발', value: 'boots' },
-                    { name: '액세서리', value: 'accessory' }
-                ))
-        .addBooleanOption(option =>
-            option.setName('보호권사용')
-                .setDescription('보호권을 사용하여 파괴를 방지합니다 (20강 이상만 사용 가능)')
-                .setRequired(false)),
-
-    new SlashCommandBuilder()
-        .setName('축복받은날')
-        .setDescription('축복받은 날로 강화합니다 (15-22강 파괴율 30% 감소)')
-        .addStringOption(option =>
-            option.setName('장비슬롯')
-                .setDescription('강화할 장비 슬롯')
-                .setRequired(true)
-                .addChoices(
-                    { name: '무기', value: 'weapon' },
-                    { name: '갑옷', value: 'armor' },
-                    { name: '투구', value: 'helmet' },
-                    { name: '장갑', value: 'gloves' },
-                    { name: '신발', value: 'boots' },
-                    { name: '액세서리', value: 'accessory' }
-                ))
-        .addBooleanOption(option =>
-            option.setName('보호권사용')
-                .setDescription('보호권을 사용하여 파괴를 방지합니다 (20강 이상만 사용 가능)')
-                .setRequired(false)),
-
-    new SlashCommandBuilder()
         .setName('강화랭킹')
         .setDescription('강화 랭킹을 확인합니다'),
 
     new SlashCommandBuilder()
         .setName('강화통계')
         .setDescription('나의 강화 통계를 확인합니다'),
+
+    new SlashCommandBuilder()
+        .setName('내티켓')
+        .setDescription('🎫 보유한 티켓 정보를 확인합니다'),
 
     new SlashCommandBuilder()
         .setName('의뢰')
@@ -4235,25 +4207,6 @@ const commands = [
         .setDescription('⚔️ 현재 전투력과 에너지 조각 정보를 확인합니다'),
 
     // 관리자 전용 명령어
-    new SlashCommandBuilder()
-        .setName('카운트다운')
-        .setDescription('🚀 [관리자] 게임 오픈 카운트다운 설정')
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('시작')
-                .setDescription('카운트다운 시작')
-                .addStringOption(option =>
-                    option.setName('시간')
-                        .setDescription('오픈 시간 (예: 2025-01-15 20:00 또는 시간 단위: 24)')
-                        .setRequired(true))
-                .addChannelOption(option =>
-                    option.setName('채널')
-                        .setDescription('카운트다운을 표시할 채널')
-                        .setRequired(true)))
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('중지')
-                .setDescription('카운트다운 중지')),
     new SlashCommandBuilder()
         .setName('게임데이터초기화')
         .setDescription('🔧 [관리자 전용] 모든 게임 데이터를 초기화합니다'),
@@ -4310,6 +4263,10 @@ const commands = [
     new SlashCommandBuilder()
         .setName('유물탐사')
         .setDescription('🏺 유물을 탐사하여 보물을 찾아보세요!'),
+
+    new SlashCommandBuilder()
+        .setName('낚시')
+        .setDescription('🎣 낚시를 시작합니다'),
 
     new SlashCommandBuilder()
         .setName('돈지급')
@@ -4509,16 +4466,8 @@ const commands = [
                         .setRequired(true))),
 
     new SlashCommandBuilder()
-        .setName('사전강화')
-        .setDescription('카운트다운 중 특별 강화 이벤트! 실패해도 레벨이 내려가지 않습니다!'),
-
-    new SlashCommandBuilder()
         .setName('엠블럼')
         .setDescription('🏆 엠블럼을 구매하여 직업을 선택합니다'),
-
-    new SlashCommandBuilder()
-        .setName('댕댕봇소환')
-        .setDescription('댕댕봇을 이 채널에 소환합니다 (개발자 전용)'),
 
     new SlashCommandBuilder()
         .setName('백업복원')
@@ -4529,10 +4478,6 @@ const commands = [
                 .setRequired(true)),
 
     new SlashCommandBuilder()
-        .setName('권한테스트')
-        .setDescription('봇과 사용자의 권한을 확인합니다'),
-
-    new SlashCommandBuilder()
         .setName('데이터검사')
         .setDescription('유저 데이터 무결성 검사 (관리자 전용)')
         .addUserOption(option =>
@@ -4541,30 +4486,8 @@ const commands = [
                 .setRequired(false)),
 
     new SlashCommandBuilder()
-        .setName('테스트계정생성')
-        .setDescription('테스트용 계정 생성 (관리자 전용)'),
-
-    new SlashCommandBuilder()
         .setName('명령어등록')
         .setDescription('슬래시 명령어 수동 등록 (관리자 전용)'),
-    new SlashCommandBuilder()
-        .setName('보스소환테스트')
-        .setDescription('월드 보스를 테스트로 소환합니다 (관리자 전용)'),
-    new SlashCommandBuilder()
-        .setName('댕댕봇백업')
-        .setDescription('댕댕봇 구출 이벤트 백업 관리 (관리자 전용)')
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('생성')
-                .setDescription('현재 상태를 백업합니다'))
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('복원')
-                .setDescription('최신 백업을 복원합니다'))
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('목록')
-                .setDescription('백업 목록을 확인합니다'))
 ];
 
 // 봇이 준비되었을 때
@@ -4575,6 +4498,44 @@ client.once('ready', async () => {
         if (DEV_MODE && DEV_CHANNEL_IDS.length > 0) {
             console.log(`개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}`);
         }
+        
+        // 게임 결과 매니저 초기화
+        gameResultManager.initialize(client);
+        
+        // 틱택토 게임 초기화
+        const TIC_TAC_TOE_GAME = require('./data/ticTacToeGame');
+        await TIC_TAC_TOE_GAME.initialize();
+        console.log('틱택토 게임 초기화 완료');
+        
+        // 광산 시스템 초기화
+        const { mineManager } = require('./data/mineSystem');
+        
+        // 매 시간마다 전설의 광산 개방 확률 체크
+        setInterval(() => {
+            if (mineManager.isOpen('legendary')) {
+                console.log('⭐ 전설의 광산이 개방되었습니다!');
+            }
+        }, 60000); // 1분마다 체크
+        
+        // 매일 자정에 초보자 광산 입장 기록 초기화
+        const resetDailyEntries = () => {
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(0, 0, 0, 0);
+            const msUntilMidnight = tomorrow - now;
+            
+            setTimeout(() => {
+                mineManager.resetDailyEntries();
+                console.log('🔄 일일 광산 입장 기록이 초기화되었습니다.');
+                // 다음 날 자정에 다시 실행하도록 설정
+                setInterval(() => {
+                    mineManager.resetDailyEntries();
+                    console.log('🔄 일일 광산 입장 기록이 초기화되었습니다.');
+                }, 24 * 60 * 60 * 1000);
+            }, msUntilMidnight);
+        };
+        resetDailyEntries();
 
         // 전역 에러 핸들러 설치
         setupErrorHandlers(client);
@@ -4627,50 +4588,12 @@ client.once('ready', async () => {
         worldBossSystem.startAutoSpawn(client);
         console.log('⚔️ 보스 시스템 활성화');
         
-        // 댕댕봇 구출 이벤트 자동 공지 확인
-        const dogBotStateManager = require('./systems/dogBotStateManager');
-        const dogBotAnnouncer = require('./systems/dogBotEventAnnouncer');
-        const dogBotHostageSystem = require('./systems/dogBotHostageSystem');
-        const dogBotAutoBackup = require('./systems/dogBotAutoBackup');
+        // PVP 시스템 초기화 (생성자에서 자동으로 초기화됨)
+        const pvpSystem = require('./systems/pvpSystem');
+        pvpSystem.getInstance();
+        console.log('🥊 PVP 시스템 활성화 (10분마다 채널 자동 정리)');
         
-        // 자동 백업 시스템 초기화
-        await dogBotAutoBackup.initialize();
-        
-        // 데이터 무결성 한 번 더 확인
-        setTimeout(async () => {
-            if (dogBotStateManager.state && dogBotStateManager.state.statistics) {
-                // 먼저 데이터를 강제로 리로드
-                console.log('[DogBot] 봇 시작 - 데이터 강제 리로드 중...');
-                await dogBotStateManager.forceReloadData();
-                
-                // 그 다음 데이터 무결성 검사
-                dogBotStateManager.validateAndRepairData();
-                console.log('[System] 댕댕봇 데이터 무결성 검사 완료');
-            }
-        }, 5000);
-        
-        // 댕댕봇 이벤트 상태는 이미 동기적으로 로드됨
-        if (dogBotStateManager.state && 
-            dogBotStateManager.state.status && 
-            dogBotStateManager.state.status.isActive &&
-            !dogBotStateManager.state.status.rescueComplete) {
-            console.log('🐕 댕댕봇 구출 이벤트가 진행 중입니다.');
-            console.log(`   - 현재 층: ${dogBotStateManager.state.status.currentFloor}/5`);
-            console.log(`   - 참여자: ${dogBotStateManager.state.statistics.participants.length}명`);
-            
-            // 자동 공지 시작 (재부팅 후에도 유지)
-            console.log('📢 자동 공지를 시작합니다...');
-            dogBotAnnouncer.startAnnouncements(client);
-            console.log('✅ 댕댕봇 구출 이벤트 자동 공지 시작 (20분 간격)');
-            
-            // 인질 시스템도 재시작
-            console.log('🚨 인질 시스템을 시작합니다...');
-            dogBotHostageSystem.startHostageSystem(client);
-            console.log('✅ 댕댕봇 인질 시스템 시작 (2시간마다, 쿨타임 15분)');
-        } else {
-            console.log('💤 댕댕봇 구출 이벤트가 비활성화 상태입니다.');
-            console.log('   /댕댕봇구출시작 명령어로 이벤트를 시작하세요.');
-        }
+        // 댕댕봇 이벤트 완전 제거 (더 이상 필요 없음)
 
         ADMIN_IDS.forEach(adminId => {
             antiMacro.addToWhitelist(adminId);
@@ -4702,8 +4625,6 @@ client.once('ready', async () => {
         // 게임 데이터 로드 - 함수가 주석 처리되어 있으므로 제거
         // loadGameData();
 
-        // 댕댕봇 이벤트 스케줄러는 handlers/events에서 시작됨
-
         // 슬래시 명령어 등록 (환경변수로 제어)
         console.log('🔍 명령어 등록 조건 확인:');
         console.log('  - REGISTER_COMMANDS:', process.env.REGISTER_COMMANDS);
@@ -4716,41 +4637,33 @@ client.once('ready', async () => {
                 const rest = new REST().setToken(TOKEN);
                 console.log('슬래시 명령어 등록 중...');
 
-                // 길드별로 명령어 등록 (즉시 사용 가능)
-                let totalRegistered = 0;
-                
-                // 테스트 환경에서는 테스트 서버에만 등록
-                if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-                    const testGuildId = process.env.PRODUCTION_GUILD_ID;
-                    if (testGuildId) {
-                        try {
-                            const data = await rest.put(
-                                Routes.applicationGuildCommands(CLIENT_ID, testGuildId),
-                                { body: commands }
-                            );
-                            console.log(`✅ 테스트 서버에 ${data.length}개 명령어 등록 완료`);
-                            totalRegistered++;
-                        } catch (error) {
-                            console.error(`❌ 테스트 서버 명령어 등록 실패:`, error.message);
+                // 글로벌 명령어로 등록 (중복 방지)
+                try {
+                    // 기존 길드 명령어 삭제 (첫 실행시만)
+                    if (process.env.CLEAR_GUILD_COMMANDS === 'true') {
+                        console.log('🗑️ 기존 길드 명령어 삭제 중...');
+                        for (const guild of client.guilds.cache.values()) {
+                            try {
+                                await rest.put(
+                                    Routes.applicationGuildCommands(CLIENT_ID, guild.id),
+                                    { body: [] }
+                                );
+                                console.log(`✅ ${guild.name} 서버의 길드 명령어 삭제 완료`);
+                            } catch (error) {
+                                console.error(`❌ ${guild.name} 서버 명령어 삭제 실패:`, error.message);
+                            }
                         }
                     }
-                } else {
-                    // 프로덕션 환경에서는 모든 서버에 등록
-                    for (const guild of client.guilds.cache.values()) {
-                        try {
-                            const data = await rest.put(
-                                Routes.applicationGuildCommands(CLIENT_ID, guild.id),
-                                { body: commands }
-                            );
-                            console.log(`✅ ${guild.name} 서버에 ${data.length}개 명령어 등록 완료`);
-                            totalRegistered++;
-                        } catch (error) {
-                            console.error(`❌ ${guild.name} 서버 명령어 등록 실패:`, error.message);
-                        }
-                    }
+                    
+                    // 글로벌 명령어 등록
+                    const data = await rest.put(
+                        Routes.applicationCommands(CLIENT_ID),
+                        { body: commands }
+                    );
+                    console.log(`✅ 글로벌 명령어 ${data.length}개 등록 완료!`);
+                } catch (error) {
+                    console.error(`❌ 글로벌 명령어 등록 실패:`, error);
                 }
-
-                console.log(`✅ 총 ${totalRegistered}개 서버에 명령어 등록 완료!`);
                 console.log('📋 등록된 명령어:', commands.map(cmd => cmd.name).join(', '));
             } catch (error) {
                 console.error('❌ 명령어 등록 실패:', error);
@@ -4810,7 +4723,7 @@ async function initializeEmblemSystem() {
             .setTitle('🏆 엠블럼 상점')
             .setDescription('**레벨 20 이상**부터 엠블럼을 구매할 수 있습니다!\n\n엠블럼을 구매하면 특별한 칭호 역할을 받게 됩니다.\n**⚠️ 엠블럼은 한 번 구매하면 변경할 수 없습니다!**')
             .addFields(
-                { name: '⚔️ 전사 계열', value: '초보전사 → 튼튼한 기사 → 용맹한 검사 → 맹령한 전사 → 전설의 기사', inline: false },
+                { name: '⚔️ 전사 계열', value: '초보전사 → 튼튼한 기사 → 용맹한 검사 → 맹렬한 전사 → 전설의 기사', inline: false },
                 { name: '🏹 궁수 계열', value: '마을사냥꾼 → 숲의 궁수 → 바람 사수 → 정확한 사격수 → 전설의 명궁', inline: false },
                 { name: '🔮 마검사 계열', value: '마법 학도 → 마법 검사 → 현명한 기사 → 마도 검사 → 전설의 마검사', inline: false },
                 { name: '🗡️ 도적 계열', value: '떠돌이 도적 → 운 좋은 도둑 → 행운의 닌자 → 복 많은 도적 → 전설의 행운아', inline: false }

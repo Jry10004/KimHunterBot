@@ -7,22 +7,29 @@ const CHART_SERVICES = {
         baseUrl: 'https://quickchart.io/chart',
         createChartUrl: (data) => {
             // 더 전문적인 차트 설정
+            // 캔들스틱 데이터 생성
+            const candleData = [];
+            for (let i = 0; i < data.prices.length; i++) {
+                const open = i === 0 ? data.prices[i] : data.prices[i-1];
+                const close = data.prices[i];
+                const high = Math.max(open, close) * (1 + Math.random() * 0.02);
+                const low = Math.min(open, close) * (1 - Math.random() * 0.02);
+                
+                candleData.push({
+                    x: data.labels[i],
+                    o: open,
+                    h: high,
+                    l: low,
+                    c: close
+                });
+            }
+            
             const chartConfig = {
-                type: 'line',
+                type: 'candlestick',
                 data: {
-                    labels: data.labels,
                     datasets: [{
                         label: data.name,
-                        data: data.prices,
-                        borderColor: data.trend > 0 ? '#26a69a' : '#ef5350',
-                        backgroundColor: data.trend > 0 ? 'rgba(38, 166, 154, 0.1)' : 'rgba(239, 83, 80, 0.1)',
-                        borderWidth: 3,
-                        pointRadius: 4,
-                        pointBackgroundColor: data.trend > 0 ? '#26a69a' : '#ef5350',
-                        pointBorderColor: '#fff',
-                        pointBorderWidth: 2,
-                        tension: 0.4,
-                        fill: true
+                        data: candleData
                     }]
                 },
                 options: {
@@ -380,23 +387,40 @@ function getProfessionalChartUrl(data) {
     const bgColor = isPositive ? '76,175,80,0.1' : '244,67,54,0.1';
     
     // 차트 설정
+    // 캔들스틱 데이터 생성
+    const candleData = [];
+    for (let i = 0; i < prices.length; i++) {
+        const open = i === 0 ? prices[i] : prices[i-1];
+        const close = prices[i];
+        const high = Math.max(open, close) * (1 + Math.random() * 0.02);
+        const low = Math.min(open, close) * (1 - Math.random() * 0.02);
+        
+        candleData.push({
+            x: labels[i],
+            o: open,
+            h: high,
+            l: low,
+            c: close
+        });
+    }
+    
     const config = {
-        type: 'line',
+        type: 'candlestick',
         data: {
-            labels: labels,
             datasets: [{
                 label: `${name} (${symbol})`,
-                data: prices,
-                borderColor: `rgb(${mainColor})`,
-                backgroundColor: `rgba(${bgColor})`,
-                borderWidth: 3,
-                pointRadius: 0,
-                pointHoverRadius: 6,
-                pointHoverBackgroundColor: `rgb(${mainColor})`,
-                pointHoverBorderColor: '#fff',
-                pointHoverBorderWidth: 2,
-                tension: 0.4,
-                fill: true
+                data: candleData,
+                borderColor: {
+                    up: 'rgb(76,175,80)',
+                    down: 'rgb(244,67,54)',
+                    unchanged: 'rgb(158,158,158)'
+                },
+                backgroundColor: {
+                    up: 'rgba(76,175,80,0.8)',
+                    down: 'rgba(244,67,54,0.8)',
+                    unchanged: 'rgba(158,158,158,0.8)'
+                },
+                borderWidth: 2
             }]
         },
         options: {

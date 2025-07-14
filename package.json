@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
+    "dev": "npx nodemon index.js",
     "test-bot": "node -r dotenv/config index.js dotenv_config_path=.env.test",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -35,7 +35,10 @@
   "license": "MIT",
   "dependencies": {
     "@discordjs/rest": "^2.4.0",
+    "@microlink/mql": "^0.14.0",
     "axios": "^1.7.9",
+    "canvas": "^3.1.2",
+    "cloudinary": "^2.7.0",
     "crypto-js": "^4.2.0",
     "discord-api-types": "^0.37.102",
     "discord.js": "^14.16.3",
@@ -47,6 +50,7 @@
     "node-cron": "^3.0.3",
     "node-schedule": "^2.1.1",
     "nodemailer": "^6.9.16",
+    "sharp": "^0.34.2",
     "winston": "^3.11.0"
   },
   "devDependencies": {
@@ -66,7 +70,7 @@
     "lint-staged": "^14.0.1",
     "mongodb-memory-server": "^9.0.1",
     "nock": "^13.3.4",
-    "nodemon": "^3.0.1",
+    "nodemon": "^3.1.10",
     "prettier": "^3.0.3",
     "typescript": "^5.2.2"
   },

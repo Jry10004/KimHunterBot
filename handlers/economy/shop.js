@@ -85,9 +85,21 @@ async function showShopMenu(interaction) {
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
-        return await interaction.editReply({ 
-            content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
-        });
+        try {
+            if (interaction.deferred || interaction.replied) {
+                return await interaction.editReply({ 
+                    content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
+                });
+            } else {
+                return await interaction.reply({ 
+                    content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.',
+                    flags: 64
+                });
+            }
+        } catch (error) {
+            console.error('[Shop] Reply error:', error.message);
+            return;
+        }
     }
     
     // 새로운 천장 시스템 기반 상점으로 리디렉션
@@ -95,10 +107,23 @@ async function showShopMenu(interaction) {
     const embed = createShopEmbed(user);
     const selectMenu = createSlotSelectMenu(user);
     
-    return await interaction.editReply({
-        embeds: [embed],
-        components: [selectMenu]
-    });
+    try {
+        if (interaction.deferred || interaction.replied) {
+            return await interaction.editReply({
+                embeds: [embed],
+                components: [selectMenu]
+            });
+        } else {
+            return await interaction.reply({
+                embeds: [embed],
+                components: [selectMenu],
+                flags: 64
+            });
+        }
+    } catch (error) {
+        console.error('[Shop] Final reply error:', error.message);
+        return;
+    }
     
     /* 기존 상점 코드는 주석 처리
     // 유저의 최고 강화 레벨 확인

@@ -1,7 +1,20 @@
 // 순환 참조 방지를 위해 직접 구현
 function getEquippedItem(user, slot) {
     if (!user || !user.equipment) return null;
-    return user.equipment[slot] || null;
+    
+    const slotIndex = user.equipment[slot];
+    if (slotIndex === undefined || slotIndex === null || slotIndex < 0) return null;
+    
+    // inventorySlot으로 찾기
+    if (user.inventory) {
+        const item = user.inventory.find(item => item && item.inventorySlot === slotIndex);
+        if (item) return item;
+        
+        // 못 찾았으면 배열 인덱스로 찾기
+        return user.inventory[slotIndex] || null;
+    }
+    
+    return null;
 }
 
 function getEmblemLevel(user, emblemType) {
@@ -36,22 +49,30 @@ function calculateCombatPower(user) {
     
     // 2. 장비 전투력 계산
     let equipmentPower = 0;
-    if (user.equipment) {
-        Object.values(user.equipment).forEach(item => {
+    if (user.equipment && user.inventory) {
+        const slots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+        
+        for (const slot of slots) {
+            const item = getEquippedItem(user, slot);
             if (item && item.stats) {
                 // 기본 능력치
-                equipmentPower += (item.stats.attack || 0) * 2;
-                equipmentPower += (item.stats.defense || 0) * 1.5;
-                equipmentPower += (item.stats.hp || 0) * 0.5;
+                const attack = item.stats.attack || 0;
+                const defense = item.stats.defense || 0;
+                const hp = item.stats.hp || 0;
+                
+                // 강화 보너스 적용
+                const enhancement = item.enhancement || 0;
+                const totalAttack = attack + (enhancement * 10);
+                const totalDefense = defense + (enhancement * 10);
+                const totalHp = hp + (enhancement * 20);
+                
+                equipmentPower += totalAttack * 2;
+                equipmentPower += totalDefense * 1.5;
+                equipmentPower += totalHp * 0.5;
                 equipmentPower += (item.stats.dodge || 0) * 1;
                 equipmentPower += (item.stats.luck || 0) * 0.5;
-                
-                // 강화 보너스
-                if (item.enhancement && item.enhancement > 0) {
-                    equipmentPower += (item.enhancement * 10); // 강화당 +10
-                }
             }
-        });
+        }
     }
     totalPower += equipmentPower;
     

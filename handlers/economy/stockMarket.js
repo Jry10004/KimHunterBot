@@ -4,6 +4,7 @@ const { getUser, formatNumber } = require('../common/utils');
 const STOCK_MARKET = require('../../data/stockMarket');
 const { showStockDetail, showPortfolio, showMarketOverview, buyStock, sellStock, initializePriceHistory, showSectorList, showStockList, showStockRankings } = require('./stockTrading');
 const { COMPANIES, SECTORS } = require('../../data/companiesData');
+const Stock = require('../../models/Stock');
 
 // 주식 메인 메뉴
 async function showStockMenu(interaction) {
@@ -21,16 +22,17 @@ async function showStockMenu(interaction) {
         console.error('[주식] defer 오류:', error);
     }
     
-    const user = await getUser(interaction.user.id);
-    if (!user || !user.registered) {
-        return await interaction.editReply({ 
-            content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.',
-            embeds: [],
-            components: []
-        });
-    }
-    
-    const summary = getMarketSummary();
+    try {
+        const user = await getUser(interaction.user.id);
+        if (!user || !user.registered) {
+            return await interaction.editReply({ 
+                content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.',
+                embeds: [],
+                components: []
+            });
+        }
+        
+        const summary = await getMarketSummary();
     
     const embed = new EmbedBuilder()
         .setColor('#00b4d8')
@@ -75,10 +77,18 @@ async function showStockMenu(interaction) {
             )
     ];
     
-    return await interaction.editReply({
-        embeds: [embed],
-        components: buttons
-    });
+        return await interaction.editReply({
+            embeds: [embed],
+            components: buttons
+        });
+    } catch (error) {
+        console.error('[주식] 메뉴 표시 오류:', error);
+        return await interaction.editReply({
+            content: '❌ 주식 시장 데이터를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+            embeds: [],
+            components: []
+        });
+    }
 }
 
 // 주식 찾기 헬퍼
@@ -98,38 +108,41 @@ function findCompany(companyId) {
 }
 
 // 시장 요약 정보 가져오기
-function getMarketSummary() {
-    const companies = Object.values(COMPANIES);
-    let totalMarketCap = 0;
-    let totalChange = 0;
-    let topGainer = { name: '', change: 0 };
-    let topLoser = { name: '', change: 0 };
-    
-    companies.forEach(company => {
-        const marketCap = company.currentPrice * company.shares;
-        totalMarketCap += marketCap;
-        const change = ((company.currentPrice - company.basePrice) / company.basePrice) * 100;
-        totalChange += change;
+async function getMarketSummary() {
+    try {
+        // MongoDB Stock 모델에서 데이터 가져오기
+        const Stock = require('../../models/Stock');
+        const marketStats = await Stock.getMarketStats();
+        const topStocks = await Stock.getTopStocks('gainers', 1);
+        const bottomStocks = await Stock.getTopStocks('losers', 1);
         
-        if (change > topGainer.change) {
-            topGainer = { name: company.name, change };
-        }
-        if (change < topLoser.change) {
-            topLoser = { name: company.name, change };
-        }
-    });
-    
-    const avgChange = totalChange / companies.length;
-    const indexEmoji = avgChange > 0 ? '📈' : avgChange < 0 ? '📉' : '➡️';
-    
-    return {
-        index: `${indexEmoji} ${avgChange > 0 ? '+' : ''}${avgChange.toFixed(2)}%`,
-        topGainer: topGainer,
-        topLoser: topLoser,
-        volume: Math.floor(Math.random() * 1000000) + 500000, // 임시 거래량
-        marketCap: totalMarketCap,
-        latestNews: '📰 새로운 AI 기술 발표로 기술주 상승'
-    };
+        const topGainer = topStocks && topStocks[0] ? topStocks[0] : { companyName: '없음', dailyChangePercent: 0 };
+        const topLoser = bottomStocks && bottomStocks[0] ? bottomStocks[0] : { companyName: '없음', dailyChangePercent: 0 };
+        
+        const avgChange = marketStats.totalStocks > 0 ? 
+            ((marketStats.gainers - marketStats.losers) / marketStats.totalStocks * 10) : 0;
+        const indexEmoji = avgChange > 0 ? '📈' : avgChange < 0 ? '📉' : '➡️';
+        
+        return {
+            index: `${indexEmoji} ${avgChange > 0 ? '+' : ''}${avgChange.toFixed(2)}%`,
+            topGainer: { name: topGainer.companyName, change: topGainer.dailyChangePercent || 0 },
+            topLoser: { name: topLoser.companyName, change: topLoser.dailyChangePercent || 0 },
+            volume: marketStats.totalVolume || 0,
+            marketCap: marketStats.totalMarketCap || 0,
+            latestNews: '📰 새로운 AI 기술 발표로 기술주 상승'
+        };
+    } catch (error) {
+        console.error('[Stock] 시장 요약 정보 오류:', error);
+        // 오류 시 기본값 반환
+        return {
+            index: '➡️ 0.00%',
+            topGainer: { name: '데이터 없음', change: 0 },
+            topLoser: { name: '데이터 없음', change: 0 },
+            volume: 0,
+            marketCap: 0,
+            latestNews: '📰 시장 데이터 로딩 중...'
+        };
+    }
 }
 
 // 포트폴리오 가져오기
@@ -199,7 +212,7 @@ async function showStockMarket(interaction) {
     }
 
     // 시장 요약 정보
-    const marketSummary = getMarketSummary();
+    const marketSummary = await getMarketSummary();
 
     const marketEmbed = new EmbedBuilder()
         .setColor('#FFD700')
@@ -238,11 +251,25 @@ async function showStockMarket(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-    return await interaction.reply({
-        embeds: [marketEmbed],
-        components: [buttons],
-        flags: 64
-    });
+    // 상호작용 상태 확인 후 적절한 응답 방법 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [marketEmbed],
+            components: [buttons]
+        });
+    } else if (interaction.replied) {
+        return await interaction.followUp({
+            embeds: [marketEmbed],
+            components: [buttons],
+            ephemeral: true
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [marketEmbed],
+            components: [buttons],
+            flags: 64
+        });
+    }
 }
 
 // 시장 동향 텍스트

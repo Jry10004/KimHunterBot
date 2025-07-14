@@ -60,12 +60,21 @@ function getRarityKorean(rarity) {
 
 async function showInventory(interaction, page = 1, sortMode = null) {
     // Defer 처리
-    if (!interaction.deferred && !interaction.replied) {
-        if (interaction.isStringSelectMenu() || interaction.isButton()) {
-            await interaction.deferUpdate().catch(console.error);
-        } else {
-            await interaction.deferReply({ flags: 64 }).catch(console.error);
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            if (interaction.isStringSelectMenu() || interaction.isButton()) {
+                await interaction.deferUpdate();
+            } else {
+                await interaction.deferReply({ flags: 64 });
+            }
         }
+    } catch (error) {
+        // Unknown interaction 에러 처리
+        if (error.code === 10062) {
+            console.log('[Inventory] Interaction expired');
+            return;
+        }
+        console.error('[Inventory] Defer error:', error);
     }
     
     const user = await getUser(interaction.user.id);
@@ -249,10 +258,25 @@ async function showInventory(interaction, page = 1, sortMode = null) {
         components.push(new ActionRowBuilder().addComponents(selectMenu));
     }
 
-    return await interaction.editReply({
-        embeds: [inventoryEmbed],
-        components: components,
-    });
+    try {
+        if (interaction.deferred || interaction.replied) {
+            return await interaction.editReply({
+                embeds: [inventoryEmbed],
+                components: components,
+            });
+        } else {
+            return await interaction.reply({
+                embeds: [inventoryEmbed],
+                components: components,
+                flags: 64
+            });
+        }
+    } catch (error) {
+        console.error('[Inventory] Reply error:', error);
+        if (error.code !== 10062) { // Unknown interaction 에러가 아닌 경우만 로그
+            console.error('Inventory response error details:', error);
+        }
+    }
 }
 
 // 아이템 상세 정보 표시
@@ -427,6 +451,7 @@ async function equipItemFromInventory(interaction, itemIndex) {
         });
     }
     
+    
     // 장비 타입이 아닌 경우
     const equipableTypes = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'shield', 'accessory'];
     if (!equipableTypes.includes(item.type)) {
@@ -436,22 +461,29 @@ async function equipItemFromInventory(interaction, itemIndex) {
         });
     }
     
-    // shield를 accessory로 매핑 (shield 슬롯이 없으므로)
-    const slotType = item.type === 'shield' ? 'accessory' : item.type;
+    // 아이템 타입 그대로 사용
+    const slotType = item.type;
     
     // 현재 장착 중인 아이템 확인
     const currentSlot = user.equipment?.[slotType];
     
-    // 장비 설정
+    // 장비 설정 - inventorySlot을 사용
     if (!user.equipment) user.equipment = {};
-    user.equipment[slotType] = itemIndex;
+    
+    // inventorySlot이 있으면 그것을 사용, 없으면 인덱스 사용
+    const slotToUse = item.inventorySlot !== undefined ? item.inventorySlot : itemIndex;
+    user.equipment[slotType] = slotToUse;
     
     // 인벤토리 아이템의 equipped 상태 업데이트
     user.inventory[itemIndex].equipped = true;
     
     // 이전에 장착된 아이템이 있으면 해제
-    if (currentSlot >= 0 && currentSlot !== itemIndex && user.inventory[currentSlot]) {
-        user.inventory[currentSlot].equipped = false;
+    if (currentSlot >= 0 && currentSlot !== slotToUse) {
+        // inventorySlot으로 아이템 찾기
+        const prevItem = user.inventory.find(item => item.inventorySlot === currentSlot);
+        if (prevItem) {
+            prevItem.equipped = false;
+        }
     }
     
     await user.save();
@@ -465,11 +497,15 @@ async function equipItemFromInventory(interaction, itemIndex) {
         helmet: '⛑️ 투구',
         gloves: '🧤 장갑',
         boots: '👢 신발',
+        shield: '🛡️ 방패',
         accessory: '💍 악세서리'
     };
     
+    // 장착 슬롯 표시
+    const displaySlot = EQUIPMENT_SLOTS[item.type];
+    
     await interaction.followUp({
-        content: `✅ ${rarityEmoji} **${item.name}**${enhancement}을(를) ${EQUIPMENT_SLOTS[item.type]}에 장착했습니다.`,
+        content: `✅ ${rarityEmoji} **${item.name}**${enhancement}을(를) ${displaySlot}에 장착했습니다.`,
         flags: 64
     });
     

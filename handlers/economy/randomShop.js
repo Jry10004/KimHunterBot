@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const randomItemGenerator = require('../../systems/randomItemGenerator');
 const randomItemData = require('../../data/randomItemData');
 const { getUser } = require('../common/utils');
+const MissionHelper = require('../../utils/missionHelper');
 
 // 랜덤 상점 메인
 async function showRandomShop(interaction) {
@@ -243,6 +244,9 @@ async function handleItemAction(interaction, action, itemId) {
         // 즉시 판매
         user.gold += item.sellPrice;
         await user.save();
+        
+        // 골드 획득 미션 업데이트
+        await MissionHelper.updateGoldEarned(interaction.user.id, item.sellPrice);
 
         await interaction.update({
             content: `💰 **${item.name}**을(를) ${item.sellPrice.toLocaleString()}G에 판매했습니다!`,

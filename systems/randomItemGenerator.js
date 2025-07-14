@@ -28,6 +28,11 @@ class RandomItemGenerator {
     
     // 부위별 아이템 생성
     generateItemBySlot(slot, gachaType) {
+        // 방패 생성 시 로그
+        if (slot === 'shield') {
+            console.log(`[generateItemBySlot] 방패 아이템 생성 시작`);
+        }
+        
         // 1. 등급 결정 (스탯용)
         const rarity = this.determineRarity(gachaType);
         
@@ -39,48 +44,70 @@ class RandomItemGenerator {
         const prefix = this.selectWord(prefixRarity, 'prefix');
         const adjective = this.selectWord(adjectiveRarity, 'adjective');
         
-        // 슬롯에 맞는 아이템 찾기 위해 여러 번 시도
+        // 슬롯에 맞는 아이템 찾기
         let itemName;
         let itemType;
-        let attempts = 0;
         
-        do {
-            itemName = this.selectWord(itemNameRarity, 'items');
-            itemType = this.data.determineItemCategory(itemName);
-            attempts++;
-            
-            // 디버그 로그
-            if (attempts <= 5 || attempts % 20 === 0) {
-                console.log(`[generateItemBySlot] 시도 ${attempts}: 아이템="${itemName}", 타입="${itemType}", 슬롯="${slot}", 유효=${this.isValidItemForSlot(itemType, slot)}`);
-            }
-            
-            // 100번 시도 후에도 못 찾으면 기본값 사용
-            if (attempts > 100) {
-                console.log(`[generateItemBySlot] 100번 시도 실패! 슬롯 ${slot}에 대한 기본값 사용`);
-                if (slot === 'weapon') itemName = '검';
-                else if (slot === 'armor') itemName = '갑옷';
-                else if (slot === 'helmet') itemName = '투구';
-                else if (slot === 'gloves') itemName = '장갑';
-                else if (slot === 'boots') itemName = '신발';
-                else if (slot === 'shield') itemName = '방패';
-                else itemName = '반지';
+        // 악세사리 슬롯인 경우 악세사리 전용 아이템 리스트 사용
+        if (slot === 'accessory') {
+            const accessories = this.data.itemCategories.accessories;
+            itemName = accessories[Math.floor(Math.random() * accessories.length)];
+            itemType = 'accessory';
+        } else {
+            // 다른 슬롯은 기존 방식대로
+            let attempts = 0;
+            do {
+                itemName = this.selectWord(itemNameRarity, 'items');
+                itemType = this.data.determineItemCategory(itemName);
+                attempts++;
                 
-                itemType = slot;
-                break;
-            }
-        } while (!this.isValidItemForSlot(itemType, slot));
+                // 디버그 로그
+                if (attempts <= 5 || attempts % 20 === 0) {
+                    console.log(`[generateItemBySlot] 시도 ${attempts}: 아이템="${itemName}", 타입="${itemType}", 슬롯="${slot}", 유효=${this.isValidItemForSlot(itemType, slot)}`);
+                }
+                
+                // 100번 시도 후에도 못 찾으면 기본값 사용
+                if (attempts > 100) {
+                    console.log(`[generateItemBySlot] 100번 시도 실패! 슬롯 ${slot}에 대한 기본값 사용`);
+                    if (slot === 'weapon') itemName = '검';
+                    else if (slot === 'armor') itemName = '갑옷';
+                    else if (slot === 'helmet') itemName = '투구';
+                    else if (slot === 'gloves') itemName = '장갑';
+                    else if (slot === 'boots') itemName = '신발';
+                    else if (slot === 'shield') itemName = '방패';
+                    
+                    itemType = slot;
+                    
+                    // 방패 기본값 사용 시 로그
+                    if (slot === 'shield') {
+                        console.log(`[generateItemBySlot] 방패 기본값 사용 - 데이터 확인 필요`);
+                    }
+                    break;
+                }
+            } while (!this.isValidItemForSlot(itemType, slot));
+        }
         
         // 4. 옵션 생성
         const options = this.generateOptions(rarity, itemType);
+        
+        // 방패 생성 완료 로그
+        if (slot === 'shield') {
+            console.log(`[generateItemBySlot] 방패 아이템 생성 완료:`, {
+                name: `${prefix} ${adjective} ${itemName}`,
+                type: itemType,
+                rarity: rarity,
+                options: options
+            });
+        }
         
         // 5. 특수 조합 확인
         const specialCombo = this.checkSpecialCombo(prefix, adjective, itemName);
         
         // 6. 가격 계산
         const basePrice = {
-            legendary: 1000000,
-            unique: 100000,
-            epic: 10000,
+            legendary: 100000,  // 1/10로 감소
+            unique: 10000,      // 1/10로 감소
+            epic: 1000,         // 1/10로 감소
             rare: 1000,
             normal: 100,
             trash: 10
@@ -104,7 +131,7 @@ class RandomItemGenerator {
             description: specialCombo ? specialCombo.message : this.generateDescription(rarity),
             price: price,
             specialCombo: specialCombo,
-            sellPrice: Math.floor(price * 0.6),
+            sellPrice: Math.floor(price * 0.3),
             enhanceLevel: 0,
             score: itemScore,
             nameRarities: {
@@ -257,9 +284,9 @@ class RandomItemGenerator {
         
         // 6. 가격 계산 (등급과 옵션에 따라)
         const basePrice = {
-            legendary: 1000000,
-            unique: 100000,
-            epic: 10000,
+            legendary: 100000,  // 1/10로 감소
+            unique: 10000,      // 1/10로 감소
+            epic: 1000,         // 1/10로 감소
             rare: 1000,
             normal: 100,
             trash: 10
@@ -283,7 +310,7 @@ class RandomItemGenerator {
             description: specialCombo ? specialCombo.message : this.generateDescription(rarity),
             price: price,
             specialCombo: specialCombo,
-            sellPrice: Math.floor(price * 0.6), // 판매가는 구매가의 60%
+            sellPrice: Math.floor(price * 0.3), // 판매가는 구매가의 60%
             enhanceLevel: 0,
             score: itemScore,
             nameRarities: {
@@ -444,9 +471,9 @@ class RandomItemGenerator {
         
         // 7. 가격 계산
         const basePrice = {
-            legendary: 1000000,
-            unique: 100000,
-            epic: 10000,
+            legendary: 100000,  // 1/10로 감소
+            unique: 10000,      // 1/10로 감소
+            epic: 1000,         // 1/10로 감소
             rare: 1000,
             normal: 100,
             trash: 10
@@ -467,7 +494,7 @@ class RandomItemGenerator {
             description: specialCombo ? specialCombo.message : this.generateDescription(rarity),
             price: price,
             specialCombo: specialCombo,
-            sellPrice: Math.floor(price * 0.6),
+            sellPrice: Math.floor(price * 0.3),
             enhanceLevel: 0
         };
         
@@ -533,7 +560,7 @@ class RandomItemGenerator {
             stats: defaultItem.stats,
             description: this.generateDescription(rarity),
             price: 1000,
-            sellPrice: 600,
+            sellPrice: 300,
             enhanceLevel: 0,
             score: Math.floor(Math.random() * 20) + 1
         };

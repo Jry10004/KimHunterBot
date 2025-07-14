@@ -44,7 +44,7 @@ const MINE_SYSTEM = {
                 type: 'random',
                 minInterval: 120, // 최소 2시간
                 maxInterval: 360, // 최대 6시간
-                duration: 45, // 45분간 개방
+                duration: 30, // 30분간 개방
                 message: '불규칙 개방'
             },
             difficulty: 3,
@@ -95,7 +95,7 @@ const MINE_SYSTEM = {
             openSchedule: {
                 type: 'rare',
                 chance: 0.01, // 1% 확률로 매시간 체크
-                duration: 15, // 15분간 개방
+                duration: 10, // 10분간 개방
                 message: '극히 희귀하게 개방'
             },
             difficulty: 6,
@@ -196,7 +196,99 @@ class MineManager {
 
     // 광산이 열려있는지 확인
     isOpen(mineId) {
-        return this.openMines.has(mineId);
+        const mine = MINE_SYSTEM.mines[mineId];
+        if (!mine) return false;
+
+        switch (mine.openSchedule.type) {
+            case 'always':
+                return true;
+            
+            case 'scheduled':
+                const now = new Date();
+                const currentHour = now.getHours();
+                const currentMinute = now.getMinutes();
+                const currentTimeInMinutes = currentHour * 60 + currentMinute;
+                
+                // 각 개방 시간 확인
+                for (const openHour of mine.openSchedule.times) {
+                    const openTimeInMinutes = openHour * 60;
+                    const closeTimeInMinutes = openTimeInMinutes + mine.openSchedule.duration;
+                    
+                    if (currentTimeInMinutes >= openTimeInMinutes && currentTimeInMinutes < closeTimeInMinutes) {
+                        // 개방 중이면 openMines에 추가
+                        if (!this.openMines.has(mineId)) {
+                            const closesAt = new Date(now);
+                            closesAt.setHours(openHour);
+                            closesAt.setMinutes(mine.openSchedule.duration);
+                            closesAt.setSeconds(0);
+                            
+                            this.openMines.set(mineId, {
+                                openedAt: Date.now(),
+                                closesAt: closesAt.getTime(),
+                                event: null,
+                                visitors: new Set()
+                            });
+                        }
+                        return true;
+                    }
+                }
+                
+                // 개방 시간이 아니면 openMines에서 제거
+                if (this.openMines.has(mineId)) {
+                    this.openMines.delete(mineId);
+                }
+                return false;
+            
+            case 'random':
+                // 기존 개방 상태 확인
+                if (this.openMines.has(mineId)) {
+                    const mineState = this.openMines.get(mineId);
+                    if (Date.now() < mineState.closesAt) {
+                        return true;
+                    } else {
+                        this.closeMine(mineId);
+                    }
+                }
+                
+                // 마지막 개방 시간 확인 후 다음 개방 시간 결정
+                const lastOpen = this.lastRandomOpen.get(mineId) || 0;
+                const minInterval = mine.openSchedule.minInterval * 60 * 1000;
+                const maxInterval = mine.openSchedule.maxInterval * 60 * 1000;
+                const nextInterval = minInterval + Math.random() * (maxInterval - minInterval);
+                
+                if (Date.now() >= lastOpen + nextInterval) {
+                    // 랜덤하게 개방
+                    this.openMine(mineId, mine.openSchedule.duration);
+                    this.lastRandomOpen.set(mineId, Date.now());
+                    return true;
+                }
+                return false;
+            
+            case 'event':
+                // 이벤트는 수동으로 개방
+                return this.openMines.has(mineId);
+            
+            case 'rare':
+                // 기존 개방 상태 확인
+                if (this.openMines.has(mineId)) {
+                    const mineState = this.openMines.get(mineId);
+                    if (Date.now() < mineState.closesAt) {
+                        return true;
+                    } else {
+                        this.closeMine(mineId);
+                    }
+                }
+                
+                // 1% 확률로 개방
+                if (Math.random() < mine.openSchedule.chance) {
+                    this.openMine(mineId, mine.openSchedule.duration);
+                    return true;
+                }
+                return false;
+            
+            default:
+                return false;
+        }
     }
 
     // 광산 개방
@@ -232,12 +324,31 @@ class MineManager {
             case 'scheduled':
                 const now = new Date();
                 const currentHour = now.getHours();
+                const currentMinute = now.getMinutes();
+                const currentTimeInMinutes = currentHour * 60 + currentMinute;
                 const times = mine.openSchedule.times.sort((a, b) => a - b);
                 
-                for (const time of times) {
-                    if (time > currentHour) {
+                // 현재 개방 중인지 확인
+                for (const openHour of times) {
+                    const openTimeInMinutes = openHour * 60;
+                    const closeTimeInMinutes = openTimeInMinutes + mine.openSchedule.duration;
+                    
+                    if (currentTimeInMinutes >= openTimeInMinutes && currentTimeInMinutes < closeTimeInMinutes) {
+                        // 현재 개방 중
+                        const closesAt = new Date(now);
+                        closesAt.setHours(Math.floor(closeTimeInMinutes / 60));
+                        closesAt.setMinutes(closeTimeInMinutes % 60);
+                        closesAt.setSeconds(0);
+                        return { isOpen: true, closesAt, message: '현재 개방 중' };
+                    }
+                }
+                
+                // 다음 개방 시간 찾기
+                for (const openHour of times) {
+                    const openTimeInMinutes = openHour * 60;
+                    if (openTimeInMinutes > currentTimeInMinutes) {
                         const nextOpen = new Date(now);
-                        nextOpen.setHours(time, 0, 0, 0);
+                        nextOpen.setHours(openHour, 0, 0, 0);
                         return { isOpen: false, nextOpen };
                     }
                 }
@@ -342,6 +453,33 @@ class MineManager {
         const today = new Date().toDateString();
         const userDailyEntries = this.dailyEntries.get(userId) || {};
         return userDailyEntries[today] || 0;
+    }
+    
+    // 화산 활동 이벤트 트리거 (관리자용)
+    triggerVolcanicEvent(duration = 30) {
+        if (!this.openMines.has('volcanic')) {
+            this.openMine('volcanic', duration, 'volcanic_activity');
+            console.log('🌋 화산 활동 이벤트가 시작되었습니다!');
+            return true;
+        }
+        return false;
+    }
+    
+    // 특별 이벤트 트리거 (관리자용)
+    triggerSpecialEvent(eventType, affectedMines = []) {
+        const event = MINE_SYSTEM.events[eventType];
+        if (!event) return false;
+        
+        affectedMines.forEach(mineId => {
+            const mine = MINE_SYSTEM.mines[mineId];
+            if (mine && this.openMines.has(mineId)) {
+                const mineState = this.openMines.get(mineId);
+                mineState.event = eventType;
+                console.log(`✨ ${mine.name}에 ${event.name} 이벤트가 적용되었습니다!`);
+            }
+        });
+        
+        return true;
     }
 }
 

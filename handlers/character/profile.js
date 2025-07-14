@@ -34,7 +34,7 @@ async function showProfile(interaction) {
         .addFields(
             { 
                 name: '📊 기본 정보', 
-                value: `**레벨**: ${user.level}\n**경험치**: ${formatNumber(user.exp)}/${formatNumber(maxExp)} (${expPercentage}%)\n**골드**: ${formatNumber(user.gold)}G\n**인기도**: ${formatNumber(user.popularity)}`, 
+                value: `**레벨**: ${user.level}\n**경험치**: ${formatNumber(user.exp)}/${formatNumber(maxExp)} (${expPercentage}%)\n**골드**: ${formatNumber(user.gold)}G\n**인기도**: ${formatNumber(user.popularity)}\n**엠블럼**: ${user.emblem ? `${user.emblem}${user.emblemEnhancement?.level > 0 ? ` (+${user.emblemEnhancement.level})` : ''}` : '없음'}`, 
                 inline: true 
             },
             { 
@@ -44,7 +44,7 @@ async function showProfile(interaction) {
             },
             { 
                 name: '📈 스탯', 
-                value: `**힘**: ${user.stats?.strength || 10}\n**민첩**: ${user.stats?.agility || 10}\n**지능**: ${user.stats?.intelligence || 10}\n**체력**: ${user.stats?.vitality || 10}\n**행운**: ${user.stats?.luck || 10}\n**스탯 포인트**: ${user.statPoints || 0}`, 
+                value: `**힘**: ${user.stats?.strength || 10}${user.emblemEnhancement?.appliedStats?.strength ? ` (+${user.emblemEnhancement.appliedStats.strength})` : ''}\n**민첩**: ${user.stats?.agility || 10}${user.emblemEnhancement?.appliedStats?.agility ? ` (+${user.emblemEnhancement.appliedStats.agility})` : ''}\n**지능**: ${user.stats?.intelligence || 10}${user.emblemEnhancement?.appliedStats?.intelligence ? ` (+${user.emblemEnhancement.appliedStats.intelligence})` : ''}\n**체력**: ${user.stats?.vitality || 10}${user.emblemEnhancement?.appliedStats?.vitality ? ` (+${user.emblemEnhancement.appliedStats.vitality})` : ''}\n**행운**: ${user.stats?.luck || 10}${user.emblemEnhancement?.appliedStats?.luck ? ` (+${user.emblemEnhancement.appliedStats.luck})` : ''}\n**스탯 포인트**: ${user.statPoints || 0}`, 
                 inline: true 
             }
         );
@@ -57,6 +57,7 @@ async function showProfile(interaction) {
         helmet: '⛑️ 투구',
         gloves: '🧤 장갑',
         boots: '👢 신발',
+        shield: '🛡️ 방패',
         accessory: '💍 악세서리'
     };
 
@@ -67,15 +68,22 @@ async function showProfile(interaction) {
         }
         
         const slotIndex = user.equipment[slot];
-        if (slotIndex < 0 || !user.inventory || !user.inventory[slotIndex]) {
+        if (slotIndex < 0 || !user.inventory) {
             return null;
         }
         
-        const item = user.inventory[slotIndex];
+        // inventorySlot으로 먼저 찾기
+        let item = user.inventory.find(item => item && item.inventorySlot === slotIndex);
         
-        // shield는 accessory 슬롯에 장착 가능
-        const isValidType = (slot === 'accessory' && (item.type === 'accessory' || item.type === 'shield')) ||
-                           item.type === slot;
+        // 못 찾았으면 배열 인덱스로 찾기
+        if (!item) {
+            item = user.inventory[slotIndex];
+        }
+        
+        if (!item) return null;
+        
+        // 각 슬롯에 맞는 타입만 장착 가능
+        const isValidType = item.type === slot;
         
         if (!isValidType) return null;
         
@@ -126,6 +134,7 @@ async function showProfile(interaction) {
         value: equipmentInfo.join('\n'),
         inline: false
     });
+
     
     // 장착한 장신구 표시
     const accessorySlots = {

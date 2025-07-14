@@ -98,31 +98,25 @@ const HUNTING_TOURNAMENT = {
             // S랭크: 1분 이내
             S: {
                 title: "⚡ 번개 사냥꾼",
-                gold: 20000,
-                items: [
-                    { name: "번개의 부적", emoji: "⚡", value: 50000, stats: { agility: 20 } }
-                ],
+                gold: 50000,
                 timeLimit: 60000
             },
             // A랭크: 2분 이내
             A: {
                 title: "🏃 스피드 헌터",
-                gold: 10000,
-                items: [
-                    { name: "바람의 깃털", emoji: "🪶", value: 20000, stats: { agility: 10 } }
-                ],
+                gold: 30000,
                 timeLimit: 120000
             },
             // B랭크: 3분 이내
             B: {
                 title: "⏱️ 민첩한 사냥꾼",
-                gold: 5000,
+                gold: 10000,
                 timeLimit: 180000
             },
             // C랭크: 5분 이내
             C: {
                 title: "🎯 목표 달성",
-                gold: 2000,
+                gold: 5000,
                 timeLimit: 300000
             }
         },

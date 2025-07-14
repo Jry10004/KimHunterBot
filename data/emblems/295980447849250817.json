@@ -1,0 +1,42 @@
+[
+  {
+    "emblemName": "떠돌이 도적",
+    "category": "rogue",
+    "purchaseDate": "2025-07-12T16:43:06.227Z",
+    "price": 300000,
+    "level": 20,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "운 좋은 도둑",
+    "category": "rogue",
+    "purchaseDate": "2025-07-13T05:05:45.446Z",
+    "price": 500000,
+    "level": 35,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "행운의 닌자",
+    "category": "rogue",
+    "purchaseDate": "2025-07-13T19:42:39.567Z",
+    "price": 1500000,
+    "level": 50,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "복 많은 도적",
+    "category": "rogue",
+    "purchaseDate": "2025-07-13T19:42:55.892Z",
+    "price": 3000000,
+    "level": 65,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "전설의 행운아",
+    "category": "rogue",
+    "purchaseDate": "2025-07-13T23:17:54.059Z",
+    "price": 10000000,
+    "level": 80,
+    "enhanceLevel": 0
+  }
+]

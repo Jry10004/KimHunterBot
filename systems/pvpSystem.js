@@ -1,7 +1,8 @@
-const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const User = require('../models/User');
 const { createPVPWaitingRoom } = require('../handlers/pvp/pvpWaitingRoom');
 const { calculateCombatPower } = require('../handlers/common/utils');
+const ActivityLog = require('../models/ActivityLog');
 const { applyPVPBonus } = require('../handlers/common/specialEffects');
 const lifeSystem = require('./lifeSystemIntegration');
 const { calculatePvPDamage, calculateDodgeChance } = require('../handlers/common/damageCalculator');
@@ -23,14 +24,17 @@ class PVPSystem {
         };
         this.initializeBotUsers();
         
-        // 오래된 매치 정리 (매 5분마다)
-        setInterval(() => this.cleanupOldMatches(), 5 * 60 * 1000);
+        // 오래된 매치 정리 (매 1분마다)
+        setInterval(() => this.cleanupOldMatches(), 1 * 60 * 1000);
+        
+        // PVP 채널 정리 (매 10분마다)
+        setInterval(() => this.cleanupPVPChannels(), 10 * 60 * 1000);
     }
 
     // 오래된 매치 정리
     cleanupOldMatches() {
         const now = Date.now();
-        const timeout = 30 * 60 * 1000; // 30분
+        const timeout = 10 * 60 * 1000; // 10분
         
         for (const [matchId, match] of this.activeMatches.entries()) {
             if (now - match.startTime > timeout) {
@@ -38,8 +42,83 @@ class PVPSystem {
                 if (match.roundTimer) {
                     clearTimeout(match.roundTimer);
                 }
+                
+                // 활성 매치인 경우 무승부 처리
+                if (match.status === 'active') {
+                    this.endMatchAsDraw(match, '시간 초과');
+                    continue;
+                }
+                
+                // 이미 종료된 매치의 채널 정리
+                if (match.tempChannelCreated && match.pvpChannel) {
+                    try {
+                        match.pvpChannel.delete().catch(err => 
+                            console.error('[PVP] 채널 삭제 오류:', err)
+                        );
+                    } catch (err) {
+                        console.error('[PVP] 채널 삭제 실패:', err);
+                    }
+                }
                 this.activeMatches.delete(matchId);
             }
+        }
+    }
+    
+    // PVP 채널 정리
+    async cleanupPVPChannels() {
+        try {
+            const client = require('../index').client;
+            if (!client || !client.guilds) {
+                console.log('[PVP] 클라이언트가 준비되지 않아 채널 정리를 건너뜁니다.');
+                return;
+            }
+            
+            let totalCleaned = 0;
+            
+            for (const guild of client.guilds.cache.values()) {
+                // PVP 경기장 카테고리 찾기
+                const pvpCategory = guild.channels.cache.find(c => 
+                    c.name === '🔥 PVP 경기장' && c.type === 4 // ChannelType.GuildCategory = 4
+                );
+                
+                if (!pvpCategory) {
+                    continue;
+                }
+                
+                // 카테고리 내 모든 채널 확인
+                const channels = guild.channels.cache.filter(c => 
+                    c.parentId === pvpCategory.id && c.type === 0 // ChannelType.GuildText = 0
+                );
+                
+                console.log(`[PVP] ${guild.name} 서버에서 ${channels.size}개의 PVP 채널 확인 중...`);
+                
+                for (const channel of channels.values()) {
+                    try {
+                        // 채널에서 마지막 메시지 확인
+                        const messages = await channel.messages.fetch({ limit: 1 });
+                        const lastMessage = messages.first();
+                        
+                        const now = Date.now();
+                        const lastActivity = lastMessage ? lastMessage.createdTimestamp : channel.createdTimestamp;
+                        const inactiveTime = now - lastActivity;
+                        
+                        // 10분 이상 활동이 없는 채널 삭제
+                        if (inactiveTime > 10 * 60 * 1000) {
+                            console.log(`[PVP] 비활성 PVP 채널 삭제: ${channel.name} (비활성 시간: ${Math.floor(inactiveTime / 60000)}분)`);
+                            await channel.delete('비활성 PVP 채널 자동 정리');
+                            totalCleaned++;
+                        }
+                    } catch (err) {
+                        console.error(`[PVP] 채널 정리 오류 (${channel.name}):`, err.message);
+                    }
+                }
+            }
+            
+            if (totalCleaned > 0) {
+                console.log(`[PVP] 총 ${totalCleaned}개의 비활성 채널 정리 완료`);
+            }
+        } catch (error) {
+            console.error('[PVP] 채널 정리 중 오류:', error);
         }
     }
     
@@ -153,11 +232,40 @@ class PVPSystem {
     
     // 펜들럼 선택 처리
     async handlePendulumChoice(interaction, matchId, position, userId = null) {
-        const match = this.activeMatches.get(matchId);
-        if (!match || match.status !== 'active') {
+        // 매치 ID 검증
+        if (!matchId) {
+            console.error('[PVP] 펜들럼 선택 오류: matchId가 없습니다');
             if (interaction) {
                 return await interaction.reply({ 
-                    content: '❌ 진행 중인 매치를 찾을 수 없습니다.', 
+                    content: '❌ 오류가 발생했습니다. 다시 시도해주세요.', 
+                    ephemeral: true 
+                });
+            }
+            return;
+        }
+        
+        const match = this.activeMatches.get(matchId);
+        
+        // 디버깅 로그
+        console.log(`[PVP] 펜들럼 선택 시도 - matchId: ${matchId}, 매치 존재: ${!!match}, 상태: ${match?.status}`);
+        
+        if (!match) {
+            console.error(`[PVP] 매치를 찾을 수 없음: ${matchId}`);
+            console.log('[PVP] 현재 활성 매치들:', Array.from(this.activeMatches.keys()));
+            if (interaction) {
+                return await interaction.reply({ 
+                    content: '❌ 매치가 종료되었거나 찾을 수 없습니다.', 
+                    ephemeral: true 
+                });
+            }
+            return;
+        }
+        
+        if (match.status !== 'active') {
+            console.error(`[PVP] 매치가 활성 상태가 아님: ${matchId}, 현재 상태: ${match.status}`);
+            if (interaction) {
+                return await interaction.reply({ 
+                    content: '❌ 매치가 아직 시작되지 않았거나 이미 종료되었습니다.', 
                     ephemeral: true 
                 });
             }
@@ -226,15 +334,23 @@ class PVPSystem {
     
     // 강제 라운드 종료
     forceRoundEnd(match) {
+        // 매치 상태 확인
+        if (!match || match.status !== 'active') {
+            console.log(`[PVP] 강제 라운드 종료 취소 - 매치 상태: ${match?.status}`);
+            return;
+        }
+        
         const p1Id = match.player1.user.discordId;
         const p2Id = match.player2.user.discordId;
 
         // 선택하지 않은 플레이어는 중단 선택
         if (!match.pendingActions.has(p1Id)) {
             match.pendingActions.set(p1Id, 'middle');
+            console.log(`[PVP] ${match.player1.user.nickname} 시간 초과 - 자동으로 중간 선택`);
         }
         if (!match.pendingActions.has(p2Id)) {
             match.pendingActions.set(p2Id, 'middle');
+            console.log(`[PVP] ${match.player2.user.nickname} 시간 초과 - 자동으로 중간 선택`);
         }
 
         this.resolveRound(match);
@@ -254,6 +370,9 @@ class PVPSystem {
     async resolveRound(match) {
         const channel = match.pvpChannel;
         if (!channel) return;
+        
+        // 라운드 진행 중 플래그 해제
+        match.roundInProgress = false;
 
         const p1Id = match.player1.user.discordId;
         const p2Id = match.player2.user.discordId;
@@ -365,11 +484,28 @@ class PVPSystem {
                 // 데미지 적용
                 match.player2HP = Math.max(0, match.player2HP - p1Damage);
                 
-                // 흡혈 처리
-                if (p1Stats.lifesteal > 0) {
-                    const heal = Math.floor(p1Damage * p1Stats.lifesteal);
-                    match.player1HP = Math.min(p1Stats.maxHp, match.player1HP + heal);
-                    p1Effects.push(`🩸 흡혈 +${heal}`);
+                // 흡혈 처리 (HP가 0이 아닐 때만)
+                if (p1Stats.lifesteal > 0 && match.player1HP > 0) {
+                    // 최대 회복량 제한 (데미지의 50% 까지만)
+                    const maxHeal = Math.floor(p1Damage * 0.5);
+                    const baseHeal = Math.floor(p1Damage * p1Stats.lifesteal);
+                    const heal = Math.min(baseHeal, maxHeal);
+                    
+                    // 연속 회복 페널티 (3라운드 이내 재사용시 50% 감소)
+                    const healPenalty = (match.round - match.player1LastHealRound <= 3) ? 0.5 : 1;
+                    const finalHeal = Math.floor(heal * healPenalty);
+                    
+                    if (finalHeal > 0) {
+                        match.player1HP = Math.min(p1Stats.maxHp, match.player1HP + finalHeal);
+                        match.player1HealCount++;
+                        match.player1LastHealRound = match.round;
+                        
+                        if (healPenalty < 1) {
+                            p1Effects.push(`🩸 흡혈 +${finalHeal} (연속 사용 페널티)`);
+                        } else {
+                            p1Effects.push(`🩸 흡혈 +${finalHeal}`);
+                        }
+                    }
                 }
                 
                 // 스킬 버프 효과
@@ -407,11 +543,28 @@ class PVPSystem {
                 // 데미지 적용
                 match.player1HP = Math.max(0, match.player1HP - p2Damage);
                 
-                // 흡혈 처리
-                if (p2Stats.lifesteal > 0) {
-                    const heal = Math.floor(p2Damage * p2Stats.lifesteal);
-                    match.player2HP = Math.min(p2Stats.maxHp, match.player2HP + heal);
-                    p2Effects.push(`🩸 흡혈 +${heal}`);
+                // 흡혈 처리 (HP가 0이 아닐 때만)
+                if (p2Stats.lifesteal > 0 && match.player2HP > 0) {
+                    // 최대 회복량 제한 (데미지의 50% 까지만)
+                    const maxHeal = Math.floor(p2Damage * 0.5);
+                    const baseHeal = Math.floor(p2Damage * p2Stats.lifesteal);
+                    const heal = Math.min(baseHeal, maxHeal);
+                    
+                    // 연속 회복 페널티 (3라운드 이내 재사용시 50% 감소)
+                    const healPenalty = (match.round - match.player2LastHealRound <= 3) ? 0.5 : 1;
+                    const finalHeal = Math.floor(heal * healPenalty);
+                    
+                    if (finalHeal > 0) {
+                        match.player2HP = Math.min(p2Stats.maxHp, match.player2HP + finalHeal);
+                        match.player2HealCount++;
+                        match.player2LastHealRound = match.round;
+                        
+                        if (healPenalty < 1) {
+                            p2Effects.push(`🩸 흡혈 +${finalHeal} (연속 사용 페널티)`);
+                        } else {
+                            p2Effects.push(`🩸 흡혈 +${finalHeal}`);
+                        }
+                    }
                 }
                 
                 // 스킬 버프 효과
@@ -463,7 +616,46 @@ class PVPSystem {
             )
             .setTimestamp();
 
-        // 턴 종료 버프 처리
+        // 기절 면역 감소
+        if (match.player1StunImmunity > 0) {
+            match.player1StunImmunity--;
+            if (match.player1StunImmunity === 0) {
+                resultEmbed.addFields({
+                    name: '🔓 상태 변화',
+                    value: `${match.player1.user.nickname}의 기절 면역이 해제되었습니다!`,
+                    inline: false
+                });
+            }
+        }
+        if (match.player2StunImmunity > 0) {
+            match.player2StunImmunity--;
+            if (match.player2StunImmunity === 0) {
+                resultEmbed.addFields({
+                    name: '🔓 상태 변화',
+                    value: `${match.player2.user.nickname}의 기절 면역이 해제되었습니다!`,
+                    inline: false
+                });
+            }
+        }
+
+        // 라운드 제한 체크
+        if (match.round >= match.maxRounds) {
+            await channel.send({ embeds: [resultEmbed] });
+            await this.endMatchAsDraw(match, '최대 라운드 도달');
+            return;
+        }
+
+        // 먼저 전투 데미지로 인한 사망 체크
+        if (match.player1HP <= 0 || match.player2HP <= 0) {
+            // 전투로 끝난 경우 바로 종료
+            await channel.send({ embeds: [resultEmbed] });
+            if (match.status === 'active') {
+                await this.endMatch(match);
+            }
+            return;
+        }
+
+        // 턴 종료 버프 처리 (독 데미지 등)
         const buffEffects = await this.processEndTurnBuffs(match);
         if (buffEffects.length > 0) {
             resultEmbed.addFields({
@@ -473,20 +665,113 @@ class PVPSystem {
             });
         }
 
-        await channel.send({ embeds: [resultEmbed] });
-
-        // 승부 확인
+        // 독 데미지로 인한 사망 체크
         if (match.player1HP <= 0 || match.player2HP <= 0) {
-            await this.endMatch(match);
-        } else {
+            // 독으로 끝난 경우에만 최종 결과 전송
+            await channel.send({ embeds: [resultEmbed] });
+            if (match.status === 'active') {
+                await this.endMatch(match);
+            }
+            return;
+        }
+
+        // 아직 게임이 계속되는 경우에만 결과 전송
+        if (match.status === 'active') {
+            await channel.send({ embeds: [resultEmbed] });
             match.round++;
             setTimeout(() => this.startRound(match), 3000);
         }
     }
     
+    // 무승부로 매치 종료
+    async endMatchAsDraw(match, reason = '시간 초과') {
+        // 이미 종료된 매치인지 확인
+        if (match.status === 'finished' || match.status === 'ending') {
+            console.log('[PVP] 이미 종료된 매치입니다:', match.matchId);
+            return;
+        }
+        
+        // 종료 중 상태로 변경
+        match.status = 'ending';
+        
+        const channel = match.pvpChannel;
+        if (!channel) return;
+
+        // 무승부 결과 임베드
+        const drawEmbed = new EmbedBuilder()
+            .setColor('#FFA500')
+            .setTitle('🤝 무승부!')
+            .setDescription(`${reason}으로 인해 경기가 무승부로 종료되었습니다.`)
+            .addFields(
+                {
+                    name: '📊 최종 상태',
+                    value: `${match.player1.user.nickname}: ${match.player1HP} HP\n${match.player2.user.nickname}: ${match.player2HP} HP`,
+                    inline: true
+                },
+                {
+                    name: '⏱️ 경기 정보',
+                    value: `총 라운드: ${match.round}\n경기 시간: ${Math.floor((Date.now() - match.startTime) / 1000)}초`,
+                    inline: true
+                }
+            )
+            .setFooter({ text: '양쪽 모두 레이팅 변화 없음' });
+
+        await channel.send({ embeds: [drawEmbed] });
+
+        // 무승부 기록 업데이트
+        if (!match.player1.isBot) {
+            match.player1.user.pvp.draws = (match.player1.user.pvp.draws || 0) + 1;
+            match.player1.user.pvp.totalDuels = (match.player1.user.pvp.totalDuels || 0) + 1;
+            match.player1.user.pvp.winStreak = 0; // 연승 초기화
+            await match.player1.user.save();
+        }
+
+        if (!match.player2.isBot) {
+            match.player2.user.pvp.draws = (match.player2.user.pvp.draws || 0) + 1;
+            match.player2.user.pvp.totalDuels = (match.player2.user.pvp.totalDuels || 0) + 1;
+            match.player2.user.pvp.winStreak = 0; // 연승 초기화
+            await match.player2.user.save();
+        }
+
+        // 임시 채널 10초 후 삭제
+        if (match.tempChannelCreated && channel) {
+            setTimeout(async () => {
+                try {
+                    await channel.send('📢 이 채널은 10초 후 삭제됩니다.');
+                    setTimeout(async () => {
+                        await channel.delete().catch(console.error);
+                    }, 10000);
+                } catch (error) {
+                    console.error('채널 삭제 예고 실패:', error);
+                }
+            }, 5000);
+        }
+
+        // 매치 정리
+        match.status = 'finished';
+        
+        // 타이머 정리
+        if (match.roundTimer) {
+            clearTimeout(match.roundTimer);
+            match.roundTimer = null;
+        }
+        
+        setTimeout(() => {
+            console.log(`[PVP] 매치 정리 (surrender): ${match.matchId}`);
+            this.activeMatches.delete(match.matchId);
+        }, 20000);
+    }
+
     // 매치 종료
     async endMatch(match) {
-        match.status = 'finished';
+        // 이미 종료된 매치인지 확인
+        if (match.status === 'finished' || match.status === 'ending') {
+            console.log('[PVP] 이미 종료된 매치입니다:', match.matchId);
+            return;
+        }
+        
+        // 종료 중 상태로 변경하여 중복 호출 방지
+        match.status = 'ending';
         
         const channel = match.pvpChannel;
         if (!channel) return;
@@ -503,13 +788,13 @@ class PVPSystem {
         const expectedWin = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
         const ratingChange = Math.round(K * (1 - expectedWin));
 
-        // 랜덤 골드 보상/차감 계산
+        // 랜덤 골드 보상 계산 (승자만)
         const winnerGoldReward = Math.floor(Math.random() * (100000 - 100 + 1)) + 100; // 100 ~ 100,000
-        const loserGoldPenalty = Math.floor(Math.random() * (100000 - 100 + 1)) + 100; // 100 ~ 100,000
+        const loserGoldPenalty = 0; // 패자 골드 차감 제거
         
         // 패자의 실제 차감 가능 금액 계산 (미리 계산)
         const loserCurrentGold = loser.user.gold || 0;
-        const actualLoserPenalty = Math.min(loserCurrentGold, loserGoldPenalty);
+        const actualLoserPenalty = 0; // 차감 없음
 
         // 승자 보상
         if (!winner.isBot) {
@@ -560,6 +845,20 @@ class PVPSystem {
                 winner.user.pvp.matchHistory = winner.user.pvp.matchHistory.slice(0, 10);
             }
             
+            // 활동 로그 기록 (승자)
+            await ActivityLog.create({
+                userId: winner.user.discordId,
+                nickname: winner.user.nickname,
+                activityType: 'pvp',
+                details: {
+                    opponent: loser.user.nickname,
+                    pvpResult: 'win',
+                    ratingChange: ratingChange,
+                    goldChange: winnerGoldReward,
+                    expGained: 0
+                }
+            });
+            
             await winner.user.save();
             console.log(`[PVP] ${winner.user.nickname} 승리: ${winnerRating} → ${newWinnerRating} (+${ratingChange}), 골드 +${winnerGoldReward}`);
         }
@@ -570,13 +869,8 @@ class PVPSystem {
             loser.user.pvpRating = newLoserRating;
             loser.user.pvpLosses = (loser.user.pvpLosses || 0) + 1;
             
-            // 골드 차감 (0원 미만으로 내려가지 않음)
-            const currentGold = loser.user.gold || 0;
-            const actualPenalty = Math.min(currentGold, loserGoldPenalty); // 실제로 차감할 수 있는 금액
-            loser.user.gold = Math.max(0, currentGold - actualPenalty);
-            
-            // 골드 통계 업데이트
-            loser.user.pvpTotalGoldLost = (loser.user.pvpTotalGoldLost || 0) + actualPenalty;
+            // 골드 차감 제거 - 레이팅만 변경
+            // 골드는 차감하지 않음
             
             // 연승 초기화
             loser.user.pvpWinStreak = 0;
@@ -592,7 +886,7 @@ class PVPSystem {
                 opponentRating: winnerRating,
                 result: 'lose',
                 ratingChange: -ratingChange,
-                goldChange: -actualPenalty,
+                goldChange: 0,
                 date: new Date()
             });
             // 최근 10경기만 유지
@@ -600,12 +894,26 @@ class PVPSystem {
                 loser.user.pvp.matchHistory = loser.user.pvp.matchHistory.slice(0, 10);
             }
             
+            // 활동 로그 기록 (패자)
+            await ActivityLog.create({
+                userId: loser.user.discordId,
+                nickname: loser.user.nickname,
+                activityType: 'pvp',
+                details: {
+                    opponent: winner.user.nickname,
+                    pvpResult: 'lose',
+                    ratingChange: -ratingChange,
+                    goldChange: 0,
+                    expGained: 0
+                }
+            });
+            
             await loser.user.save();
             
             if (loser.isBot && loser.isOfflineUser) {
-                console.log(`[PVP] 오프라인 유저 ${loser.user.nickname} 패배: ${loserRating} → ${newLoserRating} (-${ratingChange}), 골드 -${actualPenalty}`);
+                console.log(`[PVP] 오프라인 유저 ${loser.user.nickname} 패배: ${loserRating} → ${newLoserRating} (-${ratingChange})`);
             } else {
-                console.log(`[PVP] ${loser.user.nickname} 패배: ${loserRating} → ${newLoserRating} (-${ratingChange}), 골드 -${actualPenalty}`);
+                console.log(`[PVP] ${loser.user.nickname} 패배: ${loserRating} → ${newLoserRating} (-${ratingChange})`);
             }
         }
 
@@ -697,9 +1005,6 @@ class PVPSystem {
             console.error('[PVP] 베팅 정산 오류:', error);
         }
 
-        // 매치 정리
-        this.activeMatches.delete(match.matchId);
-        
         // 게임 종료 버튼 (채널은 삭제하지 않음)
         const endButtons = new ActionRowBuilder()
             .addComponents(
@@ -717,14 +1022,24 @@ class PVPSystem {
                     .setStyle(ButtonStyle.Secondary)
             );
             
+        // 3초 후 채널 삭제 (임시 채널인 경우)
         setTimeout(async () => {
             try {
-                await match.pvpChannel.send({
-                    content: '게임이 종료되었습니다! 다시 대전하시겠습니까?',
-                    components: [endButtons]
-                });
+                if (match.tempChannelCreated && match.pvpChannel) {
+                    await match.pvpChannel.delete().catch(console.error);
+                    console.log('[PVP] 임시 채널 삭제 완료');
+                }
+                
+                // 모든 처리가 완료된 후 상태를 finished로 변경
+                match.status = 'finished';
+                
+                // 매치 정리
+                this.activeMatches.delete(match.matchId);
             } catch (error) {
                 console.error('[PVP] 채널 메시지 전송 오류:', error);
+                // 오류가 발생해도 매치는 정리
+                match.status = 'finished';
+                this.activeMatches.delete(match.matchId);
             }
         }, 1000);
     }
@@ -1049,10 +1364,86 @@ class PVPSystem {
         const p1Stats = this.calculateCombatStats(player1);
         const p2Stats = this.calculateCombatStats(player2);
         
-        // 현재 채널을 PVP 채널로 사용
-        const pvpChannel = player1.channel;
+        // PVP 임시 채널 생성
+        let pvpChannel = null;
         const player1Name = player1.user.nickname || player1.user.username || 'Player1';
         const player2Name = player2.user.nickname || player2.user.username || 'Player2';
+        
+        try {
+            const guild = player1.channel.guild;
+            
+            // PVP 카테고리 찾기 (고정 ID 사용)
+            const PVP_CATEGORY_ID = '1388326369242517597';
+            let pvpCategory = guild.channels.cache.get(PVP_CATEGORY_ID);
+            if (!pvpCategory || pvpCategory.type !== ChannelType.GuildCategory) {
+                console.log('[PVP] PVP 경기장 카테고리를 찾을 수 없습니다. ID로 다시 시도:', PVP_CATEGORY_ID);
+                // ID로 다시 fetch 시도
+                try {
+                    pvpCategory = await guild.channels.fetch(PVP_CATEGORY_ID);
+                } catch (error) {
+                    console.log('[PVP] 카테고리 fetch 실패, 이름으로 검색');
+                    pvpCategory = guild.channels.cache.find(c => c.name === '🔥 PVP 경기장' && c.type === ChannelType.GuildCategory);
+                }
+                
+                if (!pvpCategory) {
+                    console.log('[PVP] PVP 경기장 카테고리가 없으므로 새로 생성');
+                    pvpCategory = await guild.channels.create({
+                        name: '🔥 PVP 경기장',
+                        type: ChannelType.GuildCategory,
+                        reason: 'PVP 전용 카테고리'
+                    });
+                    console.log('[PVP] 새 카테고리 생성됨:', pvpCategory.id);
+                }
+            }
+            
+            // 임시 채널 생성
+            pvpChannel = await guild.channels.create({
+                name: `⚔️│${player1Name}-vs-${player2Name}`,
+                type: ChannelType.GuildText,
+                parent: pvpCategory.id,
+                topic: `PVP 전투 | ${player1Name} vs ${player2Name}`,
+                permissionOverwrites: [
+                    {
+                        id: guild.id,
+                        allow: ['ViewChannel', 'ReadMessageHistory'],
+                        deny: ['SendMessages']
+                    },
+                    {
+                        id: player1.user.discordId || player1.user.id,
+                        allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
+                    },
+                    ...(player2.isBot ? [] : [{
+                        id: player2.user.discordId,
+                        allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
+                    }])
+                ],
+                reason: 'PVP 매치 임시 채널'
+            });
+            console.log('[PVP] PVP 전투 채널 생성됨:', pvpChannel.id);
+            
+            // 참가자들에게 채널 안내
+            const joinEmbed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle('⚔️ PVP 매치 시작!')
+                .setDescription(`${pvpChannel}에서 대결이 시작됩니다!`)
+                .addFields(
+                    { name: '🥊 대결', value: `**${player1Name}** VS **${player2Name}**`, inline: false },
+                    { name: '📍 전투 채널', value: `${pvpChannel}로 이동하세요!`, inline: false }
+                )
+                .setFooter({ text: '5초 후 자동으로 시작됩니다!' });
+            
+            // 원래 채널에 안내 메시지
+            if (player1.channel) {
+                await player1.channel.send({ embeds: [joinEmbed] });
+            }
+            if (!player2.isBot && player2.channel && player2.channel.id !== player1.channel.id) {
+                await player2.channel.send({ embeds: [joinEmbed] });
+            }
+            
+        } catch (error) {
+            console.error('PVP 채널 생성 오류:', error);
+            pvpChannel = player1.channel;
+        }
         
         // match 객체 생성
         const match = {
@@ -1065,6 +1456,7 @@ class PVPSystem {
             battleLog: [],
             pendingActions: new Map(),
             roundTimer: null,
+            roundInProgress: false,
             player1HP: p1Stats.maxHp,
             player2HP: p2Stats.maxHp,
             pvpChannel: pvpChannel,
@@ -1074,15 +1466,40 @@ class PVPSystem {
             bettingDelay: 0,
             // 버프/디버프 시스템
             player1Buffs: [],
-            player2Buffs: []
+            player2Buffs: [],
+            // 기절 면역 시스템
+            player1StunImmunity: 0, // 기절 면역 턴 수
+            player2StunImmunity: 0,
+            // 회복 제한 시스템
+            player1HealCount: 0, // 회복 사용 횟수
+            player2HealCount: 0,
+            player1LastHealRound: 0, // 마지막 회복 라운드
+            player2LastHealRound: 0,
+            // 최대 라운드 제한
+            maxRounds: 30 // 30라운드 제한
         };
 
         this.activeMatches.set(matchId, match);
         
-        // 10초 후 시작
+        // 게임 시작 메시지
+        if (pvpChannel) {
+            const startEmbed = new EmbedBuilder()
+                .setColor('#ff6b6b')
+                .setTitle('⚔️ PVP 대전 준비')
+                .setDescription('곧 전투가 시작됩니다!')
+                .addFields(
+                    { name: '🥊 대결', value: `**${player1Name}** VS **${player2Name}**`, inline: false },
+                    { name: '⏰ 시작까지', value: '10초', inline: true }
+                )
+                .setFooter({ text: '준비하세요!' });
+            
+            await pvpChannel.send({ embeds: [startEmbed] });
+        }
+        
+        // 5초 후 시작
         setTimeout(async () => {
             await this.startPendulumBattle(match);
-        }, 10000);
+        }, 5000);
         
         return { 
             success: true, 
@@ -1093,11 +1510,23 @@ class PVPSystem {
     
     // 펜들럼 배틀 시작
     async startPendulumBattle(match) {
+        // 매치 상태 로깅
+        console.log(`[PVP] 펜들럼 배틀 시작 - matchId: ${match.matchId}, 이전 상태: ${match.status}`);
+        
         match.status = 'active';
         match.round = 1;
         
+        // 매치가 activeMatches에 제대로 저장되어 있는지 확인
+        if (!this.activeMatches.has(match.matchId)) {
+            console.error(`[PVP] 경고: 매치가 activeMatches에 없음! matchId: ${match.matchId}`);
+            this.activeMatches.set(match.matchId, match);
+        }
+        
         const channel = match.pvpChannel;
-        if (!channel) return;
+        if (!channel) {
+            console.error('[PVP] 펜들럼 배틀 시작 실패 - 채널 없음');
+            return;
+        }
 
         const p1Stats = this.calculateCombatStats(match.player1);
         const p2Stats = this.calculateCombatStats(match.player2);
@@ -1145,7 +1574,7 @@ class PVPSystem {
                 },
                 {
                     name: '🏆 보상',
-                    value: '💰 승자: 100~100,000 골드 획득\n💸 패자: 100~100,000 골드 차감\n🎯 레이팅 포인트 변동\n🎫 결투권 소모 (1개)',
+                    value: '💰 승자: 100~100,000 골드 획득\n🎯 레이팅 포인트 변동\n🎫 결투권 소모 (1개)',
                     inline: true
                 },
                 {
@@ -1174,8 +1603,24 @@ class PVPSystem {
     
     // 라운드 시작  
     async startRound(match) {
+        // 매치 상태 체크
+        if (match.status !== 'active') {
+            console.log(`[PVP] 라운드 시작 취소 - 매치 상태: ${match.status}`);
+            return;
+        }
+        
         const channel = match.pvpChannel;
-        if (!channel || match.status !== 'active') return;
+        if (!channel) {
+            console.log('[PVP] 라운드 시작 취소 - 채널 없음');
+            return;
+        }
+        
+        // 이미 라운드가 진행 중인지 확인
+        if (match.roundInProgress) {
+            console.log('[PVP] 라운드가 이미 진행 중입니다. 중복 실행 방지.');
+            return;
+        }
+        match.roundInProgress = true;
 
         match.pendingActions.clear();
 
@@ -1206,12 +1651,12 @@ class PVPSystem {
 
         const roundEmbed = new EmbedBuilder()
             .setColor('#e74c3c')
-            .setTitle(`⚔️ 【라운드 ${match.round}】⚔️`)
+            .setTitle(`⚔️ 【라운드 ${match.round}/${match.maxRounds}】⚔️`)
             .setDescription(`🔥 **전투가 치열해지고 있습니다!** 🔥\n\n🎯 적의 공격을 예측하고 반격하세요!`)
             .addFields(
                 {
-                    name: `👤 ${p1Name} [레벨 ${p1Stats.level}]`,
-                    value: `${createHPBar(match.player1HP, p1Stats.maxHp)}\n${createPowerDisplay(p1Stats)}${createBuffDisplay(match.player1Buffs)}`,
+                    name: `👤 ${p1Name} [레벨 ${p1Stats.level}]${match.player1StunImmunity > 0 ? ' 🛡️' : ''}`,
+                    value: `${createHPBar(match.player1HP, p1Stats.maxHp)}\n${createPowerDisplay(p1Stats)}${createBuffDisplay(match.player1Buffs)}${match.player1StunImmunity > 0 ? `\n🛡️ 기절 면역 (${match.player1StunImmunity}턴)` : ''}`,
                     inline: false
                 },
                 {
@@ -1220,8 +1665,8 @@ class PVPSystem {
                     inline: false
                 },
                 {
-                    name: `👤 ${p2Name} [레벨 ${p2Stats.level}]`,
-                    value: `${createHPBar(match.player2HP, p2Stats.maxHp)}\n${createPowerDisplay(p2Stats)}${createBuffDisplay(match.player2Buffs)}`,
+                    name: `👤 ${p2Name} [레벨 ${p2Stats.level}]${match.player2StunImmunity > 0 ? ' 🛡️' : ''}`,
+                    value: `${createHPBar(match.player2HP, p2Stats.maxHp)}\n${createPowerDisplay(p2Stats)}${createBuffDisplay(match.player2Buffs)}${match.player2StunImmunity > 0 ? `\n🛡️ 기절 면역 (${match.player2StunImmunity}턴)` : ''}`,
                     inline: false
                 }
             )
@@ -1490,31 +1935,37 @@ class PVPSystem {
         
         // Player 1 버프 처리
         const p1Results = buffSystem.processBuffsEndTurn({ activeBuffs: match.player1Buffs });
-        match.player1Buffs = p1Results.activeBuffs || match.player1Buffs;
+        // processBuffsEndTurn은 원본 배열을 직접 수정하므로 재할당 불필요
         
         p1Results.ongoingEffects?.forEach(effect => {
             if (effect.type === 'damage') {
                 match.player1HP = Math.max(0, match.player1HP - effect.value);
                 effects.push(`🔥 ${match.player1.user.nickname}이(가) ${effect.value}의 지속 피해를 받았습니다!`);
             } else if (effect.type === 'heal') {
-                const maxHp = this.calculateCombatStats(match.player1).maxHp;
-                match.player1HP = Math.min(maxHp, match.player1HP + effect.value);
-                effects.push(`💚 ${match.player1.user.nickname}이(가) ${effect.value}만큼 회복했습니다!`);
+                // HP가 0이 아닐 때만 회복
+                if (match.player1HP > 0) {
+                    const maxHp = this.calculateCombatStats(match.player1).maxHp;
+                    match.player1HP = Math.min(maxHp, match.player1HP + effect.value);
+                    effects.push(`💚 ${match.player1.user.nickname}이(가) ${effect.value}만큼 회복했습니다!`);
+                }
             }
         });
         
         // Player 2 버프 처리
         const p2Results = buffSystem.processBuffsEndTurn({ activeBuffs: match.player2Buffs });
-        match.player2Buffs = p2Results.activeBuffs || match.player2Buffs;
+        // processBuffsEndTurn은 원본 배열을 직접 수정하므로 재할당 불필요
         
         p2Results.ongoingEffects?.forEach(effect => {
             if (effect.type === 'damage') {
                 match.player2HP = Math.max(0, match.player2HP - effect.value);
                 effects.push(`🔥 ${match.player2.user.nickname}이(가) ${effect.value}의 지속 피해를 받았습니다!`);
             } else if (effect.type === 'heal') {
-                const maxHp = this.calculateCombatStats(match.player2).maxHp;
-                match.player2HP = Math.min(maxHp, match.player2HP + effect.value);
-                effects.push(`💚 ${match.player2.user.nickname}이(가) ${effect.value}만큼 회복했습니다!`);
+                // HP가 0이 아닐 때만 회복
+                if (match.player2HP > 0) {
+                    const maxHp = this.calculateCombatStats(match.player2).maxHp;
+                    match.player2HP = Math.min(maxHp, match.player2HP + effect.value);
+                    effects.push(`💚 ${match.player2.user.nickname}이(가) ${effect.value}만큼 회복했습니다!`);
+                }
             }
         });
         
@@ -1528,16 +1979,43 @@ class PVPSystem {
             'high': () => {
                 // 별똥베기 - 높은 데미지, 낮은 확률로 스턴
                 if (Math.random() < 0.15) {
-                    const buff = buffSystem.applyBuff(
-                        isPlayer1 ? { activeBuffs: match.player2Buffs } : { activeBuffs: match.player1Buffs },
-                        'STUN',
-                        1,
-                        1
-                    );
+                    // 기절 면역 체크
+                    const targetHasImmunity = isPlayer1 ? match.player2StunImmunity > 0 : match.player1StunImmunity > 0;
+                    if (targetHasImmunity) {
+                        return `🛡️ 기절 면역 상태!`;
+                    }
+                    
+                    // 직접 버프 객체를 생성하여 추가
+                    const stunBuff = {
+                        id: Date.now() + Math.random(),
+                        type: 'STUN',
+                        value: 1,
+                        duration: 1,
+                        remainingTurns: 1,
+                        source: attacker.nickname,
+                        appliedAt: Date.now()
+                    };
+                    
                     if (isPlayer1) {
-                        match.player2Buffs.push(buff);
+                        // 중복 체크
+                        const existingStun = match.player2Buffs.findIndex(b => b.type === 'STUN');
+                        if (existingStun !== -1) {
+                            match.player2Buffs[existingStun] = stunBuff;
+                        } else {
+                            match.player2Buffs.push(stunBuff);
+                        }
+                        // 기절 후 2라운드 면역
+                        match.player2StunImmunity = 2;
                     } else {
-                        match.player1Buffs.push(buff);
+                        // 중복 체크
+                        const existingStun = match.player1Buffs.findIndex(b => b.type === 'STUN');
+                        if (existingStun !== -1) {
+                            match.player1Buffs[existingStun] = stunBuff;
+                        } else {
+                            match.player1Buffs.push(stunBuff);
+                        }
+                        // 기절 후 2라운드 면역
+                        match.player1StunImmunity = 2;
                     }
                     return `💫 기절 효과 발동!`;
                 }
@@ -1545,17 +2023,37 @@ class PVPSystem {
             'middle': () => {
                 // 슈가스팅 - 중간 데미지, 방어력 감소
                 if (Math.random() < 0.3) {
-                    const buff = buffSystem.applyDebuff(
-                        isPlayer1 ? { activeBuffs: match.player2Buffs, stats: defender.stats } : { activeBuffs: match.player1Buffs, stats: attacker.stats },
-                        'DEFENSE_DOWN',
-                        20,
-                        2
-                    );
-                    if (!buff.resisted) {
+                    // 디버프 저항 계산
+                    const targetStats = isPlayer1 ? defender : attacker;
+                    const resistance = (targetStats.vitality || 10) / 200; // 최대 20% 저항
+                    
+                    if (Math.random() >= resistance) {
+                        const defenseDown = {
+                            id: Date.now() + Math.random(),
+                            type: 'DEFENSE_DOWN',
+                            value: -Math.floor(20 * (1 - resistance * 0.5)),
+                            duration: 2,
+                            remainingTurns: 2,
+                            source: attacker.nickname,
+                            appliedAt: Date.now()
+                        };
+                        
                         if (isPlayer1) {
-                            match.player2Buffs.push(buff);
+                            // 중복 체크
+                            const existingDebuff = match.player2Buffs.findIndex(b => b.type === 'DEFENSE_DOWN');
+                            if (existingDebuff !== -1) {
+                                match.player2Buffs[existingDebuff] = defenseDown;
+                            } else {
+                                match.player2Buffs.push(defenseDown);
+                            }
                         } else {
-                            match.player1Buffs.push(buff);
+                            // 중복 체크
+                            const existingDebuff = match.player1Buffs.findIndex(b => b.type === 'DEFENSE_DOWN');
+                            if (existingDebuff !== -1) {
+                                match.player1Buffs[existingDebuff] = defenseDown;
+                            } else {
+                                match.player1Buffs.push(defenseDown);
+                            }
                         }
                         return `🔻 방어력 감소!`;
                     }
@@ -1565,16 +2063,36 @@ class PVPSystem {
                 // 버섯팡 - 낮은 데미지, 독 효과
                 if (Math.random() < 0.4) {
                     const poisonDamage = Math.floor(attacker.attack * 0.15);
-                    const buff = buffSystem.applyBuff(
-                        isPlayer1 ? { activeBuffs: match.player2Buffs } : { activeBuffs: match.player1Buffs },
-                        'POISON',
-                        poisonDamage,
-                        3
-                    );
+                    const poisonBuff = {
+                        id: Date.now() + Math.random(),
+                        type: 'POISON',
+                        value: poisonDamage,
+                        duration: 2,
+                        remainingTurns: 2,
+                        source: attacker.nickname,
+                        appliedAt: Date.now()
+                    };
+                    
                     if (isPlayer1) {
-                        match.player2Buffs.push(buff);
+                        // 중복 체크 - 더 강한 독으로 교체
+                        const existingPoison = match.player2Buffs.findIndex(b => b.type === 'POISON');
+                        if (existingPoison !== -1) {
+                            if (match.player2Buffs[existingPoison].value < poisonDamage) {
+                                match.player2Buffs[existingPoison] = poisonBuff;
+                            }
+                        } else {
+                            match.player2Buffs.push(poisonBuff);
+                        }
                     } else {
-                        match.player1Buffs.push(buff);
+                        // 중복 체크 - 더 강한 독으로 교체
+                        const existingPoison = match.player1Buffs.findIndex(b => b.type === 'POISON');
+                        if (existingPoison !== -1) {
+                            if (match.player1Buffs[existingPoison].value < poisonDamage) {
+                                match.player1Buffs[existingPoison] = poisonBuff;
+                            }
+                        } else {
+                            match.player1Buffs.push(poisonBuff);
+                        }
                     }
                     return `☠️ 독 효과 발동!`;
                 }
@@ -1641,4 +2159,10 @@ class PVPSystem {
 }
 
 const pvpSystem = new PVPSystem();
+
+// 싱글톤 인스턴스 getter 추가
+pvpSystem.getInstance = function() {
+    return pvpSystem;
+};
+
 module.exports = pvpSystem;

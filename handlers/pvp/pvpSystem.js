@@ -1,10 +1,11 @@
-const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const User = require('../../models/User');
 const { getUser, formatNumber, ADMIN_IDS } = require('../common/utils');
 const { calculateCombatPower } = require('../common/combatPower');
 const spectatorBetting = require('../../data/spectatorBetting');
 const { createPVPWaitingRoom } = require('./pvpWaitingRoom');
 const MissionHelper = require('../../utils/missionHelper');
+const { applyGoldBonus, applyExpBonus } = require('../common/specialEffects');
 const GAME_GIFS = require('../../data/gameGifs');
 
 class PVPSystem {
@@ -477,14 +478,28 @@ class PVPSystem {
         try {
             const guild = player1.channel.guild;
             
-            // PVP 카테고리 찾기 또는 생성
-            let pvpCategory = guild.channels.cache.find(c => c.name === '🔥 PVP 경기장' && c.type === 4);
-            if (!pvpCategory) {
-                pvpCategory = await guild.channels.create({
-                    name: '🔥 PVP 경기장',
-                    type: 4,
-                    reason: 'PVP 전용 카테고리'
-                });
+            // PVP 카테고리 찾기 (고정 ID 사용)
+            const PVP_CATEGORY_ID = '1388326369242517597';
+            let pvpCategory = guild.channels.cache.get(PVP_CATEGORY_ID);
+            if (!pvpCategory || pvpCategory.type !== ChannelType.GuildCategory) {
+                console.log('[PVP] PVP 경기장 카테고리를 찾을 수 없습니다. ID로 다시 시도:', PVP_CATEGORY_ID);
+                // ID로 다시 fetch 시도
+                try {
+                    pvpCategory = await guild.channels.fetch(PVP_CATEGORY_ID);
+                } catch (error) {
+                    console.log('[PVP] 카테고리 fetch 실패, 이름으로 검색');
+                    pvpCategory = guild.channels.cache.find(c => c.name === '🔥 PVP 경기장' && c.type === ChannelType.GuildCategory);
+                }
+                
+                if (!pvpCategory) {
+                    console.log('[PVP] PVP 경기장 카테고리가 없으므로 새로 생성');
+                    pvpCategory = await guild.channels.create({
+                        name: '🔥 PVP 경기장',
+                        type: ChannelType.GuildCategory,
+                        reason: 'PVP 전용 카테고리'
+                    });
+                    console.log('[PVP] 새 카테고리 생성됨:', pvpCategory.id);
+                }
             }
             
             // 먼저 대기실 생성
@@ -493,9 +508,10 @@ class PVPSystem {
             
             // 대기실 채널 생성
             const waitingChannel = await guild.channels.create({
-                name: `⏳pvp-대기실-${matchId.substring(0, 8)}`,
-                type: 0,
+                name: `⚔️│PVP대기실│${player1Name} vs ${player2Name}`,
+                type: ChannelType.GuildText,
                 parent: pvpCategory.id,
+                topic: `PVP 대기실 | 👥 ${player1Name} vs ${player2Name} | 🎰 관전자 베팅 준비중`,
                 permissionOverwrites: [
                     {
                         id: guild.id,
@@ -505,6 +521,7 @@ class PVPSystem {
                 ],
                 reason: 'PVP 대기실'
             });
+            console.log('[PVP] 대기실 채널 생성됨:', waitingChannel.id);
             
             // 대기실 메시지
             const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -537,9 +554,10 @@ class PVPSystem {
             setTimeout(async () => {
                 // 임시 채널 생성
                 pvpChannel = await guild.channels.create({
-                    name: `${player1Name}-vs-${player2Name}`,
-                    type: 0,
+                    name: `⚔️│${player1Name}-vs-${player2Name}`,
+                    type: ChannelType.GuildText,
                     parent: pvpCategory.id,
+                    topic: `PVP 전투 | ${player1Name} vs ${player2Name}`,
                     permissionOverwrites: [
                         {
                             id: guild.id,
@@ -557,6 +575,7 @@ class PVPSystem {
                     ],
                     reason: 'PVP 매치 임시 채널'
                 });
+                console.log('[PVP] PVP 전투 채널 생성됨:', pvpChannel.id);
                 
                 // 대기실 삭제
                 await waitingChannel.delete().catch(console.error);
@@ -605,6 +624,7 @@ class PVPSystem {
                     battleLog: [],
                     pendingActions: new Map(),
                     roundTimer: null,
+                    roundInProgress: false,
                     player1HP: p1Stats.maxHp,
                     player2HP: p2Stats.maxHp,
                     pvpChannel: pvpChannel,
@@ -773,6 +793,13 @@ class PVPSystem {
         const channel = match.pvpChannel;
         if (!channel || match.status !== 'active') return;
 
+        // 이미 라운드가 진행 중인지 확인
+        if (match.roundInProgress) {
+            console.log('[PVP] 라운드가 이미 진행 중입니다. 중복 실행 방지.');
+            return;
+        }
+        match.roundInProgress = true;
+
         match.pendingActions.clear();
 
         const p1Stats = this.calculateCombatStats(match.player1);
@@ -910,6 +937,9 @@ class PVPSystem {
     async resolveRound(match) {
         const channel = match.pvpChannel;
         if (!channel) return;
+        
+        // 라운드 진행 중 플래그 해제
+        match.roundInProgress = false;
 
         const p1Id = match.player1.user.discordId;
         const p2Id = match.player2.user.discordId;
@@ -1022,7 +1052,8 @@ class PVPSystem {
             await winner.user.save();
             
             // 미션 진행도 업데이트 (승리)
-            await MissionHelper.updatePVPBattle(winner.user.discordId, true);
+            const winnerUserId = winner.userId || winner.user.discordId;
+            await MissionHelper.updatePVPBattle(winnerUserId, true);
         }
 
         // 패자도 오프라인이 아닌 경우에만 업데이트
@@ -1051,17 +1082,24 @@ class PVPSystem {
                 await loser.user.save();
                 
                 // 미션 진행도 업데이트 (패배)
-                await MissionHelper.updatePVPBattle(loser.user.discordId, false);
+                const loserUserId = loser.userId || loser.user.discordId;
+                await MissionHelper.updatePVPBattle(loserUserId, false);
             }
         }
 
         // 보상 계산
         const baseGoldReward = 5000;
         const ratingBonus = winner.user.pvp.rating * 10;
-        const goldReward = Math.floor(baseGoldReward + ratingBonus + (ratingChange * 20));
-        const expReward = Math.floor(2000 + (winner.user.pvp.rating * 5));
+        let goldReward = Math.floor(baseGoldReward + ratingBonus + (ratingChange * 20));
+        let expReward = Math.floor(2000 + (winner.user.pvp.rating * 5));
         
         if (!winner.isBot) {
+            // 칭호 효과 적용
+            console.log(`[PVP Winner] ${winner.user.nickname || winner.user.discordId} - 특수 효과 적용 전 골드: ${goldReward}, 경험치: ${expReward}`);
+            goldReward = applyGoldBonus(goldReward, winner.user);
+            expReward = applyExpBonus(expReward, winner.user);
+            console.log(`[PVP Winner] ${winner.user.nickname || winner.user.discordId} - 특수 효과 적용 후 골드: ${goldReward}, 경험치: ${expReward}`);
+            
             winner.user.gold += goldReward;
             winner.user.exp += expReward;
             await winner.user.save();
@@ -1069,8 +1107,15 @@ class PVPSystem {
         
         // 패배자 보상 (절반)
         if (!loser.isBot) {
-            const loserGoldReward = Math.floor(goldReward * 0.5);
-            const loserExpReward = Math.floor(expReward * 0.5);
+            let loserGoldReward = Math.floor(goldReward * 0.5);
+            let loserExpReward = Math.floor(expReward * 0.5);
+            
+            // 패배자에게도 칭호 효과 적용
+            console.log(`[PVP Loser] ${loser.user.nickname || loser.user.discordId} - 특수 효과 적용 전 골드: ${loserGoldReward}, 경험치: ${loserExpReward}`);
+            loserGoldReward = applyGoldBonus(loserGoldReward, loser.user);
+            loserExpReward = applyExpBonus(loserExpReward, loser.user);
+            console.log(`[PVP Loser] ${loser.user.nickname || loser.user.discordId} - 특수 효과 적용 후 골드: ${loserGoldReward}, 경험치: ${loserExpReward}`);
+            
             loser.user.gold += loserGoldReward;
             loser.user.exp += loserExpReward;
             await loser.user.save();
@@ -1120,6 +1165,21 @@ class PVPSystem {
             );
 
         await channel.send({ embeds: [resultEmbed] });
+        
+        // 게임 결과를 결과 채널로 전송
+        try {
+            const gameResultManager = require('../../utils/gameResultManager').getInstance();
+            await gameResultManager.sendPVPResult(winner.user, loser.user, {
+                winnerRatingChange: ratingChange,
+                loserRatingChange: -ratingChange,
+                winnerNewRating: winner.user.pvp.rating,
+                loserNewRating: loser.user.pvp.rating,
+                totalDamage: match.player1DamageDealt + match.player2DamageDealt,
+                rounds: match.round
+            });
+        } catch (err) {
+            console.error('[PVP] 결과 전송 실패:', err);
+        }
 
         // 임시 채널 10초 후 삭제
         if (match.tempChannelCreated && channel) {
@@ -1149,20 +1209,43 @@ class PVPSystem {
 
     // PVP 정보 조회
     async getPVPInfo(user) {
+        // 총 경기 수 재계산 (draws 포함)
+        const totalGames = (user.pvp.wins || 0) + (user.pvp.losses || 0) + (user.pvp.draws || 0);
+        
+        // 다음 티어까지 필요한 점수 계산
+        const currentRating = user.pvp.rating || 1000;
+        const currentTier = user.pvp.tier || 'Bronze';
+        let pointsToNextTier = 0;
+        
+        const tierOrder = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Master', 'Grandmaster', 'Challenger'];
+        const currentTierIndex = tierOrder.indexOf(currentTier);
+        
+        if (currentTierIndex < tierOrder.length - 1) {
+            const nextTier = tierOrder[currentTierIndex + 1];
+            pointsToNextTier = this.tierRanges[nextTier].min - currentRating;
+        }
+        
         const info = {
             tier: user.pvp.tier || 'Bronze',
             tierEmoji: this.getTierEmoji(user.pvp.tier || 'Bronze'),
             rating: user.pvp.rating || 1000,
-            duelTickets: user.pvp.duelTickets || 0,
-            totalDuels: user.pvp.totalDuels || 0,
+            duelTickets: user.pvp.duelTickets || user.pvpTickets || 0,
+            tickets: user.pvp.duelTickets || user.pvpTickets || 0,
+            totalDuels: totalGames,
+            totalGames: totalGames, // 새로운 필드 추가
             wins: user.pvp.wins || 0,
             losses: user.pvp.losses || 0,
-            winRate: user.pvp.totalDuels > 0 ? 
-                ((user.pvp.wins / user.pvp.totalDuels) * 100).toFixed(1) : '0.0',
+            draws: user.pvp.draws || 0,
+            winRate: totalGames > 0 ? 
+                ((user.pvp.wins / totalGames) * 100).toFixed(1) : '0.0',
             winStreak: user.pvp.winStreak || 0,
             maxWinStreak: user.pvp.maxWinStreak || 0,
             highestRating: user.pvp.highestRating || user.pvp.rating || 1000,
-            matchHistory: user.pvp.matchHistory || []
+            matchHistory: user.pvp.matchHistory || [],
+            totalGoldWon: user.pvpTotalGoldWon || 0,
+            totalGoldLost: user.pvpTotalGoldLost || 0,
+            netGold: (user.pvpTotalGoldWon || 0) - (user.pvpTotalGoldLost || 0),
+            pointsToNextTier: pointsToNextTier
         };
 
         return info;

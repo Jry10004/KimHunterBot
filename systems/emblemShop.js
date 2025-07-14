@@ -8,12 +8,12 @@ const EMBLEMS = {
         name: '전사',
         emoji: '⚔️',
         color: '#ff0000',
-        description: '초보전사 → 튼튼한 기사 → 용맹한 검사 → 맹령한 전사 → 전설의 기사',
+        description: '초보전사 → 튼튼한 기사 → 용맹한 검사 → 맹렬한 전사 → 전설의 기사',
         emblems: [
             { name: '초보전사', price: 300000, level: 20, roleName: '초보전사' },
             { name: '튼튼한 기사', price: 500000, level: 35, roleName: '튼튼한 기사' },
             { name: '용맹한 검사', price: 1500000, level: 50, roleName: '용맹한 검사' },
-            { name: '맹령한 전사', price: 3000000, level: 65, roleName: '맹령한 전사' },
+            { name: '맹렬한 전사', price: 3000000, level: 65, roleName: '맹렬한 전사' },
             { name: '전설의 기사', price: 10000000, level: 80, roleName: '전설의 기사' }
         ]
     },
@@ -156,13 +156,19 @@ function createEmblemSelectMenu() {
 
 // Create refresh button
 function createRefreshButton() {
-    const button = new ButtonBuilder()
+    const refreshButton = new ButtonBuilder()
         .setCustomId('emblem_shop_refresh')
         .setLabel('새로고침')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('🔄');
+    
+    const enhanceButton = new ButtonBuilder()
+        .setCustomId('emblem_enhance')
+        .setLabel('엠블럼 강화')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🔨');
 
-    return new ActionRowBuilder().addComponents(button);
+    return new ActionRowBuilder().addComponents(refreshButton, enhanceButton);
 }
 
 // Initialize or update the permanent emblem shop
@@ -264,25 +270,38 @@ async function initializeAllEmblemShops(client) {
 
 // Handle emblem shop interactions
 async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
-    if (interaction.customId === 'emblem_shop_refresh') {
-        await interaction.deferUpdate();
-        await initializeEmblemShop(interaction.client, interaction.channelId);
-        return;
-    }
-
-    if (interaction.customId === 'emblem_shop_category') {
-        await interaction.deferUpdate();
-        const selectedCategory = interaction.values[0];
-        const user = await getUser(interaction.user.id);
+    try {
+        // Safe defer handling
+        if (!interaction.deferred && !interaction.replied) {
+            try {
+                await interaction.deferUpdate();
+            } catch (error) {
+                if (error.code === 10062) {
+                    console.log('[엠블럼 상점] Interaction expired');
+                    return;
+                }
+                console.error('[엠블럼 상점] Defer error:', error);
+                return;
+            }
+        }
         
-        if (!user || !user.registered) {
-            await interaction.editReply({ 
-                content: '먼저 회원가입을 해주세요!', 
-                embeds: [],
-                components: []
-            });
+        if (interaction.customId === 'emblem_shop_refresh') {
+            await initializeEmblemShop(interaction.client, interaction.channelId);
             return;
         }
+
+        if (interaction.customId === 'emblem_shop_category') {
+            const selectedCategory = interaction.values[0];
+            const user = await getUser(interaction.user.id);
+            
+            if (!user || !user.registered) {
+                await interaction.editReply({ 
+                    content: '먼저 회원가입을 해주세요!', 
+                    embeds: [],
+                    components: []
+                });
+                return;
+            }
 
         const category = EMBLEMS[selectedCategory];
         
@@ -405,7 +424,6 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
     }
 
     if (interaction.customId === 'emblem_shop_back') {
-        await interaction.deferUpdate();
         
         const user = await getUser(interaction.user.id);
         if (!user || !user.registered) {
@@ -421,7 +439,7 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
         const shopEmbed = new EmbedBuilder()
             .setColor('#FFD700')
             .setTitle('🏆 엠블럼 상점')
-            .setDescription('엠블럼을 구매하여 특별한 칭호를 획듍하세요!');
+            .setDescription('엠블럼을 구매하여 특별한 칭호를 획득하세요!');
             
         if (user.emblem) {
             const currentType = Object.keys(EMBLEMS).find(type => 
@@ -458,6 +476,53 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
             embeds: [shopEmbed],
             components: [actionRow, backButton]
         });
+    }
+    } catch (error) {
+        console.error('[엠블럼 상점] 오류 발생:', error);
+        
+        // 오류 발생 시 복구 옵션 제공
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle('❌ 엠블럼 상점 오류')
+            .setDescription('엠블럼 상점 처리 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.')
+            .addFields({
+                name: '🔧 해결 방법',
+                value: '• 새로고침 버튼을 눌러 상점을 다시 불러오세요\n• 문제가 계속되면 관리자에게 문의하세요',
+                inline: false
+            })
+            .setTimestamp();
+        
+        const recoveryButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('emblem_shop_refresh')
+                    .setLabel('🔄 새로고침')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('🔄'),
+                new ButtonBuilder()
+                    .setCustomId('emblem')
+                    .setLabel('🏠 메인 메뉴로')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
+        try {
+            await interaction.editReply({
+                embeds: [errorEmbed],
+                components: [recoveryButtons]
+            });
+        } catch (replyError) {
+            console.error('[엠블럼 상점] 오류 메시지 전송 실패:', replyError);
+            
+            // 오류 메시지도 실패하면 자동 새로고침 시도
+            setTimeout(async () => {
+                try {
+                    await initializeEmblemShop(interaction.client, interaction.channelId);
+                    console.log('[엠블럼 상점] 자동 복구 완료');
+                } catch (refreshError) {
+                    console.error('[엠블럼 상점] 자동 복구 실패:', refreshError);
+                }
+            }, 2000);
+        }
     }
 }
 

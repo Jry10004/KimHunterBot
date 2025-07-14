@@ -10,8 +10,9 @@ class DogBotStateManager {
         this.saveInterval = null;
         this.isLoaded = false; // 로드 완료 플래그 추가
         
-        // 동기적으로 초기 로드 시도
-        this.initializeState();
+        // 댕댕봇 이벤트 종료 - 초기화 및 로드 중단
+        console.log('💤 댕댕봇 이벤트가 종료되어 초기화를 건너뜁니다.');
+        return;
     }
 
     // 동기적 초기 상태 로드
@@ -29,6 +30,8 @@ class DogBotStateManager {
                     
                     // 로드된 데이터를 안전하게 병합
                     this.state.status = { ...this.state.status, ...loadedState.status };
+                    // totalFloors를 6으로 강제 설정
+                    this.state.status.totalFloors = 6;
                     this.state.floors = { ...this.state.floors, ...loadedState.floors };
                     
                     // statistics는 더 신중하게 병합
@@ -79,9 +82,9 @@ class DogBotStateManager {
                 this.tryRestoreFromBackup();
             }
             
-            // 자동 저장 설정 (30초마다)
-            if (this.saveInterval) clearInterval(this.saveInterval);
-            this.saveInterval = setInterval(() => this.saveState(), 30000);
+            // 자동 저장 비활성화 (이벤트 종료)
+            // if (this.saveInterval) clearInterval(this.saveInterval);
+            // this.saveInterval = setInterval(() => this.saveState(), 30000);
         } catch (error) {
             console.error('[DogBot] 초기 상태 로드 실패:', error);
             this.tryRestoreFromBackup();
@@ -115,6 +118,8 @@ class DogBotStateManager {
                         
                         // 백업 데이터를 안전하게 병합
                         this.state.status = { ...this.state.status, ...backupState.status };
+                        // totalFloors를 6으로 강제 설정
+                        this.state.status.totalFloors = 6;
                         this.state.floors = { ...this.state.floors, ...backupState.floors };
                         
                         // statistics는 더 신중하게 병합
@@ -179,9 +184,9 @@ class DogBotStateManager {
             console.log('[DogBot] 상태 로드 완료');
             this.isLoaded = true;
             
-            // 자동 저장 설정 (30초마다)
-            if (this.saveInterval) clearInterval(this.saveInterval);
-            this.saveInterval = setInterval(() => this.saveState(), 30000);
+            // 자동 저장 비활성화 (이벤트 종료)
+            // if (this.saveInterval) clearInterval(this.saveInterval);
+            // this.saveInterval = setInterval(() => this.saveState(), 30000);
         } catch (error) {
             console.error('[DogBot] 상태 로드 실패:', error);
             // 기본 상태로 초기화
@@ -207,7 +212,7 @@ class DogBotStateManager {
                 isActive: false,
                 startTime: null,
                 currentFloor: 1,
-                totalFloors: 5,
+                totalFloors: 6,
                 rescueComplete: false
             },
             floors: {
@@ -215,7 +220,8 @@ class DogBotStateManager {
                 "2": { currentHP: 180000 },
                 "3": { currentHP: 240000 },
                 "4": { currentHP: 300000 },
-                "5": { currentHP: 360000 }
+                "5": { currentHP: 300000 },
+                "6": { currentHP: 500000 }
             },
             statistics: {
                 totalAttacks: 0,
@@ -252,6 +258,24 @@ class DogBotStateManager {
 
     // 데미지 기록
     recordDamage(userId, damage, floor, isCritical = false) {
+        // 인프 유저 ID 리다이렉트
+        if (userId === '592659577384730645') {
+            console.log('[DogBot] 구 ID 감지, 새 ID로 리다이렉트: 592659577384730645 → 1374702838541168650');
+            userId = '1374702838541168650';
+        }
+        
+        // 알려진 중복 ID 매핑 (필요시 추가)
+        const idMapping = {
+            '592659577384730645': '1374702838541168650', // 인프
+            // 다른 중복 ID가 발견되면 여기에 추가
+        };
+        
+        // ID 매핑 적용
+        if (idMapping[userId]) {
+            console.log(`[DogBot] ID 리다이렉트: ${userId} → ${idMapping[userId]}`);
+            userId = idMapping[userId];
+        }
+        
         console.log(`[DogBot] recordDamage 호출 - userId: ${userId}, damage: ${damage}, floor: ${floor}`);
         console.log(`[DogBot] 현재 userAttackCount:`, this.state.statistics.userAttackCount);
         
@@ -282,7 +306,7 @@ class DogBotStateManager {
         // 마지막 공격 시간
         this.state.statistics.lastAttackTime[userId] = Date.now();
         
-        // 공격 로그 추가 (최대 100개 유지)
+        // 공격 로그 추가 (최대 500개 유지 - 기록 보존을 위해 증가)
         this.state.statistics.attackLog.push({
             userId,
             damage,
@@ -291,7 +315,7 @@ class DogBotStateManager {
             isCritical
         });
         
-        if (this.state.statistics.attackLog.length > 100) {
+        if (this.state.statistics.attackLog.length > 500) {
             this.state.statistics.attackLog.shift();
         }
         
@@ -402,7 +426,9 @@ class DogBotStateManager {
     
     // 데이터 강제 리로드
     async forceReloadData() {
-        console.log('[DogBot] 데이터 강제 리로드 시작');
+        // 댕댕봇 이벤트 종료 - 리로드 중단
+        console.log('💤 댕댕봇 이벤트가 종료되어 데이터 리로드를 건너뜁니다.');
+        return;
         try {
             // 현재 save interval 정리
             if (this.saveInterval) {
@@ -438,16 +464,72 @@ class DogBotStateManager {
     
     // 데이터 무결성 검사 및 복구
     validateAndRepairData() {
-        console.log('[DogBot] 데이터 무결성 검사 시작');
+        // 댕댕봇 이벤트 종료 - 검사 중단
+        console.log('💤 댕댕봇 이벤트가 종료되어 데이터 검사를 건너뜁니다.');
+        return;
+        
+        // 1. floor3 중복 제거
+        if (this.state.statistics.floorMVP && this.state.statistics.floorMVP['floor3']) {
+            console.log('[DogBot] floor3 중복 키 제거');
+            delete this.state.statistics.floorMVP['floor3'];
+        }
+        
+        // 2. 인프 데이터 병합 (592659577384730645 → 1374702838541168650)
+        const oldInfpId = '592659577384730645';
+        const newInfpId = '1374702838541168650';
+        
+        if (this.state.statistics.userDamage && this.state.statistics.userDamage[oldInfpId]) {
+            console.log('[DogBot] 인프 중복 데이터 병합');
+            
+            // 데미지 병합
+            this.state.statistics.userDamage[newInfpId] = 
+                (this.state.statistics.userDamage[newInfpId] || 0) + this.state.statistics.userDamage[oldInfpId];
+            delete this.state.statistics.userDamage[oldInfpId];
+            
+            // 공격 횟수 병합
+            if (this.state.statistics.userAttackCount) {
+                this.state.statistics.userAttackCount[newInfpId] = 
+                    (this.state.statistics.userAttackCount[newInfpId] || 0) + (this.state.statistics.userAttackCount[oldInfpId] || 0);
+                delete this.state.statistics.userAttackCount[oldInfpId];
+            }
+            
+            // 마지막 공격 시간 업데이트
+            if (this.state.statistics.lastAttackTime) {
+                const oldTime = this.state.statistics.lastAttackTime[oldInfpId];
+                const newTime = this.state.statistics.lastAttackTime[newInfpId];
+                if (oldTime && (!newTime || oldTime > newTime)) {
+                    this.state.statistics.lastAttackTime[newInfpId] = oldTime;
+                }
+                delete this.state.statistics.lastAttackTime[oldInfpId];
+            }
+            
+            // participants 배열에서 중복 제거
+            const index = this.state.statistics.participants.indexOf(oldInfpId);
+            if (index > -1) {
+                this.state.statistics.participants.splice(index, 1);
+            }
+            
+            // attackLog의 userId 변경
+            if (this.state.statistics.attackLog) {
+                this.state.statistics.attackLog.forEach(log => {
+                    if (log.userId === oldInfpId) {
+                        log.userId = newInfpId;
+                    }
+                });
+            }
+        }
         
         // userDamage에 있는 모든 유저가 userAttackCount에도 있는지 확인
+        // 주의: attackLog는 최대 100개만 저장되므로, 실제 공격 횟수와 다를 수 있음
+        // 따라서 기존 userAttackCount 값을 유지하고, 누락된 경우에만 최소값 1로 설정
         for (const userId of Object.keys(this.state.statistics.userDamage)) {
             if (!this.state.statistics.userAttackCount[userId]) {
                 console.log(`[DogBot] ${userId}의 공격 횟수 데이터 누락 발견`);
-                // attackLog에서 실제 공격 횟수 계산
+                // attackLog에서 실제 공격 횟수 계산 (있는 로그만큼)
                 const actualAttacks = this.state.statistics.attackLog.filter(log => log.userId === userId).length;
-                this.state.statistics.userAttackCount[userId] = actualAttacks || 1;
-                console.log(`[DogBot] ${userId}의 공격 횟수를 ${actualAttacks || 1}로 복구`);
+                // 최소 1회로 설정 (0으로 나누기 방지)
+                this.state.statistics.userAttackCount[userId] = Math.max(1, actualAttacks);
+                console.log(`[DogBot] ${userId}의 공격 횟수를 ${this.state.statistics.userAttackCount[userId]}로 설정`);
             }
         }
         
@@ -458,6 +540,21 @@ class DogBotStateManager {
                 console.log(`[DogBot] ${userId}를 participants에 추가`);
             }
         }
+        
+        // 총합 재계산
+        this.state.statistics.totalAttacks = Object.values(this.state.statistics.userAttackCount).reduce((sum, count) => sum + count, 0);
+        this.state.statistics.totalDamage = Object.values(this.state.statistics.userDamage).reduce((sum, damage) => sum + damage, 0);
+        
+        // 현재 체력 재계산 (3층) - 주석 처리: HP 재계산으로 인한 문제 방지
+        // 관리자가 수동으로 HP를 조정한 경우를 위해 재계산 비활성화
+        /*
+        if (this.state.floors && this.state.floors['3'] && this.state.status.currentFloor === 3) {
+            const floor3Damage = this.state.statistics.attackLog
+                .filter(log => log.floor === 3)
+                .reduce((sum, log) => sum + log.damage, 0);
+            this.state.floors['3'].currentHP = 240000 - floor3Damage;
+        }
+        */
         
         this.saveState();
         console.log('[DogBot] 데이터 무결성 검사 완료');
@@ -523,20 +620,28 @@ class DogBotStateManager {
     }
 }
 
-// 싱글톤 인스턴스
-const stateManager = new DogBotStateManager();
+// 싱글톤 인스턴스 (전역으로 하나만 생성)
+// 댕댕봇 이벤트 종료 - 인스턴스 생성 중단
+if (!global.dogBotStateManager) {
+    // console.log('[DogBot] 새로운 StateManager 인스턴스 생성'); // 로그 제거
+    global.dogBotStateManager = new DogBotStateManager();
+} else {
+    // console.log('[DogBot] 기존 StateManager 인스턴스 사용'); // 로그 제거
+}
 
-// 프로세스 종료 시 상태 저장
-process.on('SIGINT', async () => {
-    console.log('[DogBot] 프로세스 종료, 상태 저장 중...');
-    await stateManager.saveState();
-    process.exit(0);
-});
+const stateManager = global.dogBotStateManager;
 
-process.on('SIGTERM', async () => {
-    console.log('[DogBot] 프로세스 종료, 상태 저장 중...');
-    await stateManager.saveState();
-    process.exit(0);
-});
+// 프로세스 종료 시 상태 저장 - 댕댕봇 이벤트 종료로 비활성화
+// process.on('SIGINT', async () => {
+//     console.log('[DogBot] 프로세스 종료, 상태 저장 중...');
+//     await stateManager.saveState();
+//     process.exit(0);
+// });
+
+// process.on('SIGTERM', async () => {
+//     console.log('[DogBot] 프로세스 종료, 상태 저장 중...');
+//     await stateManager.saveState();
+//     process.exit(0);
+// });
 
 module.exports = stateManager;

@@ -1,4 +1,5 @@
 const DailyMission = require('../models/DailyMission');
+const User = require('../models/User');
 
 // 미션 진행도 업데이트 헬퍼
 class MissionHelper {
@@ -44,15 +45,32 @@ class MissionHelper {
     
     // 골드 획득
     static async updateGoldEarned(userId, amount) {
-        let mission = await DailyMission.findOne({ userId });
-        if (!mission) {
-            mission = new DailyMission({ userId });
+        try {
+            console.log(`[MissionHelper] 골드 획득 미션 업데이트 - userId: ${userId}, amount: ${amount}`);
+            
+            // User 데이터가 있는지 먼저 확인
+            const user = await User.findOne({ discordId: userId });
+            if (!user) {
+                console.log(`[MissionHelper] 경고: User 데이터가 없는 유저의 미션 업데이트 시도 - userId: ${userId}`);
+                return;
+            }
+            
+            let mission = await DailyMission.findOne({ userId });
+            if (!mission) {
+                console.log(`[MissionHelper] 새 미션 데이터 생성 - userId: ${userId}`);
+                mission = new DailyMission({ userId });
+                await mission.save();
+            }
+            
+            const beforeProgress = mission.dailyMissions.earnGold.progress;
+            mission.updateDailyProgress('earnGold', amount);
+            mission.updateWeeklyProgress('totalGoldEarned', amount);
             await mission.save();
+            
+            console.log(`[MissionHelper] 골드 미션 진행도: ${beforeProgress} → ${mission.dailyMissions.earnGold.progress}`);
+        } catch (error) {
+            console.error('[MissionHelper] 골드 획득 미션 업데이트 오류:', error);
         }
-        
-        mission.updateDailyProgress('earnGold', amount);
-        mission.updateWeeklyProgress('totalGoldEarned', amount);
-        await mission.save();
     }
     
     // 강화 시도

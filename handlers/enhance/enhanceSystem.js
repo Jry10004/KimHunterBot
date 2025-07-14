@@ -216,15 +216,15 @@ class EnhanceSystem {
             });
         }
 
-        // 강화 가능한 아이템 목록
+        // 강화 가능한 아이템 목록 (장착한 장비만)
         const enhanceableItems = this.getEnhanceableItems(user);
 
         if (enhanceableItems.length === 0) {
             const noItemEmbed = new EmbedBuilder()
                 .setColor('#FF0000')
-                .setTitle('📦 아이템이 없습니다!')
-                .setDescription('계급을 부여할 아이템이 없습니다.\n\n상점에서 아이템을 구매하거나\n랜덤 아이템 뽑기를 통해 아이템을 획득하세요!')
-                .setFooter({ text: '장비 아이템만 계급 부여가 가능합니다.' });
+                .setTitle('⚔️ 장착한 장비가 없습니다!')
+                .setDescription('계급을 부여하려면 먼저 장비를 장착해야 합니다.\n\n📌 **장착한 장비만 계급 승급이 가능합니다**\n\n캐릭터 메뉴에서 장비를 장착한 후 다시 시도해주세요!')
+                .setFooter({ text: '장비 장착: 메인메뉴 → 캐릭터 → 장비' });
             
             const buttons = new ActionRowBuilder()
                 .addComponents(
@@ -248,23 +248,43 @@ class EnhanceSystem {
         const embed = new EmbedBuilder()
             .setColor('#FFD700')
             .setTitle('🎖️ 김헌터 계급 승급')
-            .setDescription('아이템에 김헌터 계급을 부여하여 더 강력하게 만드세요!')
+            .setDescription('📌 **장착한 장비만 계급 승급이 가능합니다**\n\n아이템에 김헌터 계급을 부여하여 더 강력하게 만드세요!')
             .addFields(
                 { name: '💰 보유 골드', value: `${formatNumber(user.gold)}G`, inline: true },
-                { name: '📦 승급 가능 아이템', value: `${enhanceableItems.length}개`, inline: true }
+                { name: '⚔️ 장착 장비', value: `${enhanceableItems.length}개`, inline: true }
             )
-            .setFooter({ text: '계급을 부여할 아이템을 선택하세요!' });
+            .setFooter({ text: '승급할 장비를 선택하세요! (장착 중인 장비만 표시됩니다)' });
+
+        // 슬롯 이름 한글 변환
+        const slotNames = {
+            weapon: '🗡️ 무기',
+            armor: '🛡️ 갑옷',
+            shield: '🛡️ 방패',
+            helmet: '⛑️ 투구',
+            gloves: '🧤 장갑',
+            boots: '👢 신발',
+            belt: '🎗️ 벨트',
+            cloak: '🧥 망토',
+            ring: '💍 반지',
+            necklace: '📿 목걸이',
+            earring: '💎 귀걸이',
+            accessory: '🎀 장신구'
+        };
 
         // 아이템 선택 메뉴
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('enhance_select_item')
-            .setPlaceholder('강화할 아이템을 선택하세요')
+            .setPlaceholder('강화할 장비를 선택하세요')
             .addOptions(
-                enhanceableItems.slice(0, 25).map(item => ({
-                    label: `${item.name} [${ENHANCE_SYSTEM.rankNames[item.enhanceLevel || 0]}]`,
-                    description: `${this.getItemTypeKorean(item.type)} | ${item.rarity || '일반'}`,
-                    value: item._id ? item._id.toString() : `${item.name}_${Date.now()}`
-                }))
+                enhanceableItems.slice(0, 25).map(item => {
+                    const slotName = slotNames[item.equipmentSlot] || slotNames[item.type] || '장비';
+                    const enhancement = item.enhanceLevel ? ` [${ENHANCE_SYSTEM.rankNames[item.enhanceLevel]}]` : ' [무계급]';
+                    return {
+                        label: `${slotName} - ${item.name}${enhancement}`,
+                        description: `${item.rarity || '일반'} 등급`,
+                        value: item._id ? item._id.toString() : `${item.inventoryIndex}_${Date.now()}`
+                    };
+                })
             );
 
         const selectRow = new ActionRowBuilder().addComponents(selectMenu);
@@ -302,14 +322,45 @@ class EnhanceSystem {
     // 아이템 강화 상세
     async showEnhanceDetail(interaction, itemId) {
         const user = await getUser(interaction.user.id);
-        const item = user.inventory.find(i => 
-            (i._id && i._id.toString() === itemId) || 
-            (`${i.name}_${Date.now()}`.startsWith(itemId.split('_')[0]))
-        );
+        let item = null;
+        let itemInventoryIndex = -1;
+        
+        // itemId가 인덱스_타임스탬프 형식인 경우
+        if (itemId.includes('_')) {
+            const indexStr = itemId.split('_')[0];
+            const index = parseInt(indexStr);
+            if (!isNaN(index) && user.inventory[index]) {
+                item = user.inventory[index];
+                itemInventoryIndex = index;
+            }
+        }
+        
+        // MongoDB ID로 찾기
+        if (!item) {
+            const foundIndex = user.inventory.findIndex(i => 
+                i._id && i._id.toString() === itemId
+            );
+            if (foundIndex !== -1) {
+                item = user.inventory[foundIndex];
+                itemInventoryIndex = foundIndex;
+            }
+        }
 
         if (!item) {
             return await interaction.reply({
                 content: '❌ 아이템을 찾을 수 없습니다!',
+                flags: 64
+            });
+        }
+        
+        // 장착 확인
+        const isEquipped = Object.values(user.equipment || {}).includes(itemInventoryIndex) ||
+                          (item.inventorySlot !== undefined && 
+                           Object.values(user.equipment || {}).includes(item.inventorySlot));
+        
+        if (!isEquipped) {
+            return await interaction.reply({
+                content: '❌ 장착하지 않은 장비는 강화할 수 없습니다!\n\n📌 캐릭터 메뉴에서 장비를 장착한 후 다시 시도해주세요.',
                 flags: 64
             });
         }
@@ -434,6 +485,7 @@ class EnhanceSystem {
         this.sessions.set(sessionId, {
             userId: user.discordId,
             itemId: itemId,
+            itemInventoryIndex: itemInventoryIndex,
             item: item,
             cost: cost,
             successRate: enhancedRate,
@@ -482,14 +534,37 @@ class EnhanceSystem {
         }
 
         const user = await getUser(interaction.user.id);
-        const item = user.inventory.find(i => 
-            (i._id && i._id.toString() === session.itemId) || 
-            (i.name === session.item.name)
-        );
+        let item = null;
+        
+        // 세션에 저장된 인벤토리 인덱스 사용
+        if (session.itemInventoryIndex !== undefined && session.itemInventoryIndex !== -1) {
+            item = user.inventory[session.itemInventoryIndex];
+        }
+        
+        // 인덱스로 못 찾으면 다른 방법 시도
+        if (!item) {
+            item = user.inventory.find(i => 
+                (i._id && i._id.toString() === session.itemId) || 
+                (i.name === session.item.name)
+            );
+        }
 
         if (!item) {
             return await interaction.reply({
                 content: '❌ 아이템을 찾을 수 없습니다!',
+                flags: 64
+            });
+        }
+        
+        // 장착 확인
+        const itemIndex = user.inventory.indexOf(item);
+        const isEquipped = Object.values(user.equipment || {}).includes(itemIndex) ||
+                          (item.inventorySlot !== undefined && 
+                           Object.values(user.equipment || {}).includes(item.inventorySlot));
+        
+        if (!isEquipped) {
+            return await interaction.reply({
+                content: '❌ 장착하지 않은 장비는 강화할 수 없습니다!',
                 flags: 64
             });
         }
@@ -569,7 +644,7 @@ class EnhanceSystem {
             });
             
             // 미션 진행도 업데이트 (성공)
-            await MissionHelper.updateEnhanceTry(user.discordId, true);
+            await MissionHelper.updateEnhanceTry(interaction.user.id, true);
 
             // 라이프 시스템 뉴스 연동
             const lifeSystem = require('../../systems/lifeSystemIntegration');
@@ -716,10 +791,13 @@ class EnhanceSystem {
                     );
             } else {
                 // 아이템 파괴
-                const index = user.inventory.findIndex(i => 
-                    (i._id && i._id.toString() === session.itemId) || 
-                    (i.name === session.item.name)
-                );
+                const index = session.itemInventoryIndex !== undefined && session.itemInventoryIndex !== -1 
+                    ? session.itemInventoryIndex 
+                    : user.inventory.findIndex(i => 
+                        (i._id && i._id.toString() === session.itemId) || 
+                        (i.name === session.item.name)
+                    );
+                    
                 if (index > -1) {
                     user.inventory.splice(index, 1);
                 }
@@ -756,7 +834,7 @@ class EnhanceSystem {
             });
             
             // 미션 진행도 업데이트 (실패)
-            await MissionHelper.updateEnhanceTry(user.discordId, false);
+            await MissionHelper.updateEnhanceTry(interaction.user.id, false);
         }
 
         await user.save();
@@ -868,18 +946,68 @@ class EnhanceSystem {
         }
     }
 
-    // 강화 가능한 아이템 목록 조회
+    // 강화 가능한 아이템 목록 조회 (장착한 장비만)
     getEnhanceableItems(user) {
-        if (!user.inventory) return [];
+        if (!user.inventory || !user.equipment) return [];
         
-        return user.inventory.filter(item => {
-            // 장비 아이템만 강화 가능
-            const isEquipment = ['weapon', 'armor', 'accessory'].includes(item.type) ||
-                               ['sword', 'shield', 'helmet', 'ring'].includes(item.category);
-            const notMaxLevel = (item.enhanceLevel || 0) < ENHANCE_SYSTEM.maxLevel;
-            
-            return isEquipment && notMaxLevel;
+        const equippedItems = [];
+        
+        // equipment 객체의 각 슬롯을 확인
+        Object.entries(user.equipment).forEach(([slot, itemIndex]) => {
+            // 유효한 아이템 인덱스인지 확인
+            if (itemIndex !== null && itemIndex !== undefined && itemIndex !== -1) {
+                const item = user.inventory[itemIndex];
+                if (item) {
+                    // 장비 아이템이고 최대 레벨이 아닌 경우
+                    const isEquipment = ['weapon', 'armor', 'accessory'].includes(item.type) ||
+                                       ['sword', 'shield', 'helmet', 'ring', 'bow', 'staff', 'dagger',
+                                        'gloves', 'boots', 'belt', 'cloak', 'necklace', 'earring'].includes(item.category) ||
+                                       ['weapon', 'armor', 'shield', 'helmet', 'gloves', 'boots', 
+                                        'belt', 'cloak', 'ring', 'necklace', 'earring'].includes(item.type);
+                    const notMaxLevel = (item.enhanceLevel || 0) < ENHANCE_SYSTEM.maxLevel;
+                    
+                    if (isEquipment && notMaxLevel) {
+                        // 슬롯 정보 추가
+                        item.equipmentSlot = slot;
+                        item.inventoryIndex = itemIndex;
+                        equippedItems.push(item);
+                    }
+                }
+            }
         });
+        
+        // inventorySlot을 사용하는 경우도 체크
+        user.inventory.forEach((item, index) => {
+            if (item && item.inventorySlot !== undefined) {
+                // 이미 추가되지 않은 아이템인지 확인
+                const alreadyAdded = equippedItems.some(equipped => 
+                    equipped.inventoryIndex === index
+                );
+                
+                if (!alreadyAdded) {
+                    // equipment에 해당 inventorySlot이 있는지 확인
+                    const isEquipped = Object.values(user.equipment || {}).some(slotValue => 
+                        slotValue === item.inventorySlot
+                    );
+                    
+                    if (isEquipped) {
+                        const isEquipment = ['weapon', 'armor', 'accessory'].includes(item.type) ||
+                                           ['sword', 'shield', 'helmet', 'ring', 'bow', 'staff', 'dagger',
+                                            'gloves', 'boots', 'belt', 'cloak', 'necklace', 'earring'].includes(item.category) ||
+                                           ['weapon', 'armor', 'shield', 'helmet', 'gloves', 'boots', 
+                                            'belt', 'cloak', 'ring', 'necklace', 'earring'].includes(item.type);
+                        const notMaxLevel = (item.enhanceLevel || 0) < ENHANCE_SYSTEM.maxLevel;
+                        
+                        if (isEquipment && notMaxLevel) {
+                            item.inventoryIndex = index;
+                            equippedItems.push(item);
+                        }
+                    }
+                }
+            }
+        });
+        
+        return equippedItems;
     }
 
     // 보호석 확인

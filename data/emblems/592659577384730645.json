@@ -1,0 +1,34 @@
+[
+  {
+    "emblemName": "초보전사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-13T20:02:38.161Z",
+    "price": 300000,
+    "level": 20,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "튼튼한 기사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-13T20:02:57.856Z",
+    "price": 500000,
+    "level": 35,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "용맹한 검사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-13T20:03:13.746Z",
+    "price": 1500000,
+    "level": 50,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "맹령한 전사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-13T20:03:30.673Z",
+    "price": 3000000,
+    "level": 65,
+    "enhanceLevel": 0
+  }
+]

@@ -1,678 +1,888 @@
-const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const User = require('../../models/User');
 const { getUser, formatNumber } = require('../common/utils');
-const { applyDungeonRewardBonus, applyExpBonus, applyGoldBonus } = require('../common/specialEffects');
-const { calculateCombatPower } = require('../common/utils');
-const GAME_GIFS = require('../../data/gameGifs');
+const { calculateCombatPower } = require('../common/combatPower');
+const MissionHelper = require('../../utils/missionHelper');
+const ActivityLog = require('../../models/ActivityLog');
+const { 
+    DUNGEON_THEMES, 
+    DUNGEON_EVENTS, 
+    DUNGEON_BUFFS, 
+    PENDULUM_SKILLS,
+    calculateDungeonScore,
+    MONSTER_AI_PATTERNS 
+} = require('../../data/dungeonEnhanced');
+const ARTIFACT_SYSTEM = require('../../data/artifactSystem');
 
-// 던전 시스템 설정
-const DUNGEON_SYSTEM = {
-    // 층별 스케일링 설정
-    floorScaling: {
-        gold: 1.2,      // 층당 20% 증가
-        exp: 1.25       // 층당 25% 증가
-    },
-    dungeons: [
-        {
-            id: 'goblin_cave',
-            name: '고블린 동굴',
-            emoji: '🗿',
-            requiredLevel: 10,
-            floors: 5,
-            entryFee: 5000,
-            monsters: [
-                { name: '고블린', hp: 500, attack: 50, defense: 20 },
-                { name: '고블린 전사', hp: 800, attack: 80, defense: 30 },
-                { name: '고블린 주술사', hp: 600, attack: 100, defense: 20 }
-            ],
-            boss: { name: '고블린 왕', hp: 3000, attack: 150, defense: 50 },
-            rewards: {
-                gold: { min: 1000, max: 3000 },
-                exp: { min: 2000, max: 6000 },  // 4배 상향
-                items: [
-                    { id: 'goblin_tooth', name: '고블린 이빨', chance: 0.3 },
-                    { id: 'shabby_sword', name: '낡은 검', chance: 0.1 }
-                ]
-            }
-        },
-        {
-            id: 'dark_forest',
-            name: '어둠의 숲',
-            emoji: '🌲',
-            requiredLevel: 25,
-            floors: 7,
-            entryFee: 10000,
-            monsters: [
-                { name: '늑대', hp: 1200, attack: 120, defense: 40 },
-                { name: '검은 곰', hp: 2000, attack: 150, defense: 60 },
-                { name: '나무 정령', hp: 1500, attack: 100, defense: 80 }
-            ],
-            boss: { name: '숲의 수호자', hp: 8000, attack: 250, defense: 100 },
-            rewards: {
-                gold: { min: 3000, max: 8000 },
-                exp: { min: 6000, max: 14000 },  // 4배 상향
-                items: [
-                    { id: 'wolf_fang', name: '늑대 송곳니', chance: 0.3 },
-                    { id: 'nature_essence', name: '자연의 정수', chance: 0.15 },
-                    { id: 'forest_bow', name: '숲의 활', chance: 0.05 }
-                ]
-            }
-        },
-        {
-            id: 'frozen_tower',
-            name: '얼어붙은 탑',
-            emoji: '🏔️',
-            requiredLevel: 40,
-            floors: 10,
-            entryFee: 25000,
-            monsters: [
-                { name: '얼음 골렘', hp: 3000, attack: 200, defense: 150 },
-                { name: '프로스트 메이지', hp: 2000, attack: 300, defense: 50 },
-                { name: '설인', hp: 4000, attack: 250, defense: 100 }
-            ],
-            boss: { name: '얼음 여왕', hp: 15000, attack: 400, defense: 200 },
-            rewards: {
-                gold: { min: 8000, max: 20000 },
-                exp: { min: 16000, max: 32000 },  // 4배 상향
-                items: [
-                    { id: 'ice_crystal', name: '얼음 수정', chance: 0.4 },
-                    { id: 'frozen_heart', name: '얼어붙은 심장', chance: 0.2 },
-                    { id: 'frost_blade', name: '서리검', chance: 0.08 }
-                ]
-            }
-        },
-        {
-            id: 'dragons_lair',
-            name: '용의 둥지',
-            emoji: '🐉',
-            requiredLevel: 60,
-            floors: 15,
-            entryFee: 50000,
-            monsters: [
-                { name: '드레이크', hp: 6000, attack: 400, defense: 200 },
-                { name: '화염 정령', hp: 5000, attack: 500, defense: 100 },
-                { name: '용인족 전사', hp: 8000, attack: 350, defense: 300 }
-            ],
-            boss: { name: '고대 드래곤', hp: 30000, attack: 700, defense: 400 },
-            rewards: {
-                gold: { min: 20000, max: 50000 },
-                exp: { min: 40000, max: 80000 },  // 4배 상향
-                items: [
-                    { id: 'dragon_scale', name: '용의 비늘', chance: 0.5 },
-                    { id: 'dragon_blood', name: '용의 피', chance: 0.3 },
-                    { id: 'dragon_sword', name: '용검', chance: 0.02 }
-                ]
-            }
-        }
-    ],
-    floorRewards: {
-        gold: 2000,    // 기본 골드 4배 상향
-        exp: 800       // 기본 경험치 4배 상향
-    }
-};
-
-// 던전 세션 관리
-const dungeonSessions = new Map();
-
-class DungeonSystem {
+class AutoDungeonSystem {
     constructor() {
-        this.sessions = dungeonSessions;
+        this.activeDungeons = new Map();
+        this.dungeonMonsters = this.initializeMonsters();
+        this.floors = 50;
     }
 
-    // 던전 메인 메뉴
-    async showDungeonMenu(interaction) {
-        const user = await getUser(interaction.user.id);
-        if (!user || !user.registered) {
-            return await interaction.reply({ 
-                content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
-                flags: 64 
+    // 몬스터 초기화 (기존과 동일)
+    initializeMonsters() {
+        const monsters = new Map();
+        
+        for (let floor = 1; floor <= 50; floor++) {
+            const difficulty = Math.ceil(floor / 10);
+            const baseStats = this.getBaseStatsForFloor(floor);
+            
+            monsters.set(floor, {
+                name: this.getMonsterName(floor),
+                emoji: this.getMonsterEmoji(floor),
+                stats: baseStats,
+                rewards: this.getFloorRewards(floor),
+                specialAbility: floor % 10 === 0 ? this.getBossAbility(floor) : null
             });
         }
-
-        // 던전 입장권 재생성
-        this.regenerateDungeonTickets(user);
-
-        const availableDungeons = DUNGEON_SYSTEM.dungeons.filter(d => user.level >= d.requiredLevel);
-        const userPower = calculateCombatPower(user);
-
-        const embed = new EmbedBuilder()
-            .setColor('#9b59b6')
-            .setTitle('🏰 던전 탐험')
-            .setDescription('던전을 탐험하고 보물을 획득하세요!')
-            .addFields(
-                { name: '⚔️ 전투력', value: `${formatNumber(userPower)}`, inline: true },
-                { name: '🎫 던전 입장권', value: `${user.dungeonTickets || 5}/5`, inline: true },
-                { name: '💰 보유 골드', value: `${formatNumber(user.gold)}G`, inline: true }
-            )
-            .setFooter({ text: '던전을 선택하여 입장하세요!' });
-
-        const buttons = [];
-        availableDungeons.forEach(dungeon => {
-            buttons.push(
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_enter_${dungeon.id}`)
-                    .setLabel(`${dungeon.emoji} ${dungeon.name} (Lv.${dungeon.requiredLevel})`)
-                    .setStyle(ButtonStyle.Primary)
-            );
-        });
-
-        const rows = [];
-        while (buttons.length > 0) {
-            rows.push(new ActionRowBuilder().addComponents(buttons.splice(0, 5)));
-        }
-
-        // 추가 버튼
-        const extraRow = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('dungeon_ranking')
-                    .setLabel('🏆 던전 랭킹')
-                    .setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder()
-                    .setCustomId('dungeon_history')
-                    .setLabel('📜 탐험 기록')
-                    .setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder()
-                    .setCustomId('main_menu')
-                    .setLabel('🏠 메인 메뉴')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-        rows.push(extraRow);
-
-        return await interaction.reply({
-            embeds: [embed],
-            components: rows,
-            flags: 64
-        });
+        
+        return monsters;
     }
 
-    // 던전 입장
-    async enterDungeon(interaction, dungeonId) {
-        const user = await getUser(interaction.user.id);
-        const dungeon = DUNGEON_SYSTEM.dungeons.find(d => d.id === dungeonId);
+    getBaseStatsForFloor(floor) {
+        // 전투력 균형 조정 - 플레이어 진행도에 맞춰 점진적 증가
+        const baseAttack = 20 + (floor * 8); // 더 낮은 시작점
+        const baseDefense = 15 + (floor * 6);
+        const baseHP = 200 + (floor * 60);
+        
+        return {
+            attack: baseAttack,
+            defense: baseDefense,
+            maxHp: baseHP,
+            currentHp: baseHP,
+            criticalRate: Math.min(3 + Math.floor(floor / 3), 20),
+            accuracy: Math.min(60 + Math.floor(floor * 0.8), 85),
+            evasion: Math.min(3 + Math.floor(floor / 4), 15),
+            lifesteal: Math.min(Math.floor(floor / 15), 8)
+        };
+    }
 
-        if (!dungeon) {
-            return await interaction.reply({
-                content: '❌ 존재하지 않는 던전입니다!',
-                flags: 64
-            });
+    getMonsterName(floor) {
+        const names = {
+            1: '나약한 슬라임',
+            5: '흉포한 늑대',
+            10: '🔥 화염의 정령왕',
+            15: '어둠의 기사',
+            20: '⚡ 번개의 드래곤',
+            25: '얼음 마녀',
+            30: '💀 죽음의 군주',
+            35: '혼돈의 키메라',
+            40: '👹 지옥의 수문장',
+            45: '고대의 티탄',
+            50: '🌟 최종 보스: 어둠의 황제'
+        };
+        
+        return names[floor] || `${floor}층 몬스터`;
+    }
+
+    getMonsterEmoji(floor) {
+        const emojis = ['👾', '🐺', '🔥', '⚔️', '⚡', '❄️', '💀', '🦴', '👹', '🐉', '🌟'];
+        return emojis[Math.floor(floor / 5)] || '👾';
+    }
+
+    getBossAbility(floor) {
+        const abilities = {
+            10: { name: '화염 폭발', damage: 1.5, effect: 'burn' },
+            20: { name: '번개 강타', damage: 2.0, effect: 'stun' },
+            30: { name: '죽음의 저주', damage: 1.8, effect: 'curse' },
+            40: { name: '지옥불', damage: 2.5, effect: 'hellfire' },
+            50: { name: '절대 파멸', damage: 3.0, effect: 'destruction' }
+        };
+        
+        return abilities[floor] || null;
+    }
+
+    getFloorRewards(floor) {
+        const baseGold = 100 * floor;
+        const baseExp = 50 * floor;
+        
+        const rewards = {
+            gold: baseGold + Math.floor(Math.random() * baseGold),
+            exp: baseExp + Math.floor(Math.random() * baseExp / 2),
+            items: []
+        };
+        
+        // 유물만 드롭 - 층수에 따라 확률 조정
+        // 3층마다 유물 드롭 찬스 (층수가 높을수록 좋은 유물)
+        if (floor % 3 === 0 || floor === 1) { // 1층도 포함하여 첫 보상 보장
+            const artifact = this.getRandomArtifact(floor);
+            if (artifact) {
+                rewards.items.push(artifact);
+            }
+        }
+        
+        // 10층마다 보스 보상 (특별 유물 확정)
+        if (floor % 10 === 0) {
+            rewards.gold *= 3;
+            rewards.exp *= 2;
+            const bossArtifact = this.getBossArtifact(floor);
+            if (bossArtifact) {
+                rewards.items.push(bossArtifact);
+            }
+        }
+        
+        return rewards;
+    }
+    
+    // 랜덤 유물 생성
+    getRandomArtifact(floor) {
+        // 층수에 따른 등급 확률
+        const rarityRoll = Math.random() * 100;
+        let rarity = 'common';
+        
+        if (floor >= 40) {
+            if (rarityRoll < 5) rarity = 'legendary';
+            else if (rarityRoll < 20) rarity = 'epic';
+            else if (rarityRoll < 50) rarity = 'rare';
+        } else if (floor >= 25) {
+            if (rarityRoll < 2) rarity = 'legendary';
+            else if (rarityRoll < 10) rarity = 'epic';
+            else if (rarityRoll < 35) rarity = 'rare';
+        } else if (floor >= 10) {
+            if (rarityRoll < 5) rarity = 'epic';
+            else if (rarityRoll < 25) rarity = 'rare';
+        } else {
+            if (rarityRoll < 15) rarity = 'rare';
+        }
+        
+        const artifactPool = ARTIFACT_SYSTEM.artifacts[rarity];
+        if (!artifactPool || artifactPool.length === 0) return null;
+        
+        const artifact = artifactPool[Math.floor(Math.random() * artifactPool.length)];
+        const value = Math.floor(Math.random() * (artifact.value[1] - artifact.value[0] + 1)) + artifact.value[0];
+        
+        return {
+            type: 'artifact',
+            name: artifact.name,
+            emoji: artifact.emoji,
+            rarity: rarity,
+            value: value,
+            description: artifact.description,
+            quantity: 1
+        };
+    }
+    
+    // 보스 특별 유물
+    getBossArtifact(floor) {
+        if (floor === 50) {
+            // 50층 최종 보스는 레전더리 확정
+            const legendaryArtifacts = ARTIFACT_SYSTEM.artifacts.legendary;
+            const artifact = legendaryArtifacts[Math.floor(Math.random() * legendaryArtifacts.length)];
+            const value = Math.floor(Math.random() * (artifact.value[1] - artifact.value[0] + 1)) + artifact.value[0];
+            
+            return {
+                type: 'artifact',
+                name: artifact.name,
+                emoji: artifact.emoji,
+                rarity: 'legendary',
+                value: value,
+                description: artifact.description,
+                quantity: 1
+            };
+        }
+        
+        // 일반 보스는 에픽 이상
+        return this.getRandomArtifact(floor + 10); // 보너스 층수
+    }
+
+
+    // 던전 자동 탐험 시작
+    async startAutoDungeon(interaction) {
+        const userId = interaction.user.id;
+        
+        // 이미 활성화된 세션이 있는지 확인
+        if (this.activeDungeons.has(userId)) {
+            // 기존 세션 삭제
+            this.activeDungeons.delete(userId);
+            console.log(`[AutoDungeon] 기존 세션 삭제: ${userId}`);
         }
 
-        if (user.level < dungeon.requiredLevel) {
+        // TicketManager로 티켓 재생성 먼저 처리
+        const TicketManager = require('../../utils/ticketManager');
+        let userData = await getUser(userId);
+        userData = await TicketManager.regenerateTickets(userData);
+        
+        // 던전 티켓 체크
+        if (!userData.dungeonTickets || userData.dungeonTickets <= 0) {
+            // 다음 티켓 재생성까지 남은 시간 계산
+            const now = Date.now();
+            const REGEN_TIME = 30 * 60 * 1000; // 30분
+            const lastRegen = userData.lastDungeonTicketRegen ? new Date(userData.lastDungeonTicketRegen).getTime() : (now - REGEN_TIME + 60000);
+            const nextRegenTime = lastRegen + REGEN_TIME;
+            const timeUntilRegen = Math.max(0, nextRegenTime - now);
+            const minutesLeft = Math.ceil(timeUntilRegen / 60000);
+            
             return await interaction.reply({
-                content: `❌ 레벨 ${dungeon.requiredLevel} 이상이 되어야 입장할 수 있습니다!`,
-                flags: 64
+                content: `🎫 던전 티켓이 부족합니다!\n⏰ **${minutesLeft}분 후** 티켓이 생성됩니다.\n30분마다 1장씩 재생성됩니다.`,
+                ephemeral: true
             });
         }
-
-        if (!user.dungeonTickets || user.dungeonTickets <= 0) {
+        
+        // 티켓 사용 (TicketManager 사용)
+        const ticketResult = await TicketManager.useTicket(userId, 'dungeon');
+        if (!ticketResult.success) {
             return await interaction.reply({
-                content: '❌ 던전 입장권이 부족합니다! (30분마다 1장 재생성)',
-                flags: 64
+                content: ticketResult.error,
+                ephemeral: true
             });
         }
+        userData = ticketResult.user;
+        
+        const combatPower = calculateCombatPower(userData);
+        
+        // 플레이어 스탯 구성
+        const playerStats = {
+            combatPower: combatPower,
+            attack: (userData.stats?.strength || 10) * 10 + (userData.attack || 0),
+            defense: (userData.stats?.vitality || 10) * 5 + (userData.defense || 0),
+            hp: (userData.stats?.vitality || 10) * 100 + (userData.health || 100),
+            criticalRate: Math.min((userData.stats?.luck || 10) * 0.5, 30),
+            accuracy: 85 + Math.min((userData.stats?.agility || 10) * 0.3, 15),
+            evasion: Math.min((userData.stats?.agility || 10) * 0.5, 25),
+            lifesteal: Math.min((userData.stats?.intelligence || 10) * 0.3, 15)
+        };
+        
+        // 탐험 중 GIF 표시
+        const processingEmbed = new EmbedBuilder()
+            .setTitle('⚔️ 던전 탐험 중...')
+            .setDescription('용감하게 던전을 탐험하고 있습니다!')
+            .setImage('https://media.giphy.com/media/3o7btNRptqBgLSKR2w/giphy.gif')
+            .setColor('#FFA500')
+            .setFooter({ text: '잠시만 기다려주세요...' });
 
-        if (user.gold < dungeon.entryFee) {
-            return await interaction.reply({
-                content: `❌ 입장료가 부족합니다! (필요: ${formatNumber(dungeon.entryFee)}G)`,
-                flags: 64
-            });
-        }
+        await interaction.reply({ embeds: [processingEmbed] });
 
-        // 입장료 차감 및 티켓 사용
-        user.gold -= dungeon.entryFee;
-        user.dungeonTickets--;
-        await user.save();
+        // 자동 탐험 진행
+        const dungeonResult = await this.simulateDungeonRun(userData, playerStats);
 
-        // 던전 세션 생성
-        const sessionId = `${user.discordId}_${Date.now()}`;
-        const session = {
-            userId: user.discordId,
-            dungeonId: dungeon.id,
-            currentFloor: 1,
-            maxFloors: dungeon.floors,
+        // 결과 표시
+        await this.showDungeonResults(interaction, dungeonResult, userData);
+    }
+
+    // 던전 자동 진행 시뮬레이션
+    async simulateDungeonRun(userData, playerStats) {
+        const startFloor = userData.dungeonProgress?.lastFloor || 1;
+        const pendulumSkillLevels = {
+            high: Math.min(7, Math.floor((userData.pvpEnhancement?.high || 0) / 5) + 1),
+            middle: Math.min(7, Math.floor((userData.pvpEnhancement?.middle || 0) / 5) + 1),
+            low: Math.min(7, Math.floor((userData.pvpEnhancement?.low || 0) / 5) + 1)
+        };
+
+        const result = {
+            startFloor,
+            finalFloor: startFloor, // 시작 층에서 시작
             totalGold: 0,
             totalExp: 0,
             items: [],
-            startTime: Date.now(),
-            currentMonster: null,
-            userHp: 1000 + (user.level * 10),
-            userMaxHp: 1000 + (user.level * 10)
+            battleLogs: [],
+            skillActivations: {
+                high: 0,
+                middle: 0,
+                low: 0
+            },
+            events: [],
+            deathReason: null,
+            duration: 0,
+            killCount: 0,
+            playerCombatPower: playerStats.combatPower || 0
         };
 
-        this.sessions.set(sessionId, session);
+        let currentHp = playerStats.hp;
+        const maxHp = playerStats.hp;
+        let killStreak = 0;
 
-        // 첫 번째 층 시작
-        return await this.startFloor(interaction, sessionId);
-    }
+        // 각 층 자동 진행 (최대 50층까지)
+        for (let floor = startFloor; floor <= 50; floor++) {
+            const monster = this.dungeonMonsters.get(floor);
+            const monsterCombatPower = this.calculateMonsterCombatPower(monster.stats);
+            
+            // 전투력 비교 - 플레이어가 너무 약하면 패배 확률 증가
+            const powerRatio = (playerStats.combatPower || 1) / (monsterCombatPower || 1);
+            
+            const floorResult = await this.simulateFloorBattle(
+                floor, 
+                playerStats, 
+                currentHp, 
+                maxHp, 
+                pendulumSkillLevels,
+                killStreak,
+                powerRatio
+            );
 
-    // 층 시작
-    async startFloor(interaction, sessionId) {
-        const session = this.sessions.get(sessionId);
-        if (!session) {
-            return await interaction.reply({
-                content: '❌ 유효하지 않은 던전 세션입니다!',
-                flags: 64
+            // 전투 로그 추가
+            result.battleLogs.push({
+                floor,
+                monsterName: floorResult.monsterName,
+                monsterPower: monsterCombatPower,
+                damage: floorResult.damageDealt,
+                damageTaken: floorResult.damageTaken,
+                skillsUsed: floorResult.skillsActivated,
+                victory: floorResult.victory
             });
-        }
 
-        const user = await getUser(session.userId);
-        const dungeon = DUNGEON_SYSTEM.dungeons.find(d => d.id === session.dungeonId);
+            // 스킬 발동 횟수 누적
+            if (floorResult.skillsActivated.high) result.skillActivations.high++;
+            if (floorResult.skillsActivated.middle) result.skillActivations.middle++;
+            if (floorResult.skillsActivated.low) result.skillActivations.low++;
 
-        // 몬스터 선택 (보스층 체크)
-        let monster;
-        if (session.currentFloor === dungeon.floors) {
-            // 보스층
-            monster = { ...dungeon.boss, isBoss: true };
-        } else {
-            // 일반 몬스터
-            monster = { ...dungeon.monsters[Math.floor(Math.random() * dungeon.monsters.length)] };
-        }
-
-        session.currentMonster = {
-            ...monster,
-            currentHp: monster.hp,
-            maxHp: monster.hp
-        };
-
-        const embed = new EmbedBuilder()
-            .setColor(monster.isBoss ? '#FF0000' : '#9b59b6')
-            .setTitle(`🏰 ${dungeon.name} - ${session.currentFloor}층`)
-            .setDescription(monster.isBoss ? '⚠️ **보스 등장!**' : '몬스터와 조우했습니다!')
-            .setImage(monster.isBoss ? GAME_GIFS.dungeon.boss : GAME_GIFS.dungeon.enter)
-            .addFields(
-                { 
-                    name: `${monster.isBoss ? '👹' : '👾'} ${monster.name}`, 
-                    value: `HP: ${this.createHpBar(monster.currentHp, monster.maxHp)}\n${formatNumber(monster.currentHp)}/${formatNumber(monster.maxHp)}`, 
-                    inline: false 
-                },
-                { 
-                    name: '🛡️ 플레이어', 
-                    value: `HP: ${this.createHpBar(session.userHp, session.userMaxHp)}\n${session.userHp}/${session.userMaxHp}`, 
-                    inline: false 
+            // 랜덤 이벤트 처리
+            if (Math.random() < 0.2) {
+                const event = this.generateRandomEvent(floor);
+                result.events.push(event);
+                if (event.heal > 0) {
+                    currentHp = Math.min(currentHp + event.heal, maxHp);
+                } else if (event.heal < 0) {
+                    currentHp = Math.max(currentHp + event.heal, 0);
                 }
-            )
-            .setFooter({ text: `던전 진행도: ${session.currentFloor}/${dungeon.floors}층` });
-
-        const buttons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_attack_${sessionId}`)
-                    .setLabel('⚔️ 공격')
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_skill_${sessionId}`)
-                    .setLabel('💥 스킬 사용')
-                    .setStyle(ButtonStyle.Success)
-                    .setDisabled(!user.mp || user.mp < 30),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_potion_${sessionId}`)
-                    .setLabel('🧪 포션 사용')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(!this.hasPotion(user)),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_flee_${sessionId}`)
-                    .setLabel('🏃 탈출')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-        if (interaction.replied || interaction.deferred) {
-            return await interaction.editReply({
-                embeds: [embed],
-                components: [buttons]
-            });
-        } else {
-            return await interaction.update({
-                embeds: [embed],
-                components: [buttons]
-            });
-        }
-    }
-
-    // 던전 공격
-    async performAttack(interaction, sessionId) {
-        const session = this.sessions.get(sessionId);
-        if (!session) {
-            return await interaction.reply({
-                content: '❌ 유효하지 않은 던전 세션입니다!',
-                flags: 64
-            });
-        }
-
-        const user = await getUser(session.userId);
-        const dungeon = DUNGEON_SYSTEM.dungeons.find(d => d.id === session.dungeonId);
-        const monster = session.currentMonster;
-
-        // 플레이어 공격
-        const playerPower = calculateCombatPower(user);
-        const playerDamage = Math.max(1, playerPower - monster.defense);
-        monster.currentHp -= playerDamage;
-
-        let battleLog = `⚔️ ${monster.name}에게 ${formatNumber(playerDamage)}의 데미지!\n`;
-
-        // 몬스터 반격 (생존 시)
-        if (monster.currentHp > 0) {
-            const monsterDamage = Math.max(1, monster.attack - (user.defense || 0));
-            session.userHp -= monsterDamage;
-            battleLog += `👾 ${monster.name}의 반격! ${monsterDamage}의 데미지를 받았습니다!`;
-        }
-
-        // 전투 결과 확인
-        if (monster.currentHp <= 0) {
-            // 몬스터 처치
-            return await this.handleMonsterDefeat(interaction, session, dungeon);
-        } else if (session.userHp <= 0) {
-            // 플레이어 패배
-            return await this.handlePlayerDefeat(interaction, session, dungeon);
-        }
-
-        // 전투 계속
-        const embed = new EmbedBuilder()
-            .setColor('#9b59b6')
-            .setTitle(`⚔️ 전투 중 - ${dungeon.name} ${session.currentFloor}층`)
-            .setDescription(battleLog)
-            .setImage(GAME_GIFS.dungeon.battle)
-            .addFields(
-                { 
-                    name: `${monster.isBoss ? '👹' : '👾'} ${monster.name}`, 
-                    value: `HP: ${this.createHpBar(monster.currentHp, monster.maxHp)}\n${formatNumber(monster.currentHp)}/${formatNumber(monster.maxHp)}`, 
-                    inline: false 
-                },
-                { 
-                    name: '🛡️ 플레이어', 
-                    value: `HP: ${this.createHpBar(session.userHp, session.userMaxHp)}\n${session.userHp}/${session.userMaxHp}`, 
-                    inline: false 
+                if (event.gold > 0) {
+                    result.totalGold += event.gold;
                 }
-            );
+            }
 
-        const buttons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_attack_${sessionId}`)
-                    .setLabel('⚔️ 공격')
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_skill_${sessionId}`)
-                    .setLabel('💥 스킬 사용')
-                    .setStyle(ButtonStyle.Success)
-                    .setDisabled(!user.mp || user.mp < 30),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_potion_${sessionId}`)
-                    .setLabel('🧪 포션 사용')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(!this.hasPotion(user)),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_flee_${sessionId}`)
-                    .setLabel('🏃 탈출')
-                    .setStyle(ButtonStyle.Danger)
-            );
+            if (floorResult.victory) {
+                result.finalFloor = floor;
+                result.totalGold += floorResult.rewards.gold;
+                result.totalExp += floorResult.rewards.exp;
+                result.items.push(...floorResult.rewards.items);
+                result.killCount++;
+                killStreak++;
+                
+                // HP 회복 (층 회복률에 따라)
+                const healAmount = Math.floor(maxHp * 0.1); // 10% 회복
+                currentHp = Math.min(currentHp - floorResult.damageTaken + healAmount, maxHp);
+            } else {
+                // 패배해도 부분 보상 지급 (처치한 만큼)
+                if (result.killCount > 0) {
+                    result.totalGold += Math.floor(floorResult.rewards.gold * 0.3); // 30% 골드
+                    result.totalExp += Math.floor(floorResult.rewards.exp * 0.3); // 30% 경험치
+                }
+                // 전투력 비교를 더 명확하게 표시
+                const powerDifference = Math.floor(((monsterCombatPower - playerStats.combatPower) / playerStats.combatPower) * 100);
+                const comparison = powerDifference > 0 ? `몬스터가 ${powerDifference}% 더 강함` : `내가 ${Math.abs(powerDifference)}% 더 강함`;
+                result.deathReason = `${floor}층 ${floorResult.monsterName}에게 패배\n나의 전투력: ${playerStats.combatPower} vs 몬스터: ${monsterCombatPower} (${comparison})`;
+                break;
+            }
 
-        return await interaction.update({
-            embeds: [embed],
-            components: [buttons]
-        });
-    }
+            // HP 체크
+            if (currentHp <= 0) {
+                result.deathReason = `${floor}층에서 HP가 0이 되어 쓰러짐`;
+                break;
+            }
 
-    // 몬스터 처치 처리
-    async handleMonsterDefeat(interaction, session, dungeon) {
-        const user = await getUser(session.userId);
-        const monster = session.currentMonster;
-
-        // 층 보상 계산 (스케일링 적용)
-        const floorMultiplier = Math.pow(DUNGEON_SYSTEM.floorScaling.gold, session.currentFloor - 1);
-        const expMultiplier = Math.pow(DUNGEON_SYSTEM.floorScaling.exp, session.currentFloor - 1);
-        
-        let goldReward = Math.floor(DUNGEON_SYSTEM.floorRewards.gold * floorMultiplier);
-        let expReward = Math.floor(DUNGEON_SYSTEM.floorRewards.exp * expMultiplier);
-
-        // 보스 보상 추가
-        if (monster.isBoss) {
-            const bossGold = Math.floor(Math.random() * (dungeon.rewards.gold.max - dungeon.rewards.gold.min) + dungeon.rewards.gold.min);
-            const bossExp = Math.floor(Math.random() * (dungeon.rewards.exp.max - dungeon.rewards.exp.min) + dungeon.rewards.exp.min);
-            goldReward += bossGold;
-            expReward += bossExp;
-        }
-
-        // 특수 효과 적용 (던전 보상 +50%)
-        goldReward = applyDungeonRewardBonus(goldReward, user);
-        expReward = applyDungeonRewardBonus(expReward, user);
-
-        session.totalGold += goldReward;
-        session.totalExp += expReward;
-
-        // 아이템 드롭
-        const droppedItems = [];
-        for (const item of dungeon.rewards.items) {
-            if (Math.random() < item.chance) {
-                droppedItems.push(item);
-                session.items.push(item);
+            // 전투력이 너무 낮으면 더 이상 진행 불가 (30% 미만)
+            if (powerRatio < 0.3) {
+                const powerPercentage = Math.floor((playerStats.combatPower / monsterCombatPower) * 100);
+                result.deathReason = `전투력 부족으로 ${floor + 1}층 진입 불가 (전투력 비율: ${powerPercentage}%)`;
+                break;
             }
         }
 
-        const embed = new EmbedBuilder()
-            .setColor('#00FF00')
-            .setTitle('🎉 몬스터 처치!')
-            .setDescription(`${monster.name}을(를) 처치했습니다!`)
-            .setImage(GAME_GIFS.hunting.victory)
-            .addFields(
-                { name: '💰 획득 골드', value: `+${formatNumber(goldReward)}G`, inline: true },
-                { name: '⭐ 획득 경험치', value: `+${formatNumber(expReward)} EXP`, inline: true }
-            );
-
-        if (droppedItems.length > 0) {
-            embed.addFields({
-                name: '🎁 획득 아이템',
-                value: droppedItems.map(item => `• ${item.name}`).join('\n'),
-                inline: false
-            });
-        }
-
-        // 던전 클리어 체크
-        if (session.currentFloor >= dungeon.floors) {
-            // 던전 완료
-            return await this.completeDungeon(interaction, session, dungeon);
-        }
-
-        // 다음 층으로
-        session.currentFloor++;
-        session.currentMonster = null;
-
-        const buttons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_next_${session.sessionId}`)
-                    .setLabel(`🔼 ${session.currentFloor}층으로 이동`)
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_rest_${session.sessionId}`)
-                    .setLabel('🏕️ 휴식 (HP 회복)')
-                    .setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder()
-                    .setCustomId(`dungeon_exit_${session.sessionId}`)
-                    .setLabel('🚪 던전 탈출')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-        return await interaction.update({
-            embeds: [embed],
-            components: [buttons]
-        });
-    }
-
-    // 던전 완료
-    async completeDungeon(interaction, session, dungeon) {
-        const user = await getUser(session.userId);
-
-        // 최종 보상 지급
-        user.gold += session.totalGold;
-        user.exp += session.totalExp;
-
-        // 아이템 지급
-        if (session.items.length > 0) {
-            if (!user.inventory) user.inventory = [];
-            session.items.forEach(item => {
-                user.inventory.push({
-                    id: item.id,
-                    name: item.name,
-                    quantity: 1,
-                    obtainedFrom: dungeon.name
-                });
-            });
-        }
-
-        // 던전 클리어 기록
-        if (!user.dungeonClears) user.dungeonClears = {};
-        user.dungeonClears[dungeon.id] = (user.dungeonClears[dungeon.id] || 0) + 1;
-
-        // 레벨업 체크
-        const requiredExp = user.level * 100;
-        if (user.exp >= requiredExp) {
-            user.level++;
-            user.exp -= requiredExp;
-        }
-
-        await user.save();
-        this.sessions.delete(session.sessionId);
-
-        const clearTime = Math.floor((Date.now() - session.startTime) / 1000);
-        const minutes = Math.floor(clearTime / 60);
-        const seconds = clearTime % 60;
-
-        const embed = new EmbedBuilder()
-            .setColor('#FFD700')
-            .setTitle('🏆 던전 클리어!')
-            .setDescription(`${dungeon.emoji} ${dungeon.name}을(를) 완전히 정복했습니다!`)
-            .addFields(
-                { name: '💰 총 획득 골드', value: `+${formatNumber(session.totalGold)}G`, inline: true },
-                { name: '⭐ 총 획득 경험치', value: `+${formatNumber(session.totalExp)} EXP`, inline: true },
-                { name: '⏱️ 클리어 시간', value: `${minutes}분 ${seconds}초`, inline: true }
-            );
-
-        if (session.items.length > 0) {
-            embed.addFields({
-                name: '🎁 획득한 아이템',
-                value: session.items.map(item => `• ${item.name}`).join('\n'),
-                inline: false
-            });
-        }
-
-        const buttons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('dungeon_menu')
-                    .setLabel('🏰 다른 던전 도전')
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId('main_menu')
-                    .setLabel('🏠 메인 메뉴')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-        return await interaction.update({
-            embeds: [embed],
-            components: [buttons]
-        });
-    }
-
-    // 플레이어 패배 처리
-    async handlePlayerDefeat(interaction, session, dungeon) {
-        const user = await getUser(session.userId);
+        result.duration = 3; // 3초로 가정
         
-        // 부분 보상 (50%)
-        const partialGold = Math.floor(session.totalGold * 0.5);
-        const partialExp = Math.floor(session.totalExp * 0.5);
-
-        user.gold += partialGold;
-        user.exp += partialExp;
-
-        await user.save();
-        this.sessions.delete(session.sessionId);
-
-        const embed = new EmbedBuilder()
-            .setColor('#FF0000')
-            .setTitle('💀 던전 탐험 실패...')
-            .setDescription('체력이 다해 던전에서 쓰러졌습니다...')
-            .addFields(
-                { name: '📊 도달 층수', value: `${session.currentFloor}/${dungeon.floors}층`, inline: true },
-                { name: '💰 부분 보상', value: `+${formatNumber(partialGold)}G (50%)`, inline: true },
-                { name: '⭐ 부분 경험치', value: `+${formatNumber(partialExp)} EXP (50%)`, inline: true }
-            )
-            .setFooter({ text: '더 강해져서 다시 도전하세요!' });
-
-        const buttons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('dungeon_menu')
-                    .setLabel('🏰 던전 목록')
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId('main_menu')
-                    .setLabel('🏠 메인 메뉴')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-        return await interaction.update({
-            embeds: [embed],
-            components: [buttons]
-        });
+        // 최소 보상 보장 (던전 진입 보상)
+        if (result.totalGold === 0) {
+            result.totalGold = 50 * startFloor; // 층당 최소 50골드
+            result.totalExp = 25 * startFloor; // 층당 최소 25경험치
+        }
+        
+        return result;
     }
 
-    // HP 바 생성
-    createHpBar(current, max) {
-        const percentage = Math.floor((current / max) * 10);
-        const filled = '█'.repeat(Math.max(0, percentage));
-        const empty = '░'.repeat(Math.max(0, 10 - percentage));
-        return `[${filled}${empty}] ${Math.floor((current / max) * 100)}%`;
-    }
-
-    // 포션 확인
-    hasPotion(user) {
-        return user.inventory && user.inventory.some(item => 
-            (item.id === 'health_potion' || item.name === '체력 포션') && item.quantity > 0
+    // 몬스터 전투력 계산 (플레이어와 동일한 방식 적용)
+    calculateMonsterCombatPower(stats) {
+        return Math.floor(
+            stats.attack * 2 +
+            stats.defense * 1.5 +
+            stats.maxHp / 10 +
+            stats.criticalRate * 2 +
+            stats.accuracy * 0.5 +
+            stats.evasion * 2
         );
     }
 
-    // 던전 티켓 재생성
-    regenerateDungeonTickets(user) {
-        const now = Date.now();
-        const lastRegen = user.lastDungeonTicketRegen || now;
-        const timePassed = now - lastRegen;
-        const ticketsToAdd = Math.floor(timePassed / (30 * 60 * 1000)); // 30분당 1장
+    // 층별 전투 시뮬레이션
+    async simulateFloorBattle(floor, playerStats, currentHp, maxHp, pendulumSkillLevels, killStreak, powerRatio) {
+        const monster = this.dungeonMonsters.get(floor);
+        const monsterStats = { ...monster.stats };
+        
+        const result = {
+            monsterName: monster.name,
+            damageDealt: 0,
+            damageTaken: 0,
+            skillsActivated: { high: false, middle: false, low: false },
+            victory: false,
+            rewards: monster.rewards
+        };
 
-        if (ticketsToAdd > 0) {
-            user.dungeonTickets = Math.min(5, (user.dungeonTickets || 5) + ticketsToAdd);
-            user.lastDungeonTicketRegen = now;
+        // 전투력 차이가 너무 크면 빠른 승리/패배
+        if (powerRatio > 1.5) {
+            // 우위 (150% 이상)
+            result.victory = true;
+            result.damageDealt = monsterStats.maxHp;
+            result.damageTaken = Math.floor(monsterStats.attack * 0.5);
+            
+            // 스킬도 높은 확률로 발동
+            const randomSkill = ['high', 'middle', 'low'][Math.floor(Math.random() * 3)];
+            if (Math.random() < 0.6) {
+                result.skillsActivated[randomSkill] = true;
+            }
+            return result;
+        } else if (powerRatio < 0.5) {
+            // 열위 (50% 미만)
+            result.victory = false;
+            result.damageDealt = Math.floor(monsterStats.maxHp * 0.3);
+            result.damageTaken = Math.floor(currentHp * 0.7);
+            return result;
+        }
+
+        let playerHp = currentHp;
+        let monsterHp = monsterStats.currentHp;
+
+        // 전투 시뮬레이션 (최대 10턴)
+        for (let turn = 0; turn < 10; turn++) {
+            // 플레이어 공격 위치 (랜덤)
+            const playerPosition = ['high', 'middle', 'low'][Math.floor(Math.random() * 3)];
+            
+            // 펜듈럼 스킬 자동 발동 체크
+            const skillActivation = this.checkSkillActivation(playerPosition, pendulumSkillLevels);
+            if (skillActivation) {
+                result.skillsActivated[playerPosition] = true;
+            }
+
+            // 데미지 계산 (전투력 비율 반영)
+            let damage = this.calculateDamage(playerStats, monsterStats) * Math.max(powerRatio, 0.5);
+            
+            // 스킬 효과 적용
+            if (skillActivation) {
+                switch (playerPosition) {
+                    case 'high': // 별똥베기
+                        damage *= PENDULUM_SKILLS.high.levels[pendulumSkillLevels.high].effect;
+                        break;
+                    case 'middle': // 슈가스팅
+                        const healAmount = Math.floor(maxHp * PENDULUM_SKILLS.middle.levels[pendulumSkillLevels.middle].heal);
+                        playerHp = Math.min(playerHp + healAmount, maxHp);
+                        break;
+                    case 'low': // 버섯팡
+                        // 반격은 몬스터 공격 후 처리
+                        break;
+                }
+            }
+
+            // 킬 스트릭 보너스
+            damage *= (1 + killStreak * 0.05);
+
+            monsterHp -= damage;
+            result.damageDealt += damage;
+
+            // 몬스터 사망 체크
+            if (monsterHp <= 0) {
+                result.victory = true;
+                break;
+            }
+
+            // 몬스터 공격 (전투력 비율 역반영)
+            const monsterDamage = this.calculateDamage(monsterStats, playerStats) * Math.max(1 / powerRatio, 0.5);
+            playerHp -= monsterDamage;
+            result.damageTaken += monsterDamage;
+
+            // 버섯팡 반격 처리
+            if (skillActivation && playerPosition === 'low') {
+                const counterDamage = Math.floor(monsterDamage * PENDULUM_SKILLS.low.levels[pendulumSkillLevels.low].counter);
+                monsterHp -= counterDamage;
+                result.damageDealt += counterDamage;
+            }
+
+            // 플레이어 사망 체크
+            if (playerHp <= 0) {
+                break;
+            }
+        }
+
+        // 10턴 후에도 결정 안나면 전투력 비교로 결정
+        if (playerHp > 0 && monsterHp > 0) {
+            result.victory = powerRatio >= 1.0;
+            if (!result.victory) {
+                result.damageTaken = currentHp;
+            }
+        }
+
+        return result;
+    }
+
+    // 스킬 발동 확률 체크
+    checkSkillActivation(position, skillLevels) {
+        const level = skillLevels[position];
+        if (!PENDULUM_SKILLS[position] || !PENDULUM_SKILLS[position].levels[level]) {
+            return false;
+        }
+        
+        const chance = PENDULUM_SKILLS[position].levels[level].chance || 0;
+        return Math.random() * 100 < chance;
+    }
+
+    // 데미지 계산
+    calculateDamage(attacker, defender) {
+        let damage = attacker.attack - (defender.defense * 0.5);
+        
+        // 크리티컬 확률
+        if (Math.random() * 100 < (attacker.criticalRate || 10)) {
+            damage *= 1.5;
+        }
+        
+        // 회피 확률
+        if (Math.random() * 100 < (defender.evasion || 5)) {
+            damage = 0;
+        }
+        
+        return Math.max(Math.floor(damage), 10);
+    }
+
+    // 랜덤 이벤트 생성
+    generateRandomEvent(floor) {
+        const events = [
+            { name: '💰 보물상자 발견!', gold: floor * 50, heal: 0 },
+            { name: '💚 회복의 샘', gold: 0, heal: 200 },
+            { name: '⚡ 함정 발동!', gold: 0, heal: -100 },
+            { name: '🧙 떠돌이 상인', gold: floor * 20, heal: 50 }
+        ];
+        
+        return events[Math.floor(Math.random() * events.length)];
+    }
+
+    // 던전 결과 표시
+    async showDungeonResults(interaction, result, userData) {
+        const embed = new EmbedBuilder()
+            .setTitle('⚔️ 던전 탐험 결과')
+            .setColor(result.deathReason ? '#FF0000' : '#00FF00');
+
+        // 전투력 정보 및 던전 정보
+        const displayPower = result.playerCombatPower || 100;
+        const remainingTickets = userData.dungeonTickets || 0;
+        let description = `**전투력: ${formatNumber(displayPower)}**\n`;
+        description += `🎫 남은 던전 티켓: ${remainingTickets}/5장`;
+        
+        embed.setDescription(description);
+
+        // 탐험 진행도
+        const progressBar = this.createProgressBar(result.startFloor, result.finalFloor, 50);
+        embed.addFields({
+            name: '📊 탐험 진행도',
+            value: `\`\`\`${result.startFloor}층 ➜ ${result.finalFloor}층\n${progressBar}\`\`\``,
+            inline: false
+        });
+
+        // 기본 정보
+        const progressedFloors = result.killCount; // 실제로 클리어한 층수
+        embed.addFields(
+            { name: '⚔️ 처치 수', value: `${result.killCount}마리`, inline: true },
+            { name: '💀 진행 층수', value: `${progressedFloors}층`, inline: true },
+            { name: '⏱️ 소요 시간', value: `${result.duration}초`, inline: true }
+        );
+
+        // 보상
+        const itemText = result.items.length > 0 
+            ? result.items.map(item => `${item.name} x${item.quantity || 1}`).join(', ')
+            : '없음';
+        
+        // 버그 사냥꾼 칭호 효과 확인 (표시용)
+        const { applyGoldBonus: previewBonus } = require('../common/specialEffects');
+        const previewFinalGold = previewBonus(result.totalGold, userData);
+        const titleBonusApplied = previewFinalGold > result.totalGold;
+        const titleBonusAmount = previewFinalGold - result.totalGold;
+        
+        const goldValue = titleBonusApplied 
+            ? `${formatNumber(result.totalGold)}G → ${formatNumber(previewFinalGold)}G (+${formatNumber(titleBonusAmount)})`
+            : formatNumber(result.totalGold) + 'G';
+        
+        embed.addFields(
+            { name: '💰 획득 골드', value: goldValue, inline: true },
+            { name: '✨ 획득 경험치', value: formatNumber(result.totalExp) + ' EXP', inline: true },
+            { name: '🎁 획득 아이템', value: itemText.substring(0, 50) + (itemText.length > 50 ? '...' : ''), inline: true }
+        );
+
+        // 펜듈럼 스킬 발동 횟수
+        if (result.skillActivations.high > 0 || result.skillActivations.middle > 0 || result.skillActivations.low > 0) {
+            const skillInfo = [];
+            if (result.skillActivations.high > 0) skillInfo.push(`⭐ 별똥베기: ${result.skillActivations.high}회`);
+            if (result.skillActivations.middle > 0) skillInfo.push(`🍄 슈가스팅: ${result.skillActivations.middle}회`);
+            if (result.skillActivations.low > 0) skillInfo.push(`💥 버섯팡: ${result.skillActivations.low}회`);
+            
+            embed.addFields({
+                name: '🎯 스킬 자동 발동',
+                value: skillInfo.join('\n'),
+                inline: false
+            });
+        }
+
+        // 주요 이벤트
+        if (result.events.length > 0) {
+            const eventText = result.events.slice(0, 3).map(e => e.name).join('\n');
+            embed.addFields({
+                name: '📜 특별 이벤트',
+                value: eventText,
+                inline: false
+            });
+        }
+
+        // 칭호 효과 표시
+        if (titleBonusApplied && userData.equippedTitle === '버그 사냥꾼') {
+            embed.addFields({
+                name: '🏷️ 버그 사냥꾼 칭호 효과',
+                value: `골드 획득 +10% 적용됨`,
+                inline: false
+            });
+        }
+        
+        // 사망 이유 또는 성공 메시지
+        if (result.deathReason) {
+            embed.addFields({
+                name: '💀 탐험 종료 이유',
+                value: result.deathReason,
+                inline: false
+            });
+        } else if (result.finalFloor === 50) {
+            embed.addFields({
+                name: '🏆 던전 클리어!',
+                value: '축하합니다! 50층까지 모두 클리어했습니다!',
+                inline: false
+            });
+        }
+
+        // 전투 하이라이트 (보스전 중심)
+        const highlights = result.battleLogs
+            .filter(log => log.floor % 10 === 0 || (log.skillsUsed.high || log.skillsUsed.middle || log.skillsUsed.low))
+            .slice(-5)
+            .map(log => {
+                let text = `${log.floor}층 - ${log.monsterName}`;
+                if (log.floor % 10 === 0) text = `**${text}** (보스)`;
+                text += ` [전투력: ${formatNumber(log.monsterPower)}]`;
+                if (log.victory) {
+                    text += ' ✅';
+                } else {
+                    text += ' ❌';
+                }
+                if (log.skillsUsed.high) text += ' ⭐';
+                if (log.skillsUsed.middle) text += ' 🍄';
+                if (log.skillsUsed.low) text += ' 💥';
+                return text;
+            });
+
+        if (highlights.length > 0) {
+            embed.addFields({
+                name: '⚔️ 주요 전투 기록',
+                value: highlights.join('\n'),
+                inline: false
+            });
+        }
+
+        // 아이템 상세 정보 (아이템이 많을 경우)
+        if (result.items.length > 3) {
+            const itemDetails = result.items.slice(0, 5).map(item => {
+                const rarity = item.rarity ? `[${item.rarity}]` : '';
+                return `• ${item.name} ${rarity} x${item.quantity || 1}`;
+            }).join('\n');
+            
+            embed.addFields({
+                name: '📦 획득 아이템 상세',
+                value: itemDetails + (result.items.length > 5 ? `\n... 외 ${result.items.length - 5}개` : ''),
+                inline: false
+            });
+        }
+        
+        // 보상 지급
+        // 버그 사냥꾼 칭호 효과 적용
+        const { applyGoldBonus } = require('../common/specialEffects');
+        const originalGold = result.totalGold;
+        const finalGold = applyGoldBonus(result.totalGold, userData);
+        
+        let bonusApplied = false;
+        let bonusAmount = 0;
+        if (finalGold > originalGold) {
+            bonusApplied = true;
+            bonusAmount = finalGold - originalGold;
+            console.log(`[Dungeon] ${userData.nickname || userData.discordId} - 특수 효과 적용: ${originalGold} → ${finalGold} (+${bonusAmount})`);
+        }
+        
+        userData.gold += finalGold;
+        userData.exp += result.totalExp;  // 경험치 지급 추가!
+        
+        // 레벨업 체크
+        let leveledUp = false;
+        const requiredExp = userData.level * 100;
+        if (userData.exp >= requiredExp) {
+            userData.level++;
+            userData.exp -= requiredExp;
+            userData.statPoints = (userData.statPoints || 0) + 5;
+            leveledUp = true;
+        }
+        
+        // 활동 로그 기록
+        await ActivityLog.create({
+            userId: userData.discordId,
+            nickname: userData.nickname,
+            activityType: 'dungeon',
+            details: {
+                dungeonFloor: result.finalFloor,
+                dungeonRewards: {
+                    gold: result.totalGold,
+                    exp: result.totalExp,
+                    items: result.items || []
+                },
+                goldChange: result.totalGold,
+                expGained: result.totalExp,
+                levelUp: leveledUp,
+                newLevel: leveledUp ? userData.level : null
+            }
+        });
+        
+        userData.dungeonProgress = {
+            lastFloor: result.finalFloor,
+            lastAttempt: Date.now()
+        };
+        
+        // 골드 획득 미션 업데이트
+        await MissionHelper.updateGoldEarned(userData.discordId, result.totalGold);
+        
+        // 유물 인벤토리에 추가
+        const artifacts = result.items.filter(item => item.type === 'artifact');
+        if (artifacts.length > 0) {
+            if (!userData.artifacts) userData.artifacts = [];
+            
+            for (const artifact of artifacts) {
+                userData.artifacts.push({
+                    name: artifact.name,
+                    emoji: artifact.emoji,
+                    rarity: artifact.rarity,
+                    value: artifact.value,
+                    baseValue: artifact.value,
+                    currentPrice: artifact.value,
+                    priceHistory: [{ price: artifact.value, date: new Date() }],
+                    description: artifact.description,
+                    foundDate: new Date(),
+                    company: '던전 탐험',
+                    region: `${result.finalFloor}층`
+                });
+            }
+        }
+        
+        await userData.save();
+        
+        // 던전 세션 삭제 (중요!)
+        this.activeDungeons.delete(userData.discordId);
+        
+        // 최고 기록 확인 및 뉴스 속보 생성
+        await this.checkAndCreateNewsEvent(userData, result);
+
+        // 버튼
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`dungeon:auto:${interaction.user.id}`)
+                    .setLabel(`${result.finalFloor}층부터 다시 탐험`)
+                    .setEmoji('🔄')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId(`main_menu`)
+                    .setLabel('메인 메뉴')
+                    .setEmoji('🏠')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    }
+
+    // 진행도 바 생성
+    createProgressBar(start, end, max) {
+        const filled = '█';
+        const empty = '░';
+        const barLength = 20;
+        const progress = (end / max) * barLength;
+        
+        let bar = '';
+        for (let i = 0; i < barLength; i++) {
+            if (i < progress) {
+                bar += filled;
+            } else {
+                bar += empty;
+            }
+        }
+        
+        return `[${bar}] ${Math.floor((end / max) * 100)}%`;
+    }
+    
+    // 최고 기록 확인 및 뉴스 속보 생성
+    async checkAndCreateNewsEvent(userData, result) {
+        // 서버 최고 기록 확인
+        const allUsers = await User.find({ 'dungeonProgress.lastFloor': { $exists: true } })
+            .sort({ 'dungeonProgress.lastFloor': -1 })
+            .limit(1);
+        
+        const currentRecord = allUsers[0]?.dungeonProgress?.lastFloor || 0;
+        
+        // 새로운 기록 달성 시
+        if (result.finalFloor > currentRecord) {
+            const newsSystem = require('../../systems/newsSystem');
+            
+            // 뉴스 이벤트 생성
+            const newsEvent = {
+                type: 'dungeon_record',
+                title: `🏆 던전 최고 기록 갱신!`,
+                content: `**${userData.nickname}**님이 던전 **${result.finalFloor}층**까지 도달하여 새로운 기록을 세웠습니다!`,
+                userId: userData.discordId,
+                floor: result.finalFloor,
+                previousRecord: currentRecord,
+                timestamp: new Date()
+            };
+            
+            // 뉴스 시스템에 전달
+            if (newsSystem && newsSystem.createBreakingNews) {
+                await newsSystem.createBreakingNews(newsEvent);
+            }
+            
+            // 관련 주식 변동 (던전/모험 관련 회사)
+            await this.updateRelatedStocks(result.finalFloor);
+        }
+    }
+    
+    // 관련 주식 업데이트
+    async updateRelatedStocks(floor) {
+        try {
+            const Stock = require('../../models/Stock');
+            
+            // 던전/모험 관련 주식들
+            const relatedStocks = ['desert_explorers', 'mountain_seekers', 'jungle_raiders'];
+            
+            for (const stockId of relatedStocks) {
+                const stock = await Stock.findOne({ companyId: stockId });
+                if (stock) {
+                    // 기록 갱신에 따른 주가 상승 (층수에 비례)
+                    const priceIncrease = 1 + (floor / 500); // 최대 10% 상승
+                    stock.currentPrice = Math.floor(stock.currentPrice * priceIncrease);
+                    
+                    // 가격 히스토리 업데이트
+                    stock.priceHistory.push({
+                        price: stock.currentPrice,
+                        volume: Math.floor(Math.random() * 10000) + 5000,
+                        timestamp: new Date()
+                    });
+                    
+                    // 히스토리 제한
+                    if (stock.priceHistory.length > 100) {
+                        stock.priceHistory = stock.priceHistory.slice(-100);
+                    }
+                    
+                    await stock.save();
+                }
+            }
+        } catch (error) {
+            console.error('던전 관련 주식 업데이트 오류:', error);
         }
     }
 }
 
-// 싱글톤 인스턴스
-const dungeonSystem = new DungeonSystem();
-
-// 인터랙션 핸들러
-async function handleDungeonInteraction(interaction) {
-    const customId = interaction.customId;
-
-    if (customId === 'dungeon' || customId === 'dungeon_menu') {
-        return await dungeonSystem.showDungeonMenu(interaction);
-    }
-    else if (customId.startsWith('dungeon_enter_')) {
-        const dungeonId = customId.replace('dungeon_enter_', '');
-        return await dungeonSystem.enterDungeon(interaction, dungeonId);
-    }
-    else if (customId.startsWith('dungeon_attack_')) {
-        const sessionId = customId.replace('dungeon_attack_', '');
-        return await dungeonSystem.performAttack(interaction, sessionId);
-    }
-    else if (customId.startsWith('dungeon_next_')) {
-        const sessionId = customId.replace('dungeon_next_', '');
-        return await dungeonSystem.startFloor(interaction, sessionId);
-    }
-}
-
-module.exports = {
-    handleDungeonInteraction,
-    dungeonSystem,
-    DungeonSystem
-};
+module.exports = new AutoDungeonSystem();

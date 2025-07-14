@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    width: 450px;
+    height: 550px;
+    background: #2C2F33;
+    font-family: 'Arial', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+.title {
+    font-size: 32px;
+    font-weight: bold;
+    color: #FFFFFF;
+    margin-bottom: 20px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+.players {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 20px;
+}
+.player {
+    background: #5865F2;
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.player.active {
+    background: #5865F2;
+}
+.player.inactive {
+    background: #99AAB5;
+}
+.vs {
+    color: #FFFFFF;
+    font-size: 20px;
+    font-weight: bold;
+    align-self: center;
+}
+.turn-info {
+    color: #FFFFFF;
+    font-size: 18px;
+    margin-bottom: 10px;
+}
+.special-rule {
+    color: #FFD93D;
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+.board {
+    display: grid;
+    grid-template-columns: repeat(3, 100px);
+    grid-template-rows: repeat(3, 100px);
+    gap: 10px;
+    background: #23272A;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+.cell {
+    background: #40444B;
+    border: 2px solid #5865F2;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.cell:hover {
+    background: #4E535A;
+}
+.cell.win {
+    background: #FFD700 !important;
+    border-color: #FFA500 !important;
+}
+.cell.last {
+    background: #98FB98 !important;
+    border-color: #7CFC00 !important;
+}
+.piece-count {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 20px;
+    color: #FFFFFF;
+    font-size: 16px;
+}
+</style>
+</head>
+<body>
+<div class="title">TIC TAC TOE</div>
+<div class="players">
+    <div class="player active">❌ _10004</div>
+    <div class="vs">VS</div>
+    <div class="player inactive">⭕ AI (초급)</div>
+</div>
+<div class="turn-info">_10004님의 턴!</div>
+<div class="special-rule">※ 각 플레이어는 최대 3개까지만 놓을 수 있습니다</div>
+<div class="board">
+    <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+</div>
+<div class="piece-count">
+    <span>❌ 남은 수: 3</span>
+    <span>⭕ 남은 수: 3</span>
+</div>
+</body>
+</html>

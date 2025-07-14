@@ -53,6 +53,17 @@ async function handleDailyInteraction(interaction) {
         const newPage = currentPage + 1;
         return await showHuntingMenu(interaction, newPage);
     } else if (customId.startsWith('hunt_area_')) {
+        // 즉시 defer 처리
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ flags: 64 });
+            }
+        } catch (error) {
+            if (error.code === 10062) {
+                console.log('[Hunt] Interaction expired');
+                return;
+            }
+        }
         const areaId = customId.replace('hunt_area_', '');
         return await executeHunt(interaction, areaId);
     }

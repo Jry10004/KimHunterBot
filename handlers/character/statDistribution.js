@@ -4,7 +4,22 @@ const User = require('../../models/User');
 
 // 스탯 분배 메인 화면
 async function showStatDistribution(interaction) {
-    await interaction.deferUpdate().catch(() => {});
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.deferUpdate();
+            } else {
+                await interaction.deferReply({ flags: 64 });
+            }
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[StatDistribution] Interaction expired');
+            return;
+        }
+        console.error('[StatDistribution] Defer error:', error);
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
@@ -122,7 +137,18 @@ async function showStatDistribution(interaction) {
 
 // 스탯 포인트 추가
 async function addStatPoint(interaction, statName) {
-    await interaction.deferUpdate().catch(() => {});
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[StatDistribution] Interaction expired');
+            return;
+        }
+        console.error('[StatDistribution] Defer error:', error);
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
@@ -315,33 +341,113 @@ async function handleCustomStatDistribution(interaction) {
 
     await user.save();
 
-    const resultEmbed = new EmbedBuilder()
-        .setColor('#00ff00')
-        .setTitle('✅ 스탯 분배 완료!')
-        .setDescription(`총 **${totalPoints}**포인트를 분배했습니다.`)
-        .addFields(
-            { name: '💪 힘', value: `+${strength} (현재: ${user.stats.strength})`, inline: true },
-            { name: '🏃 민첩', value: `+${agility} (현재: ${user.stats.agility})`, inline: true },
-            { name: '🧠 지능', value: `+${intelligence} (현재: ${user.stats.intelligence})`, inline: true },
-            { name: '❤️ 체력', value: `+${vitality} (현재: ${user.stats.vitality})`, inline: true },
-            { name: '🍀 행운', value: `+${luck} (현재: ${user.stats.luck})`, inline: true },
-            { name: '📊 남은 포인트', value: `${user.statPoints}점`, inline: true }
-        );
-
-    await interaction.reply({
-        embeds: [resultEmbed],
-        flags: 64
+    // 결과 표시를 위한 일시적인 응답
+    await interaction.deferReply({ flags: 64 });
+    
+    // 결과 메시지
+    await interaction.editReply({
+        content: `✅ 스탯 분배 완료!\n\n💪 힘 +${strength}\n🏃 민첩 +${agility}\n🧠 지능 +${intelligence}\n❤️ 체력 +${vitality}\n🍀 행운 +${luck}\n\n📊 남은 포인트: ${user.statPoints}점`
     });
 
-    // 스탯 분배 화면으로 돌아가기
-    setTimeout(async () => {
-        await showStatDistribution(interaction);
-    }, 2000);
+    // 남은 포인트가 있으면 스탯 분배 화면을 팔로우업으로 표시
+    if (user.statPoints > 0) {
+        // 스탯 분배 화면 다시 표시
+        const statEmbed = new EmbedBuilder()
+            .setColor('#9b59b6')
+            .setTitle(`📊 ${user.nickname || interaction.user.username}님의 스탯 분배`)
+            .setDescription(`사용 가능한 스탯 포인트: **${user.statPoints}점**\n\n각 스탯을 클릭하여 포인트를 분배하세요!`)
+            .addFields(
+                { 
+                    name: '💪 힘 (STR)', 
+                    value: `현재: **${user.stats.strength}**\n⚔️ 전사 주스탯\n물리 공격력 증가`, 
+                    inline: true 
+                },
+                { 
+                    name: '🏃 민첩 (AGI)', 
+                    value: `현재: **${user.stats.agility}**\n🏹 궁수 주스탯\n치명타 및 회피율 증가`, 
+                    inline: true 
+                },
+                { 
+                    name: '🧠 지능 (INT)', 
+                    value: `현재: **${user.stats.intelligence}**\n🧙 마법사 주스탯\n마법 공격력 증가`, 
+                    inline: true 
+                },
+                { 
+                    name: '❤️ 체력 (VIT)', 
+                    value: `현재: **${user.stats.vitality}**\n🛡️ 수호자 주스탯\n최대 HP 및 방어력 증가`, 
+                    inline: true 
+                },
+                { 
+                    name: '🍀 행운 (LUK)', 
+                    value: `현재: **${user.stats.luck}**\n🗡️ 도적 주스탯\n크리티컬 및 강화 성공률 증가`, 
+                    inline: true 
+                }
+            )
+            .setFooter({ text: '팁: 직업별 주스탯과 부스탯을 적절히 분배하면 더 강해집니다!' });
+
+        // 스탯 버튼들
+        const statButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('stat_add_strength')
+                    .setLabel('💪 힘 +1')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('stat_add_agility')
+                    .setLabel('🏃 민첩 +1')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('stat_add_intelligence')
+                    .setLabel('🧠 지능 +1')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('stat_add_vitality')
+                    .setLabel('❤️ 체력 +1')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('stat_add_luck')
+                    .setLabel('🍀 행운 +1')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+        // 추가 옵션 버튼들
+        const optionButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('stat_add_custom')
+                    .setLabel('🎯 커스텀 분배')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('stat_reset')
+                    .setLabel('🔄 스탯 초기화')
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('profile')
+                    .setLabel('👤 프로필로 돌아가기')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await interaction.followUp({
+            embeds: [statEmbed],
+            components: [statButtons, optionButtons]
+        });
+    }
 }
 
 // 스탯 초기화 확인
 async function showStatResetConfirm(interaction) {
-    await interaction.deferUpdate().catch(() => {});
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[StatDistribution] Interaction expired');
+            return;
+        }
+        console.error('[StatDistribution] Defer error:', error);
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
@@ -414,7 +520,18 @@ async function showStatResetConfirm(interaction) {
 
 // 스탯 초기화 실행
 async function executeStatReset(interaction) {
-    await interaction.deferUpdate().catch(() => {});
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[StatDistribution] Interaction expired');
+            return;
+        }
+        console.error('[StatDistribution] Defer error:', error);
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {

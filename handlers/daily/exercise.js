@@ -367,10 +367,13 @@ async function executeExercise(interaction, exerciseId) {
     }
     
     // 일일 미션 업데이트
-    await User.updateOne(
-        { discordId: interaction.user.id },
-        { $inc: { 'dailyMissions.exercise.current': Math.floor(duration / 60000) } }
-    );
+    const MissionHelper = require('../../utils/missionHelper');
+    await MissionHelper.updateExercise(interaction.user.id);
+    
+    // 골드 획득 미션 업데이트
+    if (goldReward > 0) {
+        await MissionHelper.updateGoldEarned(interaction.user.id, goldReward);
+    }
     
     await user.save();
     
@@ -769,7 +772,7 @@ async function showExerciseRanking(interaction) {
         })
         .sort({ 'fitness.level': -1, 'fitness.exp': -1 })
         .limit(10)
-        .select('username fitness.level fitness.exp fitness.stats fitness.totalExerciseTime');
+        .select('username nickname fitness.level fitness.exp fitness.stats fitness.totalExerciseTime');
         
         if (topUsers.length === 0) {
             return await interaction.editReply({ 
@@ -816,7 +819,7 @@ async function showExerciseRanking(interaction) {
                 }
             }
             
-            return `${rankEmoji} **${user.username}**\n` +
+            return `${rankEmoji} **${user.nickname || user.username}**\n` +
                    `　${currentTier.emoji} Lv.${user.fitness.level} | 총 스탯: ${totalStats} | ${totalHours}시간`;
         }).join('\n\n');
         

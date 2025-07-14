@@ -1,6 +1,7 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const User = require('../../models/User');
 const { getUser, formatNumber, ADMIN_IDS } = require('../common/utils');
+const adminRewardSystem = require('./adminRewardSystem');
 
 // 관리자 확인
 function isAdmin(userId) {
@@ -32,20 +33,17 @@ async function showAdminMenu(interaction) {
         .addFields(
             { name: '👥 유저 관리', value: '레벨, 경험치, 계정 설정', inline: true },
             { name: '💰 경제 관리', value: '골드, 주식, 물가 조절', inline: true },
-            { name: '🎮 게임 관리', value: '아이템, 엠블럼, 시스템', inline: true }
+            { name: '🎮 게임 관리', value: '아이템, 엠블럼, 시스템', inline: true },
+            { name: '🔧 점검 관리', value: '기능별 점검 모드 설정', inline: true }
         )
         .setFooter({ text: '신중하게 사용하세요! 모든 작업은 로그에 기록됩니다.' });
     
     const buttons1 = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
-                .setCustomId('admin_user_level')
-                .setLabel('📊 레벨/경험치 설정')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('admin_give_gold')
-                .setLabel('💰 골드 지급')
-                .setStyle(ButtonStyle.Primary),
+                .setCustomId('admin_reward_menu')
+                .setLabel('🎁 통합 보상 시스템')
+                .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
                 .setCustomId('admin_emblem_menu')
                 .setLabel('🏆 엠블럼 관리')
@@ -53,6 +51,10 @@ async function showAdminMenu(interaction) {
             new ButtonBuilder()
                 .setCustomId('admin_give_item')
                 .setLabel('🎁 아이템 지급')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('admin_equipment_system')
+                .setLabel('⚔️ 장비 생성')
                 .setStyle(ButtonStyle.Primary)
         );
     
@@ -94,20 +96,16 @@ async function showAdminMenu(interaction) {
             new ButtonBuilder()
                 .setCustomId('admin_backup')
                 .setLabel('💾 백업')
-                .setStyle(ButtonStyle.Success)
-        );
-    
-    const backButton = new ActionRowBuilder()
-        .addComponents(
+                .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
-                .setCustomId('main_menu')
-                .setLabel('🏠 메인 메뉴')
-                .setStyle(ButtonStyle.Secondary)
+                .setCustomId('admin_maintenance')
+                .setLabel('🔧 점검 관리')
+                .setStyle(ButtonStyle.Danger)
         );
     
     return await interaction.editReply({
         embeds: [embed],
-        components: [buttons1, buttons2, buttons3, backButton]
+        components: [buttons1, buttons2, buttons3]
     });
 }
 

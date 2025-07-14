@@ -105,7 +105,7 @@ async function showEmblemShop(interaction) {
     const shopEmbed = new EmbedBuilder()
         .setColor('#FFD700')
         .setTitle('🏆 엠블럼 상점')
-        .setDescription('엠블럼을 구매하여 특별한 칭호를 획듍하세요!');
+        .setDescription('엠블럼을 구매하여 특별한 칭호를 획득하세요!');
         
     if (user.emblem) {
         const currentType = Object.keys(EMBLEMS).find(type => 
@@ -158,10 +158,31 @@ async function showEmblemEnhance(interaction) {
     }
     
     if (!user.emblem) {
+        const noEmblemEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle('❌ 엠블럼 없음')
+            .setDescription('엠블럼 강화를 하려면 먼저 엠블럼을 구매해야 합니다!')
+            .addFields({
+                name: '💡 안내',
+                value: '엠블럼 상점에서 원하는 계열의 엠블럼을 구매해주세요.',
+                inline: false
+            });
+        
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('emblem_shop')
+                    .setLabel('🛒 엠블럼 상점으로')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('main_menu')
+                    .setLabel('🏠 메인 메뉴')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
         return await interaction.editReply({
-            content: '❌ 먼저 엠블럼을 구매해주세요!',
-            embeds: [],
-            components: []
+            embeds: [noEmblemEmbed],
+            components: [buttons]
         });
     }
     
@@ -208,6 +229,8 @@ async function enhanceEmblem(interaction) {
         EMBLEMS[type].emblems.some(e => e.name === user.emblem)
     );
     
+    console.log(`[엠블럼 강화] 유저 엠블럼: ${user.emblem}, 찾은 타입: ${emblemType}`);
+    
     const { processEmblemEnhancement } = require('../../systems/emblemEnhancement');
     const result = await processEmblemEnhancement(user, emblemType);
     
@@ -235,7 +258,9 @@ async function enhanceEmblem(interaction) {
     });
     
     // 엠블럼 스탯 재적용
+    console.log(`[엠블럼 강화] 강화 전 스탯:`, user.stats);
     await applyEmblemStats(user, emblemType);
+    console.log(`[엠블럼 강화] 강화 후 스탯:`, user.stats);
     await user.save();
     
     // 강화 화면 업데이트
@@ -308,12 +333,12 @@ async function handleEmblemPurchase(interaction) {
         const currentIndex = category.emblems.findIndex(e => e.name === user.emblem);
         if (emblemIndex !== currentIndex + 1) {
             return await interaction.followUp({
-                content: '❌ 엠뺔럼은 순서대로 진화해야 합니다!',
+                content: '❌ 엠블럼은 순서대로 진화해야 합니다!',
                 flags: 64
             });
         }
         
-        // 기존 엠뺔럼 이름 저장 (역할 제거용)
+        // 기존 엠블럼 이름 저장 (역할 제거용)
         oldEmblemName = user.emblem;
     } else if (emblemIndex !== 0) {
         return await interaction.followUp({
@@ -442,7 +467,9 @@ async function applyEmblemStats(user, emblemType) {
     // 기존 엠블럼 스탯 제거 (있다면)
     if (user.emblemEnhancement?.appliedStats) {
         for (const [stat, value] of Object.entries(user.emblemEnhancement.appliedStats)) {
-            user.stats[stat] -= value;
+            if (user.stats[stat] !== undefined && value > 0) {
+                user.stats[stat] = Math.max(10, user.stats[stat] - value); // 최소값 10 보장
+            }
         }
     }
     
@@ -450,8 +477,10 @@ async function applyEmblemStats(user, emblemType) {
     const appliedStats = {};
     for (const [stat, multiplier] of Object.entries(emblemData.stats)) {
         const statValue = Math.floor(multiplier * enhanceLevel);
-        user.stats[stat] += statValue;
-        appliedStats[stat] = statValue;
+        if (statValue > 0 && user.stats[stat] !== undefined) {
+            user.stats[stat] += statValue;
+            appliedStats[stat] = statValue;
+        }
     }
     
     // 적용된 스탯 저장
@@ -459,6 +488,8 @@ async function applyEmblemStats(user, emblemType) {
         user.emblemEnhancement = {};
     }
     user.emblemEnhancement.appliedStats = appliedStats;
+    
+    console.log(`[엠블럼 스탯 적용] 유저: ${user.discordId}, 타입: ${emblemType}, 레벨: ${enhanceLevel}, 적용된 스탯:`, appliedStats);
 }
 
 // 엠블럼 데이터 저장

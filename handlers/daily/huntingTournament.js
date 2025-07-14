@@ -192,14 +192,12 @@ async function showWeeklyRanking(interaction) {
 
 // 속도 사냥 시작
 async function startSpeedHunt(interaction) {
-    await interaction.deferUpdate();
-    
     const user = await getUser(interaction.user.id);
     const todayTarget = getTodaySpeedTarget();
     const targetArea = huntingAreas.find(a => a.id === todayTarget.area);
     
     if (!user.unlockedAreas.includes(todayTarget.area)) {
-        return await interaction.editReply({
+        return await interaction.update({
             content: `❌ ${targetArea.name} 지역이 잠겨있습니다! (필요 레벨: ${targetArea.unlockLevel})`,
             embeds: [],
             components: []
@@ -212,8 +210,8 @@ async function startSpeedHunt(interaction) {
         .setDescription(`**목표**: ${todayTarget.name} ${todayTarget.targetCount}마리 처치\n**제한시간**: 5분\n**지역**: ${targetArea.name}`)
         .addFields(
             { name: '🏆 랭크별 보상', value: 
-                `**S랭크** (1분 이내): ${formatNumber(HUNTING_TOURNAMENT.speedHunt.rewards.S.gold)}G + 번개의 부적\n` +
-                `**A랭크** (2분 이내): ${formatNumber(HUNTING_TOURNAMENT.speedHunt.rewards.A.gold)}G + 바람의 깃털\n` +
+                `**S랭크** (1분 이내): ${formatNumber(HUNTING_TOURNAMENT.speedHunt.rewards.S.gold)}G\n` +
+                `**A랭크** (2분 이내): ${formatNumber(HUNTING_TOURNAMENT.speedHunt.rewards.A.gold)}G\n` +
                 `**B랭크** (3분 이내): ${formatNumber(HUNTING_TOURNAMENT.speedHunt.rewards.B.gold)}G\n` +
                 `**C랭크** (5분 이내): ${formatNumber(HUNTING_TOURNAMENT.speedHunt.rewards.C.gold)}G`
             },
@@ -234,7 +232,7 @@ async function startSpeedHunt(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    return await interaction.editReply({
+    return await interaction.update({
         embeds: [embed],
         components: [buttons]
     });
@@ -347,7 +345,20 @@ async function executeSpeedHunt(interaction, areaId, targetName) {
             
             // 보상 지급
             if (reward) {
-                user.gold += reward.gold;
+                // 버그 사냥꾼 칭호 효과 적용
+                const { applyGoldBonus } = require('../common/specialEffects');
+                const originalGold = reward.gold;
+                const finalGold = applyGoldBonus(reward.gold, user);
+                
+                let bonusApplied = false;
+                let bonusAmount = 0;
+                if (finalGold > originalGold) {
+                    bonusApplied = true;
+                    bonusAmount = finalGold - originalGold;
+                    console.log(`[Tournament] ${user.nickname || user.discordId} - 특수 효과 적용: ${originalGold} → ${finalGold} (+${bonusAmount})`);
+                }
+                
+                user.gold += finalGold;
                 
                 // 특별 아이템 (S, A 랭크)
                 if (reward.items && newRecord) {
@@ -360,10 +371,11 @@ async function executeSpeedHunt(interaction, areaId, targetName) {
             const successEmbed = new EmbedBuilder()
                 .setColor(rank === 'S' ? '#ffdd44' : rank === 'A' ? '#44ff44' : '#4444ff')
                 .setTitle(`🎉 ${rank}랭크 달성!`)
-                .setDescription(reward.title)
+                .setDescription(reward.title + 
+                    (bonusApplied ? `\n\n🏷️ **버그 사냥꾼 칭호 효과** +${formatNumber(bonusAmount)}G` : ''))
                 .addFields(
                     { name: '⏱️ 소요 시간', value: `${minutes}:${seconds.toString().padStart(2, '0')}`, inline: true },
-                    { name: '💰 획득 골드', value: `+${formatNumber(reward.gold)}G`, inline: true },
+                    { name: '💰 획득 골드', value: `+${formatNumber(finalGold)}G`, inline: true },
                     { name: '🏆 신기록', value: newRecord ? '✅ 갱신!' : '❌', inline: true }
                 );
             

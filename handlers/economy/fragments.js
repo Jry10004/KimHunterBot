@@ -67,6 +67,24 @@ async function showFragmentMenu(interaction) {
         });
     }
 
+    // 일일 융합 초기화
+    const today = new Date().toDateString();
+    if (!user.energyFragments) {
+        user.energyFragments = {
+            fragments: new Map(),
+            dailyFusions: 0,
+            dailyFusionDate: today,
+            failureStack: 0,
+            lastMine: 0
+        };
+    }
+    
+    if (user.energyFragments.dailyFusionDate !== today) {
+        user.energyFragments.dailyFusions = 0;
+        user.energyFragments.dailyFusionDate = today;
+        await user.save();
+    }
+
     const fragments = user.energyFragments?.fragments || new Map();
     let fragmentText = '';
     let totalFragments = 0;

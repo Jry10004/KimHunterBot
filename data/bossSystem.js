@@ -11,7 +11,7 @@ const BOSS_SYSTEM = {
             hp: 30000,
             requiredLevel: 10,
             attack: 150,
-            defense: 100,
+            defense: 80,
             rewards: {
                 exp: 10000,
                 gold: 20000,
@@ -35,7 +35,7 @@ const BOSS_SYSTEM = {
             hp: 50000,
             requiredLevel: 20,
             attack: 250,
-            defense: 150,
+            defense: 120,
             rewards: {
                 exp: 20000,
                 gold: 40000,
@@ -60,7 +60,7 @@ const BOSS_SYSTEM = {
             hp: 100000,
             requiredLevel: 40,
             attack: 400,
-            defense: 250,
+            defense: 200,
             rewards: {
                 exp: 200000,
                 gold: 500000,
@@ -84,7 +84,7 @@ const BOSS_SYSTEM = {
             hp: 150000,
             requiredLevel: 50,
             attack: 350,
-            defense: 600,
+            defense: 400,
             rewards: {
                 exp: 80000,
                 gold: 150000,
@@ -109,7 +109,7 @@ const BOSS_SYSTEM = {
             hp: 250000,
             requiredLevel: 70,
             attack: 700,
-            defense: 400,
+            defense: 300,
             rewards: {
                 exp: 500000,
                 gold: 1000000,
@@ -133,7 +133,7 @@ const BOSS_SYSTEM = {
             hp: 300000,
             requiredLevel: 80,
             attack: 900,
-            defense: 350,
+            defense: 280,
             rewards: {
                 exp: 150000,
                 gold: 300000,
@@ -158,7 +158,7 @@ const BOSS_SYSTEM = {
             hp: 500000,
             requiredLevel: 100,
             attack: 1200,
-            defense: 600,
+            defense: 450,
             rewards: {
                 exp: 300000,
                 gold: 600000,
@@ -321,7 +321,7 @@ const BOSS_SYSTEM = {
         minInterval: 2 * 60 * 60 * 1000, // 최소 2시간
         maxInterval: 4 * 60 * 60 * 1000, // 최대 4시간
         duration: 30 * 60 * 1000, // 30분 동안 유지
-        maxParticipants: 10, // 최대 참가자 수
+        maxParticipants: 20, // 최대 참가자 수
         minParticipants: 2 // 최소 참가자 수
     },
 

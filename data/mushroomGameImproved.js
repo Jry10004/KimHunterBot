@@ -149,18 +149,18 @@ async function createMinigameChannel(guild, gameType, hostName, players, allowSp
         
         // 게임별 이모지와 이름 설정
         const gameConfig = {
-            '가위바위보': { emoji: '✊', name: '가위바위보' },
-            '레이싱': { emoji: '🏁', name: '레이싱' },
-            '독버섯': { emoji: '🍄', name: '독버섯게임' },
-            '독버섯게임': { emoji: '🍄', name: '독버섯게임' },
-            '초성게임': { emoji: '🔤', name: '초성게임' },
-            '끝말잇기': { emoji: '📝', name: '끝말잇기' }
+            '가위바위보': { emoji: '✊', name: '가위바위보', displayEmoji: '✂️' },
+            '레이싱': { emoji: '🏁', name: '레이싱', displayEmoji: '🏁' },
+            '독버섯': { emoji: '🍄', name: '독버섯게임', displayEmoji: '🍄' },
+            '독버섯게임': { emoji: '🍄', name: '독버섯게임', displayEmoji: '🍄' },
+            '초성게임': { emoji: '🔤', name: '초성게임', displayEmoji: '📝' },
+            '끝말잇기': { emoji: '📝', name: '끝말잇기', displayEmoji: '📝' }
         };
         
-        const config = gameConfig[gameType] || { emoji: '🎮', name: gameType };
+        const config = gameConfig[gameType] || { emoji: '🎮', name: gameType, displayEmoji: '🎮' };
         
-        // 이미 존재하는 채널 확인 (호스트 이름과 게임 타입으로)
-        const channelName = `${config.emoji}-${config.name}-${hostName}`;
+        // 새로운 채널명 형식 적용
+        const channelName = `${config.displayEmoji}│${config.name}│${hostName} 대기실`;
         const existingChannel = guild.channels.cache.find(
             c => c.name === channelName && c.parentId === gameCategory.id && c.type === 0
         );
@@ -203,6 +203,7 @@ async function createMinigameChannel(guild, gameType, hostName, players, allowSp
             name: channelName,
             type: 0, // 텍스트 채널
             parent: gameCategory.id,
+            topic: `${config.name} 대기실 | 👥 최대 4명 | 💰 배팅금: 협의 | 🏆 생존 보상 + 순위별 추가금`,
             permissionOverwrites,
             reason: `${gameType} 게임 임시 채널`
         });

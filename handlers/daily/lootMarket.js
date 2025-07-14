@@ -3,6 +3,96 @@ const { LOOT_MARKET, updateMarketPrices } = require('../../data/lootMarket');
 const { formatTradingViewData, ITEM_TO_STOCK_MAPPING } = require('../../data/chartAPI');
 const { getUser, formatNumber } = require('../common/utils');
 
+// 차트 데이터 생성 함수
+function generateChartData(itemId, itemName, symbol, currentPrice, priceHistory, hours = 24) {
+    const prices = [];
+    const labels = [];
+    
+    if (priceHistory && priceHistory.length > 0) {
+        // 실제 가격 히스토리 사용
+        priceHistory.slice(-hours).forEach(history => {
+            prices.push(history.price);
+            const date = new Date(history.timestamp);
+            labels.push(date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+        });
+    } else {
+        // 시뮬레이션 데이터 생성
+        const now = Date.now();
+        let simulatedPrice = currentPrice;
+        
+        for (let i = hours - 1; i >= 0; i--) {
+            const time = new Date(now - i * 3600000);
+            const variation = (Math.random() - 0.5) * 0.04;
+            simulatedPrice = simulatedPrice * (1 + variation);
+            
+            prices.push(Math.round(simulatedPrice));
+            labels.push(time.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+        }
+    }
+    
+    return {
+        itemId,
+        itemName,
+        symbol,
+        prices,
+        labels,
+        currentPrice
+    };
+}
+
+// 전문적인 차트 URL 생성 함수 (URL 길이 최적화)
+function getProfessionalChartUrl(data) {
+    const {
+        name = 'Item',
+        symbol = 'ITEM',
+        prices = [],
+        labels = [],
+        currentPrice = 0,
+        changePercent = 0,
+        volume = 0
+    } = data;
+    
+    try {
+        // 최대 10개의 데이터 포인트만 사용
+        const maxPoints = 10;
+        const step = Math.max(1, Math.floor(prices.length / maxPoints));
+        const chartData = [];
+        
+        for (let i = 0; i < prices.length && chartData.length < maxPoints; i += step) {
+            chartData.push(Math.round(prices[i]));
+        }
+        
+        // Chart.js 대신 간단한 Google Charts 사용
+        const isPositive = parseFloat(changePercent) >= 0;
+        const color = isPositive ? '00ff00' : 'ff0000';
+        
+        // Google Charts URL (훨씬 짧음)
+        const googleChartUrl = 'https://chart.googleapis.com/chart?' + 
+            'chs=500x200&' + // 크기
+            'cht=lc&' + // 라인 차트
+            'chd=t:' + chartData.join(',') + '&' + // 데이터
+            'chco=' + color + '&' + // 색상
+            'chls=2&' + // 선 스타일
+            'chm=B,' + color + '30,0,0,0&' + // 영역 채우기
+            'chxt=y&' + // Y축 표시
+            'chtt=' + encodeURIComponent(`${symbol} (${changePercent >= 0 ? '+' : ''}${changePercent}%)`); // 제목
+        
+        // URL 길이 체크
+        if (googleChartUrl.length > 2000) {
+            // 더욱 간단한 차트
+            const simpleData = chartData.slice(-5).join(',');
+            return 'https://chart.googleapis.com/chart?chs=400x150&cht=ls&chd=t:' + simpleData + '&chco=' + color;
+        }
+        
+        return googleChartUrl;
+        
+    } catch (error) {
+        console.error('차트 URL 생성 오류:', error);
+        // 오류 시 기본 이미지 반환
+        return 'https://via.placeholder.com/500x200/f0f0f0/666666?text=Chart+Error';
+    }
+}
+
 // 시세 확인 통합 메뉴 (주식, 물고기, 전리품)
 async function showMarketPrices(interaction, marketType = null, categoryId = null) {
     // 메인 메뉴에서 오는 경우와 버튼에서 오는 경우 구분
@@ -230,7 +320,6 @@ async function showMarketPrices(interaction, marketType = null, categoryId = nul
 
     // 현재 아이템의 상세 정보
     const chartData = formatTradingViewData(currentItem.id);
-    const { getProfessionalChartUrl, generateChartData } = require('../../data/chartService');
     
     if (chartData || currentItem) {
         // DB에서 실제 가격 히스토리 가져오기
@@ -280,7 +369,30 @@ async function showMarketPrices(interaction, marketType = null, categoryId = nul
             volume: currentItem.volume || Math.floor(Math.random() * 5000 + 1000)
         });
         
-        embed.setImage(chartImageUrl);
+        // embed.setImage(chartImageUrl); // 차트 URL 길이 문제로 임시 비활성화
+        
+        // ASCII 차트 생성
+        const { generateAsciiChart } = require('../../data/chartAPI');
+        const asciiChart = generateAsciiChart({
+            ...Object.fromEntries(
+                chartDataGenerated.labels.slice(-30).map((label, i) => [
+                    `2024-01-01 ${label}:00`,
+                    {
+                        '1. open': String(chartDataGenerated.prices[i] || currentItem.currentPrice),
+                        '2. high': String((chartDataGenerated.prices[i] || currentItem.currentPrice) * 1.02),
+                        '3. low': String((chartDataGenerated.prices[i] || currentItem.currentPrice) * 0.98),
+                        '4. close': String(chartDataGenerated.prices[i] || currentItem.currentPrice),
+                        '5. volume': String(Math.floor(Math.random() * 10000))
+                    }
+                ])
+            )
+        }, 30, 10);
+        
+        embed.addFields({
+            name: '📊 가격 차트 (24시간)',
+            value: '```\n' + asciiChart + '\n```',
+            inline: false
+        });
         
         // 현재 아이템 정보
         const priceColor = currentItem.change > 0 ? '🟢' : currentItem.change < 0 ? '🔴' : '⚪';
@@ -378,7 +490,6 @@ async function showMarketPrices(interaction, marketType = null, categoryId = nul
 
 // 길드 지분 시세 표시 (개선된 버전)
 async function showStockMarket(interaction) {
-    const { getProfessionalChartUrl, generateChartData } = require('../../data/chartService');
     
     // 길드 목록
     const stocks = [
@@ -448,7 +559,30 @@ async function showStockMarket(interaction) {
     });
     
     // 차트 이미지 설정
-    embed.setImage(chartImageUrl);
+    // embed.setImage(chartImageUrl); // 차트 URL 길이 문제로 임시 비활성화
+    
+    // ASCII 차트 생성
+    const { generateAsciiChart } = require('../../data/chartAPI');
+    const asciiChart = generateAsciiChart({
+        ...Object.fromEntries(
+            chartData.labels.slice(-30).map((label, i) => [
+                `2024-01-01 ${label}:00`,
+                {
+                    '1. open': String(chartData.prices[i] || firstStock.price),
+                    '2. high': String((chartData.prices[i] || firstStock.price) * 1.02),
+                    '3. low': String((chartData.prices[i] || firstStock.price) * 0.98),
+                    '4. close': String(chartData.prices[i] || firstStock.price),
+                    '5. volume': String(Math.floor(Math.random() * 1000000))
+                }
+            ])
+        )
+    }, 30, 10);
+    
+    embed.addFields({
+        name: '📈 가격 차트',
+        value: '```\n' + asciiChart + '\n```',
+        inline: false
+    });
     
     // 기술적 지표
     const indicators = {
@@ -612,7 +746,30 @@ async function showFishMarket(interaction) {
         .setColor('#1E88E5') // 물고기 테마 색상
         .setTitle('🐟 실시간 수산물 거래소')
         .setDescription('수산물 시세 정보 • 24시간 실시간 업데이트')
-        .setImage(chartImageUrl)
+        // .setImage(chartImageUrl) // 차트 URL 길이 문제로 임시 비활성화
+        
+    // ASCII 차트 생성
+    const { generateAsciiChart } = require('../../data/chartAPI');
+    const asciiChart = generateAsciiChart({
+        ...Object.fromEntries(
+            priceHistory.slice(-20).map((hist, i) => [
+                new Date(hist.timestamp).toISOString().slice(0, 16).replace('T', ' '),
+                {
+                    '1. open': String(hist.price),
+                    '2. high': String(hist.price * 1.01),
+                    '3. low': String(hist.price * 0.99),
+                    '4. close': String(hist.price),
+                    '5. volume': String(Math.floor(Math.random() * 1000))
+                }
+            ])
+        )
+    }, 20, 8);
+    
+    embed.addFields({
+            name: '🐟 가격 차트',
+            value: '```\n' + asciiChart + '\n```',
+            inline: false
+        })
         .addFields(
             {
                 name: `${selectedFish.emoji} ${selectedFish.name} (${selectedFish.symbol})`,

@@ -20,7 +20,7 @@ async function handleMinigameInteraction(interaction) {
         '플레이하고 싶은 게임을 선택하세요!\n각 게임마다 다양한 보상이 준비되어 있습니다!',
         [
             ...MinigameUI.createStatsFields(stats),
-            { name: '🎯 게임 종류', value: '6종', inline: true },
+            { name: '🎯 게임 종류', value: '7종', inline: true },
             { name: '🏆 총 승리', value: `${user.totalWins || 0}회`, inline: true },
             { name: '🎮 오늘 플레이', value: `${user.todayGames || 0}회`, inline: true }
         ]
@@ -58,6 +58,14 @@ async function handleMinigameInteraction(interaction) {
                 .setStyle(MinigameUI.ButtonStyles.MAIN_ACTION)
         );
     
+    const gameButtons3 = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('lol_inhouse')
+                .setLabel('🎮 LOL 내전')
+                .setStyle(MinigameUI.ButtonStyles.MAIN_ACTION)
+        );
+    
     const navigationRow = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
@@ -68,7 +76,7 @@ async function handleMinigameInteraction(interaction) {
 
     await interaction.reply({
         embeds: [embed],
-        components: [gameButtons1, gameButtons2, navigationRow]
+        components: [gameButtons1, gameButtons2, gameButtons3, navigationRow]
     });
 }
 

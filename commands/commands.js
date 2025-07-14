@@ -16,6 +16,11 @@ const productionCommands = [
         type: 1,
     },
     {
+        name: '탈퇴',
+        description: '계정을 영구적으로 삭제합니다. 모든 데이터가 삭제되며 복구할 수 없습니다.',
+        type: 1,
+    },
+    {
         name: '계급부여',
         description: '아이템에 김헌터 계급을 부여합니다',
         type: 1,
@@ -283,6 +288,54 @@ const productionCommands = [
         ]
     },
     {
+        name: '인증',
+        description: '이메일 인증 코드를 입력합니다',
+        type: 1,
+        options: [
+            {
+                name: '코드',
+                description: '6자리 인증 코드',
+                type: 3,
+                required: true,
+                min_length: 6,
+                max_length: 6
+            }
+        ]
+    },
+    {
+        name: '엠블럼스탯수정',
+        description: '모든 유저의 엠블럼 강화 스탯을 재계산합니다 (관리자 전용)',
+        type: 1
+    },
+    {
+        name: '최근가입자',
+        description: '최근 가입한 사용자 목록을 확인합니다 (관리자 전용)',
+        type: 1,
+        options: [
+            {
+                name: '일수',
+                description: '최근 며칠 이내 가입자를 볼까요? (기본: 7일)',
+                type: 4,
+                required: false,
+                min_value: 1,
+                max_value: 30
+            }
+        ]
+    },
+    {
+        name: '사용자삭제',
+        description: '특정 이메일 패턴을 가진 사용자를 삭제합니다 (관리자 전용)',
+        type: 1,
+        options: [
+            {
+                name: '이메일패턴',
+                description: '삭제할 이메일 패턴 (예: rla00823)',
+                type: 3,
+                required: true
+            }
+        ]
+    },
+    {
         name: '매크로감지',
         description: '매크로 감지 시스템 관리 (관리자 전용)',
         type: 1,
@@ -444,11 +497,6 @@ const productionCommands = [
                 ]
             }
         ]
-    },
-    {
-        name: '댕댕봇소환',
-        description: '댕댕봇을 이 채널에 소환합니다 (관리자 전용)',
-        type: 1
     },
     {
         name: '권한테스트',
@@ -647,24 +695,6 @@ const productionCommands = [
         ]
     },
     {
-        name: '댕댕봇구출시작',
-        description: '댕댕봇 구출 이벤트를 시작합니다 (관리자 전용)',
-        type: 1,
-        options: [
-            {
-                name: '초기화',
-                description: '이벤트 데이터를 초기화하고 시작',
-                type: 5,
-                required: false
-            }
-        ]
-    },
-    {
-        name: '댕댕봇납치',
-        description: '댕댕봇 납치 이벤트 현황을 확인합니다',
-        type: 1
-    },
-    {
         name: '버그발견',
         description: '버그나 문제를 신고합니다',
         type: 1,
@@ -683,26 +713,37 @@ const productionCommands = [
         type: 1
     },
     {
-        name: '댕댕봇백업',
-        description: '댕댕봇 구출 이벤트 백업 관리 (관리자 전용)',
+        name: '칭호',
+        description: '보유한 칭호를 확인합니다',
+        type: 1
+    },
+    {
+        name: '칭호부여',
+        description: '유저에게 칭호를 부여합니다 (관리자 전용)',
         type: 1,
         options: [
             {
-                name: '생성',
-                description: '현재 상태를 백업합니다',
-                type: 1
+                name: '유저',
+                description: '칭호를 부여할 유저',
+                type: 6,
+                required: true
             },
             {
-                name: '복원',
-                description: '최신 백업을 복원합니다',
-                type: 1
-            },
-            {
-                name: '목록',
-                description: '백업 목록을 확인합니다',
-                type: 1
+                name: '칭호',
+                description: '부여할 칭호',
+                type: 3,
+                required: true,
+                choices: [
+                    { name: '🦸‍♂️ 댕댕봇 구출자', value: '댕댕봇 구출자' },
+                    { name: '🔍 버그 사냥꾼', value: '버그 사냥꾼' }
+                ]
             }
         ]
+    },
+    {
+        name: 'pvp정리',
+        description: '멈춘 PVP 채널들을 정리합니다 (관리자 전용)',
+        type: 1
     }
 ];
 

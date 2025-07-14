@@ -92,7 +92,7 @@ module.exports = {
     bossRaid: {
         spawnInterval: 2 * 60 * 60 * 1000, // 2시간
         duration: 30 * 60 * 1000,          // 30분
-        minParticipants: 3,
+        minParticipants: 2,                // 3명에서 2명으로 변경
         maxParticipants: 20,
         rewards: {
             participation: { gold: 1000, exp: 200 },

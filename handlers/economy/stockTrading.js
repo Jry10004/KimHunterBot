@@ -596,7 +596,7 @@ async function buyStock(interaction, companyId, shares) {
     await updatedUser.save();
     
     // 미션 진행도 업데이트
-    await MissionHelper.updateStockTrade(user.discordId);
+    await MissionHelper.updateStockTrade(interaction.user.id);
 
     // Update price history
     updatePriceHistory(companyId, company.currentPrice, shares);
@@ -704,7 +704,7 @@ async function sellStock(interaction, companyId, shares) {
     await updatedUser.save();
     
     // 미션 진행도 업데이트
-    await MissionHelper.updateStockTrade(user.discordId);
+    await MissionHelper.updateStockTrade(interaction.user.id);
 
     // Update price history
     updatePriceHistory(companyId, company.currentPrice, shares);

@@ -328,10 +328,21 @@ class BackupSystem {
                 users: await User.countDocuments(),
                 totalGold: await User.aggregate([
                     { $group: { _id: null, total: { $sum: '$gold' } } }
-                ]),
-                // activeStocks: await Stock.countDocuments({ active: true }),
-                prelaunchEvent: require('../prelaunchEventData.json')
+                ])
             };
+            
+            // prelaunchEventData 파일이 있으면 추가
+            try {
+                const fs = require('fs').promises;
+                const prelaunchPath = path.join(__dirname, '..', 'prelaunchEventData.json');
+                const prelaunchContent = await fs.readFile(prelaunchPath, 'utf8');
+                if (prelaunchContent && prelaunchContent.trim()) {
+                    quickData.prelaunchEvent = JSON.parse(prelaunchContent);
+                }
+            } catch (err) {
+                // 파일이 없거나 파싱 오류시 무시
+                console.log('prelaunchEventData.json 읽기 실패 (무시됨)');
+            }
 
             await fs.writeFile(backupFile, JSON.stringify(quickData, null, 2), 'utf8');
             console.log('✅ 간단한 백업 완료');

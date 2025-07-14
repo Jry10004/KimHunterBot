@@ -2,6 +2,7 @@ const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('
 const User = require('../../models/User');
 const { getUser, formatNumber } = require('../common/utils');
 const { QUEST_SYSTEM } = require('../../data/questSystem');
+const MissionHelper = require('../../utils/missionHelper');
 
 // 퀘스트 메인 메뉴
 async function showQuestMenu(interaction) {
@@ -212,15 +213,26 @@ async function claimQuestRewards(interaction) {
     let totalRewards = {
         gold: 0,
         exp: 0,
-        items: []
+        items: [],
+        bonusGold: 0
     };
     
     // 보상 지급
     for (const { userQuest, quest } of completedQuests) {
         // 골드 보상
         if (quest.rewards.gold) {
-            totalRewards.gold += quest.rewards.gold;
-            user.gold += quest.rewards.gold;
+            // 버그 사냥꾼 칭호 효과 적용
+            const { applyGoldBonus } = require('../common/specialEffects');
+            const originalGold = quest.rewards.gold;
+            const finalGold = applyGoldBonus(quest.rewards.gold, user);
+            
+            if (finalGold > originalGold) {
+                totalRewards.bonusGold += (finalGold - originalGold);
+                console.log(`[Quest] ${user.nickname || user.discordId} - 특수 효과 적용: ${originalGold} → ${finalGold} (+${finalGold - originalGold})`);
+            }
+            
+            totalRewards.gold += finalGold;
+            user.gold += finalGold;
         }
         
         // 경험치 보상
@@ -258,10 +270,16 @@ async function claimQuestRewards(interaction) {
     
     await user.save();
     
+    // 골드 획득 미션 업데이트
+    if (totalRewards.gold > 0) {
+        await MissionHelper.updateGoldEarned(interaction.user.id, totalRewards.gold);
+    }
+    
     const embed = new EmbedBuilder()
         .setColor('#00ff00')
         .setTitle('🎁 퀘스트 보상 수령!')
-        .setDescription(`${completedQuests.length}개의 퀘스트를 완료했습니다!`)
+        .setDescription(`${completedQuests.length}개의 퀘스트를 완료했습니다!` +
+            (totalRewards.bonusGold > 0 ? `\n\n🏷️ **버그 사냥꾼 칭호 효과** +${formatNumber(totalRewards.bonusGold)}G` : ''))
         .addFields(
             { name: '💰 골드', value: `+${formatNumber(totalRewards.gold)}G`, inline: true },
             { name: '⭐ 경험치', value: `+${totalRewards.exp} EXP`, inline: true }

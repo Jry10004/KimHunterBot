@@ -20,6 +20,15 @@ module.exports = {
         const channelName = interaction.channel.name;
         const timestamp = new Date().toLocaleString('ko-KR');
         
+        // problem이 null인 경우 처리
+        if (!problem) {
+            await interaction.editReply({ 
+                content: '❌ 문제 내용을 입력해주세요.',
+                embeds: [] 
+            });
+            return;
+        }
+        
         // 문제를 자동으로 분류
         let category = '기타';
         if (problem.includes('독버섯') || problem.includes('mushroom')) category = '독버섯 게임';

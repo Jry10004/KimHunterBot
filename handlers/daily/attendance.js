@@ -141,6 +141,12 @@ async function claimDailyReward(interaction) {
     const MissionHelper = require('../../utils/missionHelper');
     await MissionHelper.updateAttendance(interaction.user.id);
     
+    // 골드 획득 미션 업데이트
+    const totalGoldEarned = bonusReward + weeklyBonus;
+    if (totalGoldEarned > 0) {
+        await MissionHelper.updateGoldEarned(interaction.user.id, totalGoldEarned);
+    }
+    
     const embed = new EmbedBuilder()
         .setColor('#00ff00')
         .setTitle('🎁 일일 보상 수령!')
@@ -181,20 +187,13 @@ async function showAttendanceRanking(interaction) {
     const topUsers = await User.find({ registered: true })
         .sort({ attendanceStreak: -1 })
         .limit(10)
-        .select('discordId username attendanceStreak');
+        .select('discordId username nickname attendanceStreak');
     
     let rankingText = '';
     for (let i = 0; i < topUsers.length; i++) {
         const user = topUsers[i];
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-        // Discord 사용자 정보 가져오기
-        let displayName = 'Unknown User';
-        try {
-            const discordUser = await interaction.client.users.fetch(user.discordId);
-            displayName = discordUser.username;
-        } catch (error) {
-            displayName = user.username || user.discordId || 'Unknown User';
-        }
+        const displayName = user.nickname || user.username || 'Unknown User';
         rankingText += `${medal} **${displayName}** - ${user.attendanceStreak || 0}일\n`;
     }
     

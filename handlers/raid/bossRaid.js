@@ -4,6 +4,7 @@ const { getUser, formatNumber } = require('../common/utils');
 const BOSS_SYSTEM = require('../../data/bossSystem');
 const { applyBossRaidBonus, applyExpBonus, applyGoldBonus } = require('../common/specialEffects');
 const { calculateCombatPower } = require('../common/utils');
+const MissionHelper = require('../../utils/missionHelper');
 
 // 보스 레이드 세션 관리
 const bossRaidSessions = new Map();
@@ -200,11 +201,16 @@ class BossRaidSystem {
         let expReward = boss.rewards.exp;
         
         // 특수 효과 적용
+        console.log(`[BossRaid] ${user.nickname || user.discordId} - 특수 효과 적용 전 골드: ${goldReward}, 경험치: ${expReward}`);
         goldReward = applyGoldBonus(goldReward, user);
         expReward = applyExpBonus(expReward, user);
+        console.log(`[BossRaid] ${user.nickname || user.discordId} - 특수 효과 적용 후 골드: ${goldReward}, 경험치: ${expReward}`);
 
         user.gold += goldReward;
         user.exp += expReward;
+        
+        // 골드 획득 미션 업데이트
+        await MissionHelper.updateGoldEarned(user.discordId, goldReward);
 
         // 조각 드롭 계산
         const BOSS_FRAGMENTS = require('../../data/bossFragments');

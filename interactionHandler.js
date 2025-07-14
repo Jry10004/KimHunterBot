@@ -224,59 +224,16 @@ async function handleMainInteraction(interaction) {
         if (interaction.isCommand()) {
             const { commandName } = interaction;
             
-            // 메인 메뉴 커맨드
-            if (commandName === '메뉴' || commandName === 'menu' || commandName === '게임') {
-                try {
-                    await interaction.deferReply({ flags: 64 });
-                } catch (deferError) {
-                    if (deferError.code === 10062) {
-                        console.error('인터랙션이 만료되었습니다:', deferError);
-                        return;
-                    }
-                    throw deferError;
-                }
-                
-                const user = await getUser(interaction.user.id);
-                if (!user || !user.registered) {
-                    return await interaction.editReply({ 
-                        content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.' 
-                    });
-                }
-                
-                // 휴식 보상 체크 (메인 메뉴 접속 시에만)
-                const restBonus = await restBonusSystem.checkAndApplyRestBonus(interaction.user.id);
-                
-                const adminStatus = isAdmin(interaction.user.id);
-                
-                let description = `${user.nickname}님, 환영합니다!\n원하는 메뉴를 선택해주세요.`;
-                
-                // 휴식 보상 알림 추가
-                if (restBonus && restBonus.active) {
-                    description += `\n\n🌟 **휴식 보상 활성!**\n` +
-                        `• ${restBonus.offlineHours}시간 동안 오프라인\n` +
-                        `• 경험치 ${restBonus.expMultiplier}배, 골드 ${restBonus.goldMultiplier}배\n` +
-                        `• ${restBonus.duration}분간 지속`;
-                }
-                
-                const embed = new EmbedBuilder()
-                    .setColor('#0099ff')
-                    .setTitle('🎮 김헌터 메인 메뉴')
-                    .setDescription(description)
-                    .addFields(
-                        { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
-                        { name: '📊 레벨', value: `Lv.${user.level}`, inline: true },
-                        { name: '⚔️ 전투력', value: `${calculateCombatPower(user)}`, inline: true }
-                    )
-                    .setFooter({ text: '아래 드롭다운 메뉴에서 원하는 기능을 선택하세요!' })
-                    .setTimestamp();
-                
-                const selectMenu = createMainMenu(user, adminStatus);
-                const row = new ActionRowBuilder().addComponents(selectMenu);
-                
-                return await interaction.editReply({
-                    embeds: [embed],
-                    components: [row]
-                });
+            // 메인 메뉴 커맨드 - game.js 파일 사용
+            if (commandName === '게임') {
+                const gameCommand = require('./commands/game/game');
+                return await gameCommand.execute(interaction);
+            }
+            
+            // 탈퇴 명령어
+            else if (commandName === '탈퇴') {
+                const unregisterCommand = require('./commands/utility/unregister');
+                return await unregisterCommand.execute(interaction);
             }
             
             // 댕댕봇소환 명령어
@@ -351,6 +308,42 @@ async function handleMainInteraction(interaction) {
                 return await bugReportCommand.execute(interaction);
             }
             
+            // 칭호 명령어
+            else if (commandName === '칭호') {
+                const titlesCommand = require('./commands/utility/myTitles');
+                return await titlesCommand.execute(interaction);
+            }
+            
+            // 칭호부여 명령어 (관리자)
+            else if (commandName === '칭호부여') {
+                const grantTitleCommand = require('./commands/admin/grantTitle');
+                return await grantTitleCommand.execute(interaction);
+            }
+            
+            // PVP 정리 명령어 (관리자)
+            else if (commandName === 'pvp정리') {
+                const cleanupPVPCommand = require('./commands/admin/cleanupPVP');
+                return await cleanupPVPCommand.execute(interaction);
+            }
+            
+            // 돈지급 명령어 (관리자)
+            else if (commandName === '돈지급') {
+                const giveMoneyCommand = require('./commands/admin/giveMoney');
+                return await giveMoneyCommand.execute(interaction);
+            }
+            
+            // 청소 명령어
+            else if (commandName === '청소') {
+                const clearCommand = require('./commands/admin/clear');
+                return await clearCommand.execute(interaction);
+            }
+            
+            // 말 명령어 (관리자)
+            else if (commandName === '말') {
+                const sayCommand = require('./commands/admin/say');
+                return await sayCommand.execute(interaction);
+            }
+            
             // 댕댕봇 구출 이벤트 명령어
             else if (commandName === '댕댕봇납치') {
                 const rescueCommand = require('./commands/dogBotRescue');
@@ -361,6 +354,84 @@ async function handleMainInteraction(interaction) {
             else if (commandName === '구출이벤트시작') {
                 const startRescueCommand = require('./commands/startRescueEvent');
                 return await startRescueCommand.execute(interaction);
+            }
+            
+            // 매크로감지 명령어 (관리자)
+            else if (commandName === '매크로감지') {
+                const macroDetectCommand = require('./commands/admin/macroDetect');
+                return await macroDetectCommand.execute(interaction);
+            }
+            
+            // IP관리 명령어 (관리자)
+            else if (commandName === 'ip관리') {
+                const ipManageCommand = require('./commands/admin/ipManage');
+                return await ipManageCommand.execute(interaction);
+            }
+            
+            // 관리자 명령어
+            else if (commandName === '관리자') {
+                // 서브커맨드가 있는지 먼저 확인
+                const hasSubcommand = interaction.options.data.length > 0 && interaction.options.data[0].type === 1;
+                
+                if (hasSubcommand) {
+                    const subcommand = interaction.options.getSubcommand();
+                    
+                    if (subcommand === '엠블럼상점새로고침') {
+                        const emblemShopRefreshCommand = require('./commands/admin/emblemShopRefresh');
+                        return await emblemShopRefreshCommand.execute(interaction);
+                    } else if (subcommand === '엠블럼초기화') {
+                        const emblemResetCommand = require('./commands/admin/emblemReset');
+                        return await emblemResetCommand.execute(interaction);
+                    } else if (subcommand === '엠블럼지급') {
+                        const emblemGiveCommand = require('./commands/admin/emblemGive');
+                        return await emblemGiveCommand.execute(interaction);
+                    } else if (subcommand === '엠블럼현황') {
+                        const emblemStatusCommand = require('./commands/admin/emblemStatus');
+                        return await emblemStatusCommand.execute(interaction);
+                    }
+                } else {
+                    // 서브커맨드가 없을 때 관리자 패널 표시
+                    const { showAdminMenu } = require('./handlers/admin/adminSystem');
+                    return await showAdminMenu(interaction);
+                }
+            }
+            
+            // 사전강화종료 명령어 (관리자)
+            else if (commandName === '사전강화종료') {
+                const endPrelaunchCommand = require('./commands/admin/endPrelaunch');
+                return await endPrelaunchCommand.execute(interaction);
+            }
+            
+            // 에너지채굴 명령어
+            else if (commandName === '에너지채굴') {
+                await interaction.deferReply({ flags: 64 });
+                const user = await getUser(interaction.user.id);
+                if (!user || !user.registered) {
+                    return await interaction.editReply({ 
+                        content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.' 
+                    });
+                }
+                
+                // 에너지채굴 시스템으로 이동
+                const { handleEconomyInteraction } = require('./handlers/economy');
+                interaction.customId = 'fragment_menu';
+                return await handleEconomyInteraction(interaction);
+            }
+            
+            // 유물탐사 명령어
+            else if (commandName === '유물탐사') {
+                await interaction.deferReply({ flags: 64 });
+                const user = await getUser(interaction.user.id);
+                if (!user || !user.registered) {
+                    return await interaction.editReply({ 
+                        content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.' 
+                    });
+                }
+                
+                // 유물탐사 시스템으로 이동
+                const { handleEconomyInteraction } = require('./handlers/economy');
+                interaction.customId = 'artifact_exploration';
+                return await handleEconomyInteraction(interaction);
             }
             
             // 인기도 시스템 명령어
@@ -592,6 +663,22 @@ async function handleMainInteraction(interaction) {
                 return await handleMinigameInteraction(interaction);
             }
             
+            // 낚시 명령어
+            else if (commandName === '낚시') {
+                await interaction.deferReply({ flags: 64 });
+                const user = await getUser(interaction.user.id);
+                if (!user || !user.registered) {
+                    return await interaction.editReply({ 
+                        content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.' 
+                    });
+                }
+                
+                // 낚시 시작
+                const { handleFishingInteraction } = require('./handlers/economy/fishing');
+                interaction.customId = 'fishing_cast';
+                return await handleFishingInteraction(interaction, user);
+            }
+            
             // 경제 관련 명령어들
             else if (commandName === '주식') {
                 await interaction.deferReply({ flags: 64 });
@@ -727,6 +814,30 @@ async function handleMainInteraction(interaction) {
                 return await registerCommand.execute(interaction);
             }
             
+            // 인증 명령어
+            else if (commandName === '인증') {
+                const verifyCommand = require('./commands/utility/verifyEmail');
+                return await verifyCommand.execute(interaction);
+            }
+            
+            // 엠블럼스탯수정 명령어
+            else if (commandName === '엠블럼스탯수정') {
+                const fixEmblemStatsCommand = require('./commands/admin/fixEmblemStats');
+                return await fixEmblemStatsCommand.execute(interaction);
+            }
+            
+            // 최근가입자 명령어
+            else if (commandName === '최근가입자') {
+                const recentUsersCommand = require('./commands/admin/recentUsers');
+                return await recentUsersCommand.execute(interaction);
+            }
+            
+            // 사용자삭제 명령어
+            else if (commandName === '사용자삭제') {
+                const deleteUserCommand = require('./commands/admin/deleteUser');
+                return await deleteUserCommand.execute(interaction);
+            }
+            
             // 명령어초기화 명령어
             else if (commandName === '명령어초기화') {
                 const commandInitCommand = require('./commands/commandInit');
@@ -830,10 +941,147 @@ async function handleMainInteraction(interaction) {
                 const macroDetectCommand = require('./commands/admin/macroDetect');
                 return await macroDetectCommand.execute(interaction);
             }
+            
+            // 게임데이터초기화 명령어 (관리자 전용)
+            else if (commandName === '게임데이터초기화') {
+                const dataResetCommand = require('./commands/admin/dataReset');
+                return await dataResetCommand.execute(interaction);
+            }
+            
+            // 회원가입채널설정 명령어 (관리자 전용)
+            else if (commandName === '회원가입채널설정') {
+                const setupRegistrationCommand = require('./commands/admin/setupRegistrationChannel');
+                return await setupRegistrationCommand.execute(interaction);
+            }
+            
+            // 주식채널설정 명령어 (관리자 전용)
+            else if (commandName === '주식채널설정') {
+                const setupStockCommand = require('./commands/admin/setupStockChannel');
+                return await setupStockCommand.execute(interaction);
+            }
+            
+            // 상점채널설정 명령어 (관리자 전용)
+            else if (commandName === '상점채널설정') {
+                const setupShopCommand = require('./commands/admin/setupShopChannel');
+                return await setupShopCommand.execute(interaction);
+            }
+            
+            // 공지채널설정 명령어 (관리자 전용)
+            else if (commandName === '공지채널설정') {
+                const setupAnnouncementCommand = require('./commands/admin/setupAnnouncementChannel');
+                return await setupAnnouncementCommand.execute(interaction);
+            }
+            
+            // 보스채널설정 명령어 (관리자 전용)
+            else if (commandName === '보스채널설정') {
+                const setupBossCommand = require('./commands/admin/setupBossChannel');
+                return await setupBossCommand.execute(interaction);
+            }
+            
+            // 채널이름일괄변경 명령어 (관리자 전용)
+            else if (commandName === '채널이름일괄변경') {
+                const updateChannelNamesCommand = require('./commands/admin/updateChannelNames');
+                return await updateChannelNamesCommand.execute(interaction);
+            }
+            
+            // 필수채널생성 명령어 (관리자 전용)
+            else if (commandName === '필수채널생성') {
+                const createRequiredChannelsCommand = require('./commands/admin/createRequiredChannels');
+                return await createRequiredChannelsCommand.execute(interaction);
+            }
+            
+            // 누락된 명령어들 추가
+            else if (commandName === '핑') {
+                const ping = Math.round(interaction.client.ws.ping);
+                return await interaction.reply({
+                    content: `🏓 퐁! 지연시간: ${ping}ms`,
+                    ephemeral: true
+                });
+            }
+            
+            else if (commandName === '강화') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '강화랭킹') {
+                const enhancementRankingCommand = require('./commands/game/enhancementRanking');
+                return await enhancementRankingCommand.execute(interaction);
+            }
+            
+            else if (commandName === '강화통계') {
+                const enhancementStatsCommand = require('./commands/game/enhancementStats');
+                return await enhancementStatsCommand.execute(interaction);
+            }
+            
+            else if (commandName === '결투정보') {
+                const duelInfoCommand = require('./commands/game/duelInfo');
+                return await duelInfoCommand.execute(interaction);
+            }
+            
+            else if (commandName === '내전투력') {
+                const combatPowerCommand = require('./commands/game/combatPower');
+                return await combatPowerCommand.execute(interaction);
+            }
+            
+            else if (commandName === '내티켓') {
+                const myTicketsCommand = require('./commands/game/myTickets');
+                return await myTicketsCommand.execute(interaction);
+            }
+            
+            else if (commandName === '조각융합') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '융합수동') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '내조각') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '융합랭킹') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '보스') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '주식복구') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '전투력수정') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === 'ip관리') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '데이터검사') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === '백업복원') {
+                return await handleInteraction(interaction);
+            }
+            
+            else if (commandName === 'db테스트') {
+                const dbTestCommand = require('./commands/test/dbTest');
+                return await dbTestCommand.execute(interaction);
+            }
         }
         
         // 버튼 및 셀렉트 메뉴 처리
         else if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
+            // 회원가입 버튼 처리
+            if (interaction.isButton() && interaction.customId === 'start_registration') {
+                const registerCommand = require('./commands/utility/register');
+                return await registerCommand.execute(interaction);
+            }
+            
             // 회원가입 관련 처리
             if (interaction.isModalSubmit()) {
                 if (interaction.customId === 'registration_email_modal' || 
@@ -954,7 +1202,7 @@ async function handleMainInteraction(interaction) {
                     case 'emblem':
                         interaction.customId = 'emblem';
                         break;
-                    case 'minigame':
+                    case 'minigame_menu':
                         interaction.customId = 'minigame_menu';
                         break;
                     case 'pvp':
@@ -981,8 +1229,8 @@ async function handleMainInteraction(interaction) {
                     case 'daily':
                         interaction.customId = 'daily';
                         break;
-                    case 'admin':
-                        interaction.customId = 'admin_menu';
+                    case 'admin_panel':
+                        interaction.customId = 'admin_panel';
                         break;
                     case 'hunting':
                         interaction.customId = 'hunting';
@@ -1097,6 +1345,10 @@ async function handleMainInteraction(interaction) {
             else if (interaction.customId === 'world_boss_leave') {
                 const worldBossSystem = require('./systems/worldBossSystem');
                 return await worldBossSystem.leaveBossRaid(interaction);
+            }
+            else if (interaction.customId === 'world_boss_start') {
+                const { handleWorldBossStart } = require('./systems/worldBossSystem');
+                return await handleWorldBossStart(interaction);
             }
             // 댕댕봇 구출 버튼 처리
             else if (interaction.customId && (interaction.customId === 'dogbot_attack' || interaction.customId === 'dogbot_ranking' || interaction.customId === 'dogbot_status')) {

@@ -2,6 +2,7 @@ const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('
 const DailyMission = require('../../models/DailyMission');
 const User = require('../../models/User');
 const { getUser } = require('../common/utils');
+const { applyGoldBonus } = require('../common/specialEffects');
 
 // 일일미션 목록
 const DAILY_MISSIONS = {
@@ -37,8 +38,11 @@ async function showDailyMissions(interaction) {
     }
     
     // 리셋 체크
-    missionData.resetDaily();
-    await missionData.save();
+    const wasReset = missionData.resetDaily();
+    if (wasReset) {
+        console.log(`[미션] ${interaction.user.id}의 일일미션이 리셋되었습니다.`);
+        await missionData.save();
+    }
     
     const embed = new EmbedBuilder()
         .setColor('#3498db')
@@ -180,8 +184,9 @@ async function claimDailyMissionReward(interaction) {
         return await interaction.reply({ content: '❌ 보상을 수령할 수 없습니다.', flags: 64 });
     }
     
-    // 보상 지급
-    user.gold += 100000;
+    // 보상 지급 (칭호 효과 적용)
+    const goldReward = applyGoldBonus(100000, user);
+    user.gold += goldReward;
     user.inventory.push({
         name: '엠블럼 강화석',
         type: 'consumable',
@@ -190,6 +195,10 @@ async function claimDailyMissionReward(interaction) {
         description: '엠블럼을 강화할 수 있는 특별한 돌'
     });
     await user.save();
+    
+    // 골드 획득 미션 업데이트
+    const MissionHelper = require('../../utils/missionHelper');
+    await MissionHelper.updateGoldEarned(interaction.user.id, 100000);
     
     // 보상 수령 처리
     missionData.dailyRewardClaimed = true;
@@ -225,8 +234,9 @@ async function claimWeeklyMissionReward(interaction) {
         return await interaction.reply({ content: '❌ 보상을 수령할 수 없습니다.', flags: 64 });
     }
     
-    // 보상 지급
-    user.gold += 500000;
+    // 보상 지급 (칭호 효과 적용)
+    const weeklyGoldReward = applyGoldBonus(500000, user);
+    user.gold += weeklyGoldReward;
     for (let i = 0; i < 5; i++) {
         user.inventory.push({
             name: '엠블럼 강화석',
@@ -244,6 +254,10 @@ async function claimWeeklyMissionReward(interaction) {
         description: '특별한 아이템과 교환할 수 있는 프리미엄 화폐'
     });
     await user.save();
+    
+    // 골드 획득 미션 업데이트
+    const MissionHelper = require('../../utils/missionHelper');
+    await MissionHelper.updateGoldEarned(interaction.user.id, 500000);
     
     // 보상 수령 처리
     missionData.weeklyRewardClaimed = true;

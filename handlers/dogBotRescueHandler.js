@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { DOGBOT_RESCUE_EVENT, calculateDamage, getCurrentFloor, getHPPercentage, createProgressBar } = require('../data/dogBotRescueEvent');
 const User = require('../models/User');
 const stateManager = require('../systems/dogBotStateManager');
@@ -41,10 +41,14 @@ async function handleDogBotRescueInteraction(interaction) {
         
         // 에러 응답
         const errorMessage = '⚠️ 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
-        if (interaction.deferred) {
-            await interaction.editReply({ content: errorMessage });
-        } else if (!interaction.replied) {
-            await interaction.reply({ content: errorMessage, ephemeral: true });
+        try {
+            if (interaction.deferred) {
+                await interaction.editReply({ content: errorMessage });
+            } else if (!interaction.replied) {
+                await interaction.reply({ content: errorMessage, flags: 64 });
+            }
+        } catch (replyError) {
+            console.error('[댕댕봇구출] 에러 응답 실패:', replyError);
         }
     }
 }
@@ -184,6 +188,12 @@ async function handleAttack(interaction) {
     // 쿨다운 설정
     attackCooldowns.set(userId, now + DOGBOT_RESCUE_EVENT.attack.cooldown);
     
+    // 인프 유저 ID 리다이렉트 적용 (표시용)
+    let displayUserId = userId;
+    if (userId === '592659577384730645') {
+        displayUserId = '1374702838541168650';
+    }
+    
     // 결과 임베드
     const hpPercentage = getHPPercentage(currentFloor);
     const progressBar = createProgressBar(hpPercentage);
@@ -274,7 +284,7 @@ async function handleAttack(interaction) {
             },
             {
                 name: '📈 전투 통계',
-                value: `⚔️ 공격 횟수: ${stateManager.state.statistics.userAttackCount[userId] || 1}회\n💯 누적 데미지: ${(stateManager.state.statistics.userDamage[userId] || damageResult.damage).toLocaleString()}`,
+                value: `⚔️ 공격 횟수: ${stateManager.state.statistics.userAttackCount[displayUserId]}회\n💯 누적 데미지: ${stateManager.state.statistics.userDamage[displayUserId].toLocaleString()}`,
                 inline: true
             }
         )
@@ -301,24 +311,44 @@ async function handleAttack(interaction) {
     });
     
     // 보스 대사
-    if (hpPercentage > 70) {
+    if (floorNum === 6) {
+        // 6층 특별 대사 (테토남이 되고 싶은 개발자)
+        let floor6Quotes;
+        if (hpPercentage > 70) {
+            floor6Quotes = DOGBOT_RESCUE_EVENT.messages.developerQuotes.floor6.high;
+        } else if (hpPercentage > 30) {
+            floor6Quotes = DOGBOT_RESCUE_EVENT.messages.developerQuotes.floor6.medium;
+        } else {
+            floor6Quotes = DOGBOT_RESCUE_EVENT.messages.developerQuotes.floor6.low;
+        }
         embed.addFields({
-            name: '💬 보스의 반응',
-            value: `*"${DOGBOT_RESCUE_EVENT.messages.developerQuotes.high[Math.floor(Math.random() * DOGBOT_RESCUE_EVENT.messages.developerQuotes.high.length)]}"*`,
+            name: '🎆 테토남(원래는 에겐녀)의 분노',
+            value: `*"${floor6Quotes[Math.floor(Math.random() * floor6Quotes.length)]}"*`,
             inline: false
         });
-    } else if (hpPercentage > 30) {
-        embed.addFields({
-            name: '💬 보스의 반응',
-            value: `*"${DOGBOT_RESCUE_EVENT.messages.developerQuotes.medium[Math.floor(Math.random() * DOGBOT_RESCUE_EVENT.messages.developerQuotes.medium.length)]}"*`,
-            inline: false
-        });
+        // 6층 보스 이미지를 임베드에 추가
+        embed.setThumbnail('attachment://ev_boss2.jpg');
     } else {
-        embed.addFields({
-            name: '💬 보스의 반응',
-            value: `*"${DOGBOT_RESCUE_EVENT.messages.developerQuotes.low[Math.floor(Math.random() * DOGBOT_RESCUE_EVENT.messages.developerQuotes.low.length)]}"*`,
-            inline: false
-        });
+        // 일반 층 대사
+        if (hpPercentage > 70) {
+            embed.addFields({
+                name: '💬 보스의 반응',
+                value: `*"${DOGBOT_RESCUE_EVENT.messages.developerQuotes.high[Math.floor(Math.random() * DOGBOT_RESCUE_EVENT.messages.developerQuotes.high.length)]}"*`,
+                inline: false
+            });
+        } else if (hpPercentage > 30) {
+            embed.addFields({
+                name: '💬 보스의 반응',
+                value: `*"${DOGBOT_RESCUE_EVENT.messages.developerQuotes.medium[Math.floor(Math.random() * DOGBOT_RESCUE_EVENT.messages.developerQuotes.medium.length)]}"*`,
+                inline: false
+            });
+        } else {
+            embed.addFields({
+                name: '💬 보스의 반응',
+                value: `*"${DOGBOT_RESCUE_EVENT.messages.developerQuotes.low[Math.floor(Math.random() * DOGBOT_RESCUE_EVENT.messages.developerQuotes.low.length)]}"*`,
+                inline: false
+            });
+        }
     }
     
     // 공격 결과 임베드는 버튼 없이 전송
@@ -330,27 +360,57 @@ async function handleAttack(interaction) {
             stateManager.advanceFloor();
             const nextFloor = DOGBOT_RESCUE_EVENT.floors[floorNum + 1];
             
-            embed.setColor('#00FF00')
-                .setTitle('🎉 층 돌파!')
-                .setDescription(DOGBOT_RESCUE_EVENT.messages.floorClear[floorNum])
-                .setFields([]) // 기존 필드 제거
-                .addFields(
-                    {
-                        name: '🎊 축하합니다!',
-                        value: `**${currentFloor.name}**을(를) 물리쳤습니다!\n${user.nickname}님이 마지막 일격을 가했습니다!`,
-                        inline: false
-                    },
-                    {
-                        name: '🐕 댕댕봇의 메시지',
-                        value: `*"멍멍! ${floorNum}층 클리어! 고마워멍! 이제 ${5 - floorNum}층만 남았어멍!"*`,
-                        inline: false
-                    },
-                    {
-                        name: `⬆️ 다음 층: ${nextFloor.emoji} ${nextFloor.name}`,
-                        value: `체력: ${nextFloor.maxHP.toLocaleString()} HP\n${nextFloor.description}`,
-                        inline: false
-                    }
-                );
+            // 5층 클리어 후 보스 등장
+            if (floorNum === 5) {
+                embed.setColor('#FF69B4')
+                    .setTitle('⚠️ 긴급 상황!')
+                    .setDescription('🎆 **5층을 클리어하자 갑자기 진짜 최종보스가 나타났다!**')
+                    .setFields([]) // 기존 필드 제거
+                    .addFields(
+                        {
+                            name: '💥 충격적인 전개!',
+                            value: `개발자를 물리치고 댕댕봇을 구출하려는 순간...\n갑자기 비밀 방이 열리며 **테토남이 되고 싶은 개발자**가 등장했습니다!`,
+                            inline: false
+                        },
+                        {
+                            name: '🗣️ 최종 보스의 외침',
+                            value: `*"하하하! 내가 진짜 최종보스다! 나는 에겐녀가 아니라 테토남이라고!"*`,
+                            inline: false
+                        },
+                        {
+                            name: '🐕 댕댕봇의 메시지',
+                            value: `*"헉! 멍멍! 조심해멍! 저 사람 화나면 진짜 무서워멍!"*`,
+                            inline: false
+                        },
+                        {
+                            name: `🎆 최종 보스: ${nextFloor.emoji} ${nextFloor.name}`,
+                            value: `체력: ${nextFloor.maxHP.toLocaleString()} HP\n${nextFloor.description}`,
+                            inline: false
+                        }
+                    );
+            } else {
+                embed.setColor('#00FF00')
+                    .setTitle('🎉 층 돌파!')
+                    .setDescription(DOGBOT_RESCUE_EVENT.messages.floorClear[floorNum])
+                    .setFields([]) // 기존 필드 제거
+                    .addFields(
+                        {
+                            name: '🎊 축하합니다!',
+                            value: `**${currentFloor.name}**을(를) 물리쳤습니다!\n${user.nickname}님이 마지막 일격을 가했습니다!`,
+                            inline: false
+                        },
+                        {
+                            name: '🐕 댕댕봇의 메시지',
+                            value: `*"멍멍! ${floorNum}층 클리어! 고마워멍! ${floorNum < 5 ? `이제 ${5 - floorNum}층만 남았어멍!` : `잠깐... 뭔가 이상한 기운이...멍?`}"*`,
+                            inline: false
+                        },
+                        {
+                            name: `⬆️ 다음 층: ${nextFloor.emoji} ${nextFloor.name}`,
+                            value: `체력: ${nextFloor.maxHP.toLocaleString()} HP\n${nextFloor.description}`,
+                            inline: false
+                        }
+                    );
+            }
             
             // 층 클리어 시에도 버튼 없이
         } else {
@@ -359,6 +419,17 @@ async function handleAttack(interaction) {
             
             // 자동 공지 중지
             announcer.stopAnnouncements();
+            
+            // 채널 이름 변경 (종료 표시)
+            try {
+                const eventChannel = interaction.guild.channels.cache.get('1386447256408035399');
+                if (eventChannel) {
+                    await eventChannel.setName('🎉│이벤트│✅-댕댕봇-구출-이벤트-종료');
+                    console.log('[댕댕봇구출] 이벤트 채널명을 종료로 변경');
+                }
+            } catch (channelError) {
+                console.error('[댕댕봇구출] 채널명 변경 실패:', channelError);
+            }
             
             // 전체 통계
             const totalTime = Math.floor((Date.now() - stateManager.state.status.startTime) / 1000 / 60);
@@ -400,7 +471,7 @@ async function handleAttack(interaction) {
             
             embed.setColor('#FFD700')
                 .setTitle('🎊 댕댕봇 구출 성공!')
-                .setDescription(DOGBOT_RESCUE_EVENT.messages.floorClear[5])
+                .setDescription(DOGBOT_RESCUE_EVENT.messages.floorClear[6])
                 .setImage('https://cdn.discordapp.com/attachments/1291053400540090481/1291446516283723787/dogbot.png')
                 .setFields([]) // 기존 필드 제거
                 .addFields(
@@ -435,12 +506,28 @@ async function handleAttack(interaction) {
             }
             
             embed.addFields({
-                name: '💬 개발자의 한마디',
-                value: '*"이런... 결국 댕댕봇을 빼앗겼군... 다음엔 더 많은 버그를 준비하겠어..."*',
+                name: '💬 테토남이 되고 싶은 개발자의 한마디',
+                value: '*"크흑... 결국 나의 테토남 변신 계획이... 좋아, 다음엔 완벽한 테토남이 되어서 돌아오겠어! 에겐녀가 아니라고!!!"*',
                 inline: false
             });
             
             // 이벤트 완료 시에도 버튼 없이
+        }
+    }
+    
+    // 6층일 때 테토남 보스 이미지 첫8부
+    if (floorNum === 6) {
+        try {
+            const bossImagePath = path.join(__dirname, '..', 'resources', 'ev_boss2.jpg');
+            if (fs.existsSync(bossImagePath)) {
+                const bossImage = new AttachmentBuilder(bossImagePath, { name: 'ev_boss2.jpg' });
+                return await interaction.editReply({ 
+                    embeds: [embed],
+                    files: [bossImage]
+                });
+            }
+        } catch (imgError) {
+            console.error('[댕댕봇구출] 6층 보스 이미지 로드 실패:', imgError);
         }
     }
     
@@ -463,7 +550,18 @@ async function handleAttack(interaction) {
 
 // 딜 순위 표시
 async function showRanking(interaction) {
-    await interaction.deferReply();
+    try {
+        // 이미 처리된 interaction인지 확인
+        if (interaction.replied || interaction.deferred) {
+            console.log('[댕댕봇구출] 이미 처리된 interaction (showRanking)');
+            return;
+        }
+        
+        await interaction.deferReply();
+    } catch (error) {
+        console.error('[댕댕봇구출] deferReply 오류:', error);
+        return;
+    }
     
     // state 체크
     if (!stateManager.state || !stateManager.state.status) {
@@ -648,15 +746,23 @@ async function showStatus(interaction) {
         .setThumbnail('https://cdn.discordapp.com/attachments/1291053400540090481/1291446516283723787/dogbot.png');
     
     if (stateManager.state.status.isActive) {
+        // 6층일 때 특별 이미지 및 정보
+        if (floorNum === 6) {
+            embed.setThumbnail('attachment://ev_boss2.jpg');
+            embed.setImage('attachment://ev_boss2.jpg');
+        }
+        
         embed.addFields(
             {
-                name: `📍 현재 위치: ${floorNum}층 - ${currentFloor.name}`,
+                name: floorNum === 6 ? `⚔️ 최종 보스전` : `📍 현재 위치: ${floorNum}층 - ${currentFloor.name}`,
                 value: currentFloor.description,
                 inline: false
             },
             {
                 name: '💀 보스 정보',
-                value: `${currentFloor.bossQuote}`,
+                value: floorNum === 6 ? 
+                    `${currentFloor.bossQuote}\n\n🎆 **별명**: 에겐녀, 여리, 요리, 유리\n😡 **목표**: 테토남이 되기\n⚔️ **특기**: 버그 코드 작성, 분노 폭발` :
+                    `${currentFloor.bossQuote}`,
                 inline: false
             },
             {
@@ -688,8 +794,14 @@ async function showStatus(interaction) {
     for (let i = 1; i <= stateManager.state.status.totalFloors; i++) {
         const floor = stateManager.state.floors[i];
         const cleared = i < floorNum || (i === floorNum && floor.currentHP <= 0);
-        progressText += cleared ? '✅ ' : i === floorNum ? '🔥 ' : '⬜ ';
-        progressText += `**${i}층** ${DOGBOT_RESCUE_EVENT.floors[i].name}\n`;
+        
+        if (i === 6) {
+            progressText += cleared ? '✅ ' : i === floorNum ? '🔥 ' : '⬜ ';
+            progressText += `**최종 보스** ${DOGBOT_RESCUE_EVENT.floors[i].name}\n`;
+        } else {
+            progressText += cleared ? '✅ ' : i === floorNum ? '🔥 ' : '⬜ ';
+            progressText += `**${i}층** ${DOGBOT_RESCUE_EVENT.floors[i].name}\n`;
+        }
     }
     
     embed.addFields({
@@ -698,6 +810,21 @@ async function showStatus(interaction) {
         inline: false
     });
     
+    // 6층 상황일 때 테토남 보스 이미지 첫8부
+    if (floorNum === 6 && stateManager.state.status.isActive) {
+        try {
+            const bossImagePath = path.join(__dirname, '..', 'resources', 'ev_boss2.jpg');
+            if (fs.existsSync(bossImagePath)) {
+                const bossImage = new AttachmentBuilder(bossImagePath, { name: 'ev_boss2.jpg' });
+                return await interaction.editReply({ 
+                    embeds: [embed],
+                    files: [bossImage]
+                });
+            }
+        } catch (error) {
+            console.error('[댕댕봇구출] 6층 보스 이미지 로드 실패:', error);
+        }
+    }
     
     return await interaction.editReply({ embeds: [embed] });
 }

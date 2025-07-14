@@ -6,6 +6,7 @@ const spectatorBetting = require('../../data/spectatorBetting');
 const channelCleanup = require('../../systems/channelCleanup');
 const { validateWord, extractChosung, isHanBangWord, botWords } = require('../../utils/wordValidator');
 const MinigameUI = require('../../utils/minigameUI');
+const { applyGoldBonus } = require('../common/specialEffects');
 
 // 워드게임 설정
 const WORD_GAME = {
@@ -1926,7 +1927,12 @@ class WordGamesSystem {
             if (!winner.isBot && session.totalPot) {
                 const user = await User.findOne({ discordId: winner.id });
                 if (user) {
-                    user.gold += session.totalPot;
+                    // 칭호 효과 적용
+                    const originalReward = session.totalPot;
+                    const goldReward = applyGoldBonus(session.totalPot, user);
+                    const bonusAmount = goldReward - originalReward;
+                    
+                    user.gold += goldReward;
                     
                     // 통계 업데이트
                     if (!user.wordGameStats) {
@@ -1935,18 +1941,42 @@ class WordGamesSystem {
                     user.wordGameStats[session.type].wins++;
                     user.wordGameStats[session.type].totalGames++;
                     
+                    // gameStats 업데이트
+                    if (!user.gameStats) user.gameStats = {};
+                    const gameType = session.type === 'chosung' ? 'chosung' : 'wordchain';
+                    if (!user.gameStats[gameType]) user.gameStats[gameType] = { played: 0, won: 0 };
+                    user.gameStats[gameType].played++;
+                    user.gameStats[gameType].won++;
+                    
                     await user.save();
                     
+                    // 미션 진행도 업데이트
+                    const MissionHelper = require('../../utils/missionHelper');
+                    await MissionHelper.updateMiniGame(winner.id);
+                    await MissionHelper.updateGoldEarned(winner.id, goldReward);
+                    
                     endEmbed.addFields({ 
-                        name: '💰 획듍 상금', 
-                        value: `${session.totalPot.toLocaleString()}G`, 
+                        name: '💰 획득 상금', 
+                        value: `${goldReward.toLocaleString()}G` + (bonusAmount > 0 ? `\n🏷️ 칭호 효과 +${bonusAmount.toLocaleString()}G` : ''), 
                         inline: true 
                     });
                 }
             }
             
-            // 패배자 목록
+            // 패배자 목록 및 통계 업데이트
             losers = session.players.filter(p => p.id !== winnerId && !p.isBot);
+            
+            // 패자들의 gameStats 업데이트
+            for (const loser of losers) {
+                const loserUser = await User.findOne({ discordId: loser.id });
+                if (loserUser) {
+                    if (!loserUser.gameStats) loserUser.gameStats = {};
+                    const gameType = session.type === 'chosung' ? 'chosung' : 'wordchain';
+                    if (!loserUser.gameStats[gameType]) loserUser.gameStats[gameType] = { played: 0, won: 0 };
+                    loserUser.gameStats[gameType].played++;
+                    await loserUser.save();
+                }
+            }
             
         } else if (winners.length > 1) {
             endEmbed.setDescription(`🤝 무승부!\n우승자: ${winners.map(w => w.name).join(', ')}`);
@@ -2004,8 +2034,14 @@ class WordGamesSystem {
                     for (const [userId, payout] of betResult.payouts) {
                         const user = await User.findOne({ discordId: userId });
                         if (user) {
-                            user.gold += payout;
+                            // 관전 베팅 당첨금에도 칭호 효과 적용
+                            const goldReward = applyGoldBonus(payout, user);
+                            user.gold += goldReward;
                             await user.save();
+                            
+                            // 미션 진행도 업데이트
+                            const MissionHelper = require('../../utils/missionHelper');
+                            await MissionHelper.updateGoldEarned(userId, payout);
                         }
                     }
                 }

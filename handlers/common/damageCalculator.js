@@ -18,8 +18,9 @@ function calculateDodgeChance(agility, additionalDodge = 0) {
 // 방어력에 의한 데미지 감소율 계산
 function calculateDamageReduction(defense, penetration = 0) {
     const effectiveDefense = Math.max(0, defense - penetration);
-    // 방어력 100당 약 10% 감소, 최대 70% 감소
-    return Math.min(0.7, effectiveDefense / (effectiveDefense + 500));
+    // 방어력 100당 약 5% 감소, 최대 50% 감소 (기존 70% → 50%로 완화)
+    // 방어력 공식 변경: 더 완만한 곡선으로 조정
+    return Math.min(0.5, effectiveDefense / (effectiveDefense + 1000));
 }
 
 // 통합 데미지 계산
@@ -157,9 +158,15 @@ function calculateBossRaidDamage(user, boss, isSkill = false) {
         });
     }
     
+    // 전투력 기반 보너스 계산 (고스펙 유저 우대)
+    const combatPower = calculateCombatPower(user);
+    const powerBonus = Math.sqrt(combatPower / 1000) * 0.1; // 전투력 1000당 10% 보너스 (제곱근 적용)
+    
+    // 보스 레이드는 방어 관통 30% 적용 (고스펙 유저 우대)
     return calculateDamage(user, boss, {
-        skillMultiplier: (isSkill ? 1.5 : 1.0) * (1 + bossBonus),
-        damageType: 'physical'
+        skillMultiplier: (isSkill ? 1.5 : 1.0) * (1 + bossBonus + powerBonus),
+        damageType: 'physical',
+        penetration: boss.defense * 0.3 // 보스 방어력의 30% 관통
     });
 }
 

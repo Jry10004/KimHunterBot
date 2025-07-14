@@ -8,6 +8,7 @@ const { handleEventInteraction } = require('./events');
 const { handleBossRaidInteraction } = require('./raid/bossRaid');
 const { handleDungeonInteraction } = require('./dungeon');
 const { handleEnhanceInteraction } = require('./enhance/enhanceSystem');
+const User = require('../models/User');
 
 // 메인 인터랙션 라우터
 async function handleInteraction(interaction) {
@@ -16,7 +17,11 @@ async function handleInteraction(interaction) {
     }
 
     const customId = interaction.customId;
-    console.log('[Handler Router] Processing interaction:', customId);
+    
+    // random_ 아이템 관련 인터랙션은 로그에서 제외
+    if (!customId.includes('random_')) {
+        console.log('[Handler Router] Processing interaction:', customId);
+    }
 
     // 모달 처리
     if (interaction.isModalSubmit()) {
@@ -142,6 +147,27 @@ async function handleInteraction(interaction) {
         return await handleCharacterInteraction(interaction);
     }
     
+    // PVP 관련 처리
+    else if (customId === 'pvp_play_again') {
+        console.log('[Handler] Processing pvp_play_again button');
+        const pvpSystem = require('../systems/pvpSystem').getInstance();
+        const user = await User.findOne({ discordId: interaction.user.id });
+        if (!user) {
+            return await interaction.reply({ 
+                content: '❌ 회원가입이 필요합니다!', 
+                flags: 64 
+            });
+        }
+        
+        // 먼저 버튼 응답 처리
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.deferUpdate().catch(console.error);
+        }
+        
+        // 대기실 생성
+        return await pvpSystem.createWaitingRoom(interaction, user);
+    }
+    
     // 미니게임 관련 처리
     else if (customId === 'monster_battle' || customId.includes('monster_')) {
         const { handleMonsterBattleInteraction } = require('./minigames/monsterBattle');
@@ -184,6 +210,10 @@ async function handleInteraction(interaction) {
         const { handleTicTacToeButton } = require('./minigame/tictactoe');
         return await handleTicTacToeButton(interaction);
     }
+    else if (customId === 'lol_inhouse' || customId.includes('lol_')) {
+        const { handleLolInhouseInteraction } = require('./minigames/lolInhouse');
+        return await handleLolInhouseInteraction(interaction);
+    }
     else if (customId === 'minigame_menu') {
         const { handleMinigameInteraction } = require('./minigames/index');
         return await handleMinigameInteraction(interaction);
@@ -201,13 +231,27 @@ async function handleInteraction(interaction) {
              customId === 'stocks' || customId === 'artifacts' || 
              customId === 'fragments' || customId.includes('exploration') ||
              customId.startsWith('random_') || customId === 'sector_select' ||
-             customId.includes('mine_')) {
+             customId.includes('mine_') ||
+             // 새로운 판매 시스템 추가
+             customId.includes('sell_mode_') || customId.includes('sell_grade_') ||
+             customId.includes('grade_sell_') || customId.includes('quick_sell_') || 
+             customId === 'sell_menu_back' || customId === 'sell_menu_return' || 
+             customId === 'grade_sell_menu' || customId.includes('confirm_grade_sell_') ||
+             customId.includes('quick_sell_page_') ||
+             // 멀티 가챠 페이지네이션 추가
+             customId === 'multi_next' || customId === 'multi_prev') {
         return await handleEconomyInteraction(interaction);
     }
     
     // 보스 레이드 관련 처리
     else if (customId === 'boss_raid' || customId === 'boss_raid_menu' || customId === 'boss_raid_ranking') {
         return await handleBossRaidInteraction(interaction);
+    }
+    
+    // 보스 상점 메뉴 처리
+    else if (customId === 'boss_shop_menu' || customId === 'boss_accessory_shop') {
+        const { handleBossShopInteraction } = require('./raid/bossShopMenu');
+        return await handleBossShopInteraction(interaction);
     }
     
     // 보스 장신구 상점 처리
@@ -245,6 +289,7 @@ async function handleInteraction(interaction) {
              customId.includes('claim_daily') || customId.includes('hunt_area') ||
              customId.includes('appraisal') || customId.includes('appraise') || 
              customId.includes('appraiser') || customId.includes('tournament') || 
+             customId.includes('speed_hunt') ||
              customId.includes('warehouse') || customId.includes('certificate') || 
              customId.includes('strategy') || customId.includes('market_') || 
              customId === 'market_prices' || customId === 'market_type_select' ||
@@ -317,6 +362,18 @@ async function handleInteraction(interaction) {
         return true;
     }
     
+    // 월드 보스 관련 처리
+    else if (customId === 'world_boss_join' || customId === 'world_boss_leave' || customId === 'world_boss_ready') {
+        const worldBossSystem = require('../systems/worldBossSystem');
+        if (customId === 'world_boss_join') {
+            return await worldBossSystem.joinBossRaid(interaction);
+        } else if (customId === 'world_boss_leave') {
+            return await worldBossSystem.leaveBossRaid(interaction);
+        } else if (customId === 'world_boss_ready') {
+            return await worldBossSystem.setPlayerReady(interaction);
+        }
+    }
+    
     // 사전강화 관련 처리
     else if (customId.includes('prelaunch')) {
         console.log('[Handler Router] Routing to prelaunch handler from handlers/index.js');
@@ -381,6 +438,12 @@ async function handleModalSubmit(interaction) {
         return await handleEconomyModal(interaction);
     }
     
+    // LOL 내전 모달
+    else if (customId.includes('lol_join_modal_')) {
+        const { handleLolInhouseModal } = require('./minigames/lolInhouse');
+        return await handleLolInhouseModal(interaction);
+    }
+    
     // 관리자 모달
     else if (customId.includes('admin')) {
         return await handleAdminModal(interaction);
@@ -439,10 +502,10 @@ async function handleSelectMenu(interaction) {
         else if (value === 'dungeon') {
             return await handleDungeonInteraction(interaction);
         }
-        else if (value === 'boss') {
-            // boss_raid customId로 변환
-            interaction.customId = 'boss_raid';
-            return await handleBossRaidInteraction(interaction);
+        else if (value === 'boss_shop') {
+            // 보스 상점 메뉴 표시
+            const { showBossShopMenu } = require('./raid/bossShopMenu');
+            return await showBossShopMenu(interaction);
         }
         else if (value === 'enhance') {
             interaction.customId = 'enhance';

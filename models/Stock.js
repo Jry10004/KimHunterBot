@@ -84,10 +84,20 @@ stockSchema.virtual('calculatedMarketCap').get(function() {
 
 // 가격 업데이트 메서드
 stockSchema.methods.updatePrice = function(newPrice) {
-    const oldPrice = this.currentPrice;
-    this.currentPrice = newPrice;
-    this.dailyChange = newPrice - oldPrice;
-    this.dailyChangePercent = ((newPrice - oldPrice) / oldPrice * 100).toFixed(2);
+    const oldPrice = this.currentPrice || this.basePrice;
+    
+    // oldPrice가 0인 경우 처리
+    if (oldPrice === 0) {
+        this.currentPrice = newPrice;
+        this.dailyChange = 0;
+        this.dailyChangePercent = 0;
+    } else {
+        this.currentPrice = newPrice;
+        this.dailyChange = newPrice - oldPrice;
+        // 수치형으로 저장 (toFixed 사용 안함)
+        this.dailyChangePercent = parseFloat(((newPrice - oldPrice) / oldPrice * 100).toFixed(2));
+    }
+    
     this.marketCap = this.calculatedMarketCap;
     
     // 가격 히스토리 추가
@@ -125,8 +135,8 @@ stockSchema.methods.addNews = function(title, content, impact) {
     
     // 뉴스 임팩트에 따른 가격 변동
     const priceImpact = 1 + (impact / 1000); // -10% ~ +10%
-    const newPrice = Math.floor(this.currentPrice * priceImpact);
-    this.updatePrice(newPrice);
+    const newPrice = Math.max(1, Math.floor(this.currentPrice * priceImpact)); // 최소가 1원
+    return this.updatePrice(newPrice);
     
     return this.save();
 };

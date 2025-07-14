@@ -205,7 +205,15 @@ async function handleCharacterInteraction(interaction) {
     }
     else if (customId.startsWith('inventory_page_')) {
         const page = parseInt(customId.split('_')[2]);
-        return await showInventory(interaction, page);
+        try {
+            return await showInventory(interaction, page);
+        } catch (error) {
+            if (error.code === 10062) {
+                console.log('[Character] Inventory page interaction expired');
+                return;
+            }
+            throw error;
+        }
     }
     
     // 스탯 분배 관련

@@ -130,7 +130,8 @@ module.exports = {
                     .setDescription(`${email}로 인증 코드를 발송했습니다!`)
                     .addFields(
                         { name: '⏰ 유효 시간', value: '10분', inline: true },
-                        { name: '📝 인증 코드', value: '6자리 숫자', inline: true }
+                        { name: '📝 인증 코드', value: '6자리 숫자', inline: true },
+                        { name: '💡 대안', value: '버튼이 작동하지 않으면 `/인증 코드:123456` 명령어를 사용하세요', inline: false }
                     )
                     .setFooter({ text: '아래 버튼을 눌러 인증 코드를 입력하세요' });
                 
@@ -156,7 +157,8 @@ module.exports = {
                         .setDescription(`${email}로 인증 코드를 발송했습니다!`)
                         .addFields(
                             { name: '⏰ 유효 시간', value: '10분', inline: true },
-                            { name: '📝 인증 코드', value: `**${verificationCode}**`, inline: true }
+                            { name: '📝 인증 코드', value: `**${verificationCode}**`, inline: true },
+                            { name: '💡 대안', value: '버튼이 작동하지 않으면 `/인증 코드:${verificationCode}` 명령어를 사용하세요', inline: false }
                         )
                         .setFooter({ text: '개발 모드: 인증 코드가 표시됩니다' });
                     
@@ -181,6 +183,8 @@ module.exports = {
     
     // 인증 코드 입력 처리
     async handleVerification(interaction) {
+        console.log('[회원가입] 인증 버튼 클릭됨:', interaction.customId);
+        
         if (!interaction.customId.startsWith('verify_email_')) return;
         
         const userId = interaction.customId.split('_')[2];
@@ -191,23 +195,33 @@ module.exports = {
             });
         }
         
-        // 인증 코드 입력 모달
-        const modal = new ModalBuilder()
-            .setCustomId('verification_code_modal')
-            .setTitle('이메일 인증 코드 입력');
-        
-        const codeInput = new TextInputBuilder()
-            .setCustomId('verification_code')
-            .setLabel('인증 코드 (6자리)')
-            .setPlaceholder('123456')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true)
-            .setMinLength(6)
-            .setMaxLength(6);
-        
-        modal.addComponents(new ActionRowBuilder().addComponents(codeInput));
-        
-        await interaction.showModal(modal);
+        try {
+            // 인증 코드 입력 모달
+            const modal = new ModalBuilder()
+                .setCustomId('verification_code_modal')
+                .setTitle('이메일 인증 코드 입력');
+            
+            const codeInput = new TextInputBuilder()
+                .setCustomId('verification_code')
+                .setLabel('인증 코드 (6자리)')
+                .setPlaceholder('123456')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setMinLength(6)
+                .setMaxLength(6);
+            
+            modal.addComponents(new ActionRowBuilder().addComponents(codeInput));
+            
+            console.log('[회원가입] 인증 코드 입력 모달 표시 시도');
+            await interaction.showModal(modal);
+            console.log('[회원가입] 인증 코드 입력 모달 표시 완료');
+        } catch (error) {
+            console.error('[회원가입] 인증 모달 표시 오류:', error);
+            await interaction.reply({
+                content: '❌ 인증 코드 입력창을 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.',
+                ephemeral: true
+            });
+        }
     },
     
     // 인증 코드 확인
@@ -322,6 +336,17 @@ module.exports = {
             user.emailVerificationExpires = undefined;
             
             await user.save();
+            
+            // 김헌터플레이어 역할 부여
+            try {
+                const playerRole = interaction.guild.roles.cache.find(role => role.name === '김헌터플레이어');
+                if (playerRole) {
+                    await interaction.member.roles.add(playerRole);
+                    console.log(`✅ ${interaction.user.tag}에게 김헌터플레이어 역할 부여`);
+                }
+            } catch (roleError) {
+                console.error('역할 부여 실패:', roleError);
+            }
             
             // 회원가입 완료 메시지
             const successEmbed = new EmbedBuilder()

@@ -9,6 +9,7 @@ const EQUIPMENT_SLOTS = {
     helmet: { name: '투구', emoji: '⛑️' },
     gloves: { name: '장갑', emoji: '🧤' },
     boots: { name: '신발', emoji: '👢' },
+    shield: { name: '방패', emoji: '🛡️' },
     accessory: { name: '악세서리', emoji: '💍' }
 };
 
@@ -113,7 +114,18 @@ async function showEquipment(interaction) {
     // 각 슬롯별 장비 표시
     for (const [slot, info] of Object.entries(EQUIPMENT_SLOTS)) {
         const equippedSlot = user.equipment?.[slot];
-        const equippedItem = (equippedSlot >= 0 && user.inventory?.[equippedSlot]) ? user.inventory[equippedSlot] : null;
+        let equippedItem = null;
+        
+        // 장착된 아이템 찾기 - inventorySlot 또는 인덱스로 찾기
+        if (equippedSlot >= 0 && user.inventory) {
+            // inventorySlot으로 먼저 찾기
+            equippedItem = user.inventory.find(item => item.inventorySlot === equippedSlot);
+            
+            // 못 찾았으면 배열 인덱스로 찾기
+            if (!equippedItem) {
+                equippedItem = user.inventory[equippedSlot];
+            }
+        }
         
         if (equippedItem) {
             const enhancement = equippedItem.enhancement ? ` (+${equippedItem.enhancement})` : '';
@@ -280,17 +292,17 @@ async function showEquippableItems(interaction, slot, page = 1) {
         });
     }
 
-    // 해당 슬롯에 장착 가능한 아이템 필터링 (shield는 accessory 슬롯으로)
+    // 해당 슬롯에 장착 가능한 아이템 필터링
     const equippableItems = user.inventory?.filter(item => {
-        if (slot === 'accessory') {
-            return item.type === 'accessory' || item.type === 'shield';
-        }
         return item.type === slot;
     }) || [];
     
     if (equippableItems.length === 0) {
+        const slotInfo = slot === 'accessory' ? '💍 악세사리/방패' : `${EQUIPMENT_SLOTS[slot].emoji} ${EQUIPMENT_SLOTS[slot].name}`;
+        const additionalInfo = slot === 'accessory' ? '\n\nℹ️ 악세사리 또는 방패 타입의 아이템을 장착할 수 있습니다.' : '';
+        
         return await interaction.update({
-            content: `${EQUIPMENT_SLOTS[slot].emoji} ${EQUIPMENT_SLOTS[slot].name} 슬롯에 장착 가능한 아이템이 없습니다.`,
+            content: `${slotInfo} 슬롯에 장착 가능한 아이템이 없습니다.${additionalInfo}`,
             embeds: [],
             components: [
                 new ActionRowBuilder().addComponents(
@@ -339,6 +351,7 @@ async function showEquippableItems(interaction, slot, page = 1) {
         const inventoryIndex = user.inventory.findIndex(invItem => invItem === item);
         
         const rarityEmoji = RARITY_EMOJIS[item.rarity] || '';
+        
         
         return {
             label: `${item.name}${enhancement}`,
@@ -465,10 +478,8 @@ async function optimizeEquipment(interaction) {
                 return;
             }
             
-            // shield는 accessory 슬롯으로 매핑
-            if (slot === 'accessory' && (item.type === 'accessory' || item.type === 'shield')) {
-                availableItems.push({ item, index });
-            } else if (item.type === slot) {
+            // 해당 슬롯에 맞는 아이템만
+            if (item.type === slot) {
                 availableItems.push({ item, index });
             }
         });
@@ -594,6 +605,7 @@ async function equipItem(interaction, slot, itemIndex) {
         });
     }
     
+    
     // 현재 장착된 아이템 확인
     const currentSlot = user.equipment?.[slot];
     
@@ -618,9 +630,8 @@ async function equipItem(interaction, slot, itemIndex) {
             });
         }
         
-        // shield는 accessory 슬롯에 장착 가능
-        const isValidType = (slot === 'accessory' && (newItem.type === 'accessory' || newItem.type === 'shield')) ||
-                           newItem.type === slot;
+        // 각 슬롯에 맞는 타입만 장착 가능
+        const isValidType = newItem.type === slot;
         
         if (!isValidType) {
             return await interaction.followUp({
@@ -629,9 +640,12 @@ async function equipItem(interaction, slot, itemIndex) {
             });
         }
         
+        // inventorySlot을 사용하여 장착
+        const slotToUse = newItem.inventorySlot !== undefined ? newItem.inventorySlot : itemIndex;
+        
         // 이미 다른 슬롯에 장착 중인지 확인
         const alreadyEquipped = Object.entries(user.equipment || {}).find(
-            ([s, idx]) => s !== slot && idx === itemIndex
+            ([s, idx]) => s !== slot && idx === slotToUse
         );
         
         if (alreadyEquipped) {
@@ -643,7 +657,14 @@ async function equipItem(interaction, slot, itemIndex) {
         
         // 장비 설정
         if (!user.equipment) user.equipment = {};
-        user.equipment[slot] = itemIndex;
+        user.equipment[slot] = slotToUse;
+        
+        // inventorySlot 필드도 설정
+        if (newItem.inventorySlot === undefined) {
+            newItem.inventorySlot = itemIndex;
+            user.markModified('inventory');
+        }
+        
         await user.save();
         
         const rarityEmoji = RARITY_EMOJIS[newItem.rarity || '일반'];
@@ -661,13 +682,25 @@ async function equipItem(interaction, slot, itemIndex) {
 
 // 전체 장비 해제
 async function unequipAll(interaction) {
-    await interaction.deferUpdate().catch(() => {});
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[Equipment] Interaction expired');
+            return;
+        }
+        console.error('[Equipment] Defer error:', error);
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
-        return await interaction.followUp({ 
+        return await interaction.editReply({ 
             content: '먼저 회원가입을 해주세요!',
-            flags: 64
+            embeds: [],
+            components: []
         });
     }
     

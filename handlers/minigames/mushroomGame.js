@@ -8,6 +8,7 @@ const { applyMinigameBonus } = require('../common/specialEffects');
 const channelCleanup = require('../../systems/channelCleanup');
 const MissionHelper = require('../../utils/missionHelper');
 const MinigameUI = require('../../utils/minigameUI');
+const TicketManager = require('../../utils/ticketManager');
 
 // 전역 변수들
 const mushroomGameSessions = new Map();
@@ -75,6 +76,25 @@ class MushroomGameSystem {
             }
             return;
         }
+
+        // 티켓 확인 및 사용
+        const ticketResult = await TicketManager.useTicket(interaction.user.id, 'minigame');
+        if (!ticketResult.success) {
+            const ticketInfo = await TicketManager.getTicketInfo(interaction.user.id);
+            if (interaction.deferred || interaction.replied) {
+                return interaction.editReply({
+                    content: `❌ ${ticketResult.error}\n🎟️ 남은 미니게임 티켓: ${ticketInfo.minigame}장\n⏱️ 티켓은 5분마다 1장씩 충전됩니다.`
+                });
+            } else {
+                return interaction.reply({
+                    content: `❌ ${ticketResult.error}\n🎟️ 남은 미니게임 티켓: ${ticketInfo.minigame}장\n⏱️ 티켓은 5분마다 1장씩 충전됩니다.`,
+                    flags: 64
+                });
+            }
+        }
+        
+        // 티켓이 차감된 최신 user 객체로 업데이트
+        user = ticketResult.user;
 
         if (difficulty === 'pvp') {
             // 유저와 대결: 멀티플레이어 대기실로 이동
@@ -862,18 +882,37 @@ class MushroomGameSystem {
         }
 
         const user = await User.findOne({ discordId: userId });
+        let bonusApplied = false;
+        let bonusAmount = 0;
+        
         if (user) {
-            user.gold += session.totalReward;
+            // 버그 사냥꾼 칭호 효과 적용
+            const { applyMinigameBonus } = require('../common/specialEffects');
+            const originalReward = session.totalReward;
+            const finalReward = applyMinigameBonus(session.totalReward, user);
+            
+            if (finalReward > originalReward) {
+                bonusApplied = true;
+                bonusAmount = finalReward - originalReward;
+                console.log(`[MushroomGame] ${user.nickname || user.discordId} - 특수 효과 적용: ${originalReward} → ${finalReward} (+${bonusAmount})`);
+                session.totalReward = finalReward;
+            }
+            
+            user.gold += finalReward;
             await user.save();
             
             // 미션 진행도 업데이트
             await MissionHelper.updateMiniGame(userId);
+            if (session.totalReward > 0) {
+                await MissionHelper.updateGoldEarned(userId, session.totalReward);
+            }
         }
 
         const victoryEmbed = new EmbedBuilder()
             .setColor('#ffd700')
             .setTitle(perfectClear ? MUSHROOM_GAME.messages.perfectVictory : MUSHROOM_GAME.messages.survivalVictory.replace('{rounds}', session.survivedRounds))
-            .setDescription(`🎉 축하합니다! ${session.userName}님!`)
+            .setDescription(`🎉 축하합니다! ${session.userName}님!` + 
+                (bonusApplied ? `\n\n🏷️ **버그 사냥꾼 칭호 효과** +${bonusAmount}G` : ''))
             .setImage(`attachment://${MUSHROOM_GAME.backgrounds.victory}`)
             .setThumbnail(`attachment://${MUSHROOM_GAME.effects.victory}`)
             .addFields(
@@ -922,11 +961,22 @@ class MushroomGameSystem {
 
         const user = await User.findOne({ discordId: userId });
         if (user && session.totalReward > 0) {
-            user.gold += session.totalReward;
+            // 버그 사냥꾼 칭호 효과 적용
+            const { applyMinigameBonus } = require('../common/specialEffects');
+            const originalReward = session.totalReward;
+            const finalReward = applyMinigameBonus(session.totalReward, user);
+            
+            if (finalReward > originalReward) {
+                console.log(`[MushroomGame] ${user.nickname || user.discordId} - 특수 효과 적용: ${originalReward} → ${finalReward} (+${finalReward - originalReward})`);
+                session.totalReward = finalReward;
+            }
+            
+            user.gold += finalReward;
             await user.save();
             
             // 미션 진행도 업데이트
             await MissionHelper.updateMiniGame(userId);
+            await MissionHelper.updateGoldEarned(userId, session.totalReward);
         }
 
         this.sessions.delete(userId);
@@ -1486,10 +1536,20 @@ class MushroomGameSystem {
                 // 미니게임 보상 특수 효과 적용
                 const totalReward = applyMinigameBonus(winnerPrize + winner.totalReward, winnerUser);
                 winnerUser.gold += totalReward;
+                
+                // gameStats 업데이트 (승자)
+                if (!winnerUser.gameStats) winnerUser.gameStats = {};
+                if (!winnerUser.gameStats.mushroom) winnerUser.gameStats.mushroom = { played: 0, won: 0 };
+                winnerUser.gameStats.mushroom.played++;
+                winnerUser.gameStats.mushroom.won++;
+                
                 await winnerUser.save();
                 
                 // 미션 진행도 업데이트
                 await MissionHelper.updateMiniGame(winner.userId);
+                if (totalReward > 0) {
+                    await MissionHelper.updateGoldEarned(winner.userId, totalReward);
+                }
             }
 
             endEmbed.addFields(
@@ -1527,6 +1587,9 @@ class MushroomGameSystem {
                         if (betUser) {
                             betUser.gold += payout;
                             await betUser.save();
+                            
+                            // 골드 획득 미션 업데이트
+                            await MissionHelper.updateGoldEarned(userId, payout);
                         }
                     }
                     
@@ -1555,9 +1618,20 @@ class MushroomGameSystem {
 
         await channel.send({ embeds: [endEmbed] });
         
-        // 모든 참가자의 미션 진행도 업데이트
+        // 모든 참가자의 미션 진행도 및 gameStats 업데이트
         for (const player of session.players.values()) {
             await MissionHelper.updateMiniGame(player.userId);
+            
+            // 패자들의 gameStats 업데이트
+            if (player.userId !== survivors[0]?.userId) {
+                const loserUser = await User.findOne({ discordId: player.userId });
+                if (loserUser) {
+                    if (!loserUser.gameStats) loserUser.gameStats = {};
+                    if (!loserUser.gameStats.mushroom) loserUser.gameStats.mushroom = { played: 0, won: 0 };
+                    loserUser.gameStats.mushroom.played++;
+                    await loserUser.save();
+                }
+            }
         }
         
         // 원래 채널에 결과 알림

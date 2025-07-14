@@ -60,6 +60,12 @@ async function showExplorationMenu(interaction, userId) {
     // StringSelectMenu에서 선택한 경우 update 사용
     if (interaction.isStringSelectMenu()) {
         await interaction.update({ embeds: [embed], components: [buttons] });
+    } else if (interaction.deferred) {
+        // 이미 defer된 경우 editReply 사용
+        await interaction.editReply({ embeds: [embed], components: [buttons] });
+    } else if (interaction.replied) {
+        // 이미 응답한 경우 followUp 사용
+        await interaction.followUp({ embeds: [embed], components: [buttons], ephemeral: true });
     } else {
         await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: true });
     }
@@ -676,7 +682,14 @@ async function showPickaxeMenu(interaction, userId) {
         );
     buttons.push(backButton);
 
-    await interaction.update({ embeds: [embed], components: buttons });
+    // 이미 defer된 상태에서는 editReply 사용
+    if (interaction.deferred) {
+        await interaction.editReply({ embeds: [embed], components: buttons });
+    } else if (interaction.replied) {
+        await interaction.followUp({ embeds: [embed], components: buttons, ephemeral: true });
+    } else {
+        await interaction.update({ embeds: [embed], components: buttons });
+    }
 }
 
 // 랭킹 표시
@@ -696,9 +709,19 @@ async function showRankings(interaction, userId) {
         // 탐사가 랭킹
         let explorerRanking = '';
         if (rankings && rankings.length > 0) {
+            // 유저 정보 가져오기
+            const userIds = rankings.map(r => r.userId);
+            const users = await User.find({ discordId: { $in: userIds } });
+            const userMap = {};
+            users.forEach(user => {
+                userMap[user.discordId] = user;
+            });
+
             rankings.forEach((explorer, index) => {
                 const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
-                explorerRanking += `${medal} ${explorer.username || 'Unknown'}\n`;
+                const user = userMap[explorer.userId];
+                const displayName = user?.nickname || user?.username || explorer.username || 'Unknown';
+                explorerRanking += `${medal} ${displayName}\n`;
                 explorerRanking += `   💰 ${(explorer.statistics?.totalEarnings || 0).toLocaleString()} 골드 | 🏺 ${explorer.statistics?.totalArtifactsFound || 0}개\n`;
             });
         }
@@ -776,6 +799,16 @@ async function showArtifactSellMenu(interaction, userId) {
         });
     }
     
+    // 희귀도별 이모지 정의
+    const rarityEmojis = {
+        'common': '⚪',
+        'uncommon': '🟢',
+        'rare': '🔵',
+        'epic': '🟣',
+        'legendary': '🟡',
+        'mythic': '🔴'
+    };
+    
     const embed = new EmbedBuilder()
         .setColor('#FFD700')
         .setTitle('🏺 유물 판매')
@@ -786,7 +819,8 @@ async function showArtifactSellMenu(interaction, userId) {
     const recentArtifacts = sellableArtifacts.slice(-10);
     let artifactList = '';
     recentArtifacts.forEach((artifact, index) => {
-        artifactList += `${index + 1}. ${ARTIFACT_SYSTEM.rarities[artifact.rarity]?.emoji || '🏺'} **${artifact.name}**\n`;
+        const emoji = rarityEmojis[artifact.rarity] || '🏺';
+        artifactList += `${index + 1}. ${emoji} **${artifact.name}**\n`;
         artifactList += `   가격: ${artifact.value.toLocaleString()} 골드\n`;
     });
     
@@ -799,11 +833,12 @@ async function showArtifactSellMenu(interaction, userId) {
         .setMaxValues(Math.min(recentArtifacts.length, 10));
     
     recentArtifacts.forEach((artifact, index) => {
+        const emoji = rarityEmojis[artifact.rarity] || '🏺';
         selectMenu.addOptions({
             label: artifact.name,
             description: `${artifact.rarity} - ${artifact.value.toLocaleString()} 골드`,
             value: artifact.id,
-            emoji: ARTIFACT_SYSTEM.rarities[artifact.rarity]?.emoji || '🏺'
+            emoji: emoji
         });
     });
     
@@ -821,8 +856,11 @@ async function showArtifactSellMenu(interaction, userId) {
 }
 
 // 유물 판매 실행
-async function executeArtifactSell(interaction, userId) {
-    const selectedArtifactIds = interaction.values;
+async function executeArtifactSell(interaction, userId, selectedArtifactIds = null) {
+    // StringSelectMenu에서 직접 전달받지 않은 경우 interaction.values에서 가져옴
+    if (!selectedArtifactIds && interaction.isStringSelectMenu()) {
+        selectedArtifactIds = interaction.values;
+    }
     const user = await User.findOne({ discordId: userId });
     const userArtifacts = await UserArtifacts.findOne({ userId });
     
@@ -854,13 +892,30 @@ async function executeArtifactSell(interaction, userId) {
         });
     }
     
+    // 버그 사냥꾼 칭호 효과 적용
+    const { applyGoldBonus } = require('../common/specialEffects');
+    const originalGold = totalGold;
+    totalGold = applyGoldBonus(totalGold, user);
+    
+    let bonusApplied = false;
+    let bonusAmount = 0;
+    if (totalGold > originalGold) {
+        bonusApplied = true;
+        bonusAmount = totalGold - originalGold;
+        console.log(`[ArtifactExploration] ${user.nickname || user.discordId} - 특수 효과 적용: ${originalGold} → ${totalGold} (+${bonusAmount})`);
+    }
+    
     user.gold += totalGold;
     await user.save();
+    
+    // 골드 획득 미션 업데이트
+    await MissionHelper.updateGoldEarned(userId, totalGold);
     
     const embed = new EmbedBuilder()
         .setColor('#00FF00')
         .setTitle('💰 유물 판매 완료!')
-        .setDescription(`${soldCount}개의 유물을 판매했습니다.`)
+        .setDescription(`${soldCount}개의 유물을 판매했습니다.` + 
+            (bonusApplied ? `\n\n🏷️ **버그 사냥꾼 칭호 효과** +${bonusAmount.toLocaleString()}G` : ''))
         .addFields(
             { name: '💵 획득 골드', value: `${totalGold.toLocaleString()} 골드`, inline: true },
             { name: '💰 현재 보유 골드', value: `${user.gold.toLocaleString()} 골드`, inline: true }
@@ -943,9 +998,32 @@ async function showMineSelection(interaction, userId) {
         
         if (isOpen) {
             const mineState = mineManager.openMines.get(mineId);
-            const timeLeft = Math.max(0, mineState.closesAt - Date.now());
-            const minutes = Math.floor(timeLeft / 60000);
-            fieldValue += `✅ **현재 개방 중!** (${minutes}분 남음)`;
+            let timeLeft = 0;
+            let minutes = 0;
+            
+            // 광산 타입에 따라 남은 시간 계산
+            if (mine.openSchedule.type === 'always') {
+                fieldValue += `✅ **항상 개방**`;
+            } else if (mineState && mineState.closesAt) {
+                timeLeft = Math.max(0, mineState.closesAt - Date.now());
+                minutes = Math.floor(timeLeft / 60000);
+                fieldValue += `✅ **현재 개방 중!** (${minutes}분 남음)`;
+            } else if (mine.openSchedule.type === 'scheduled') {
+                // 정기 개방 광산의 경우 남은 시간 계산
+                const now = new Date();
+                const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                for (const openHour of mine.openSchedule.times) {
+                    const openMinutes = openHour * 60;
+                    const closeMinutes = openMinutes + mine.openSchedule.duration;
+                    if (currentMinutes >= openMinutes && currentMinutes < closeMinutes) {
+                        minutes = closeMinutes - currentMinutes;
+                        fieldValue += `✅ **현재 개방 중!** (${minutes}분 남음)`;
+                        break;
+                    }
+                }
+            } else {
+                fieldValue += `✅ **현재 개방 중!**`;
+            }
             
             // 초보자 광산 남은 입장 횟수 표시
             if (mineId === 'beginner') {
@@ -953,14 +1031,18 @@ async function showMineSelection(interaction, userId) {
                 fieldValue += `\n🎫 오늘 남은 입장: ${20 - todayCount}/20회`;
             }
             
-            if (mineState.event && MINE_SYSTEM.events[mineState.event]) {
+            if (mineState && mineState.event && MINE_SYSTEM.events[mineState.event]) {
                 fieldValue += `\n🌟 이벤트: ${MINE_SYSTEM.events[mineState.event].name}`;
             }
         } else if (nextOpenTime.nextOpen) {
             const timeUntil = nextOpenTime.nextOpen - Date.now();
             const hours = Math.floor(timeUntil / 3600000);
             const minutes = Math.floor((timeUntil % 3600000) / 60000);
-            fieldValue += `⏰ 다음 개방: ${hours}시간 ${minutes}분 후`;
+            if (hours > 0) {
+                fieldValue += `⏰ 다음 개방: ${hours}시간 ${minutes}분 후`;
+            } else {
+                fieldValue += `⏰ 다음 개방: ${minutes}분 후`;
+            }
         } else {
             fieldValue += `🔒 ${nextOpenTime.message || '개방 시간 미정'}`;
         }
@@ -1023,18 +1105,36 @@ async function enterMine(interaction, mineId, userId) {
     const canEnterResult = await mineManager.canEnter(userId, mineId);
     
     if (!canEnterResult.canEnter) {
+        // 뒤로가기 버튼 추가
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`artifact_mines_${userId}`)
+                    .setLabel('🏔️ 광산 목록으로')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
         return interaction.editReply({
             content: `❌ ${canEnterResult.reason}`,
             embeds: [],
-            components: []
+            components: [backButton]
         });
     }
     
     if (user.gold < mine.entryFee) {
+        // 뒤로가기 버튼 추가
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`artifact_mines_${userId}`)
+                    .setLabel('🏔️ 광산 목록으로')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
         return interaction.editReply({
             content: `💸 입장료가 부족합니다! 필요: ${mine.entryFee.toLocaleString()} 골드`,
             embeds: [],
-            components: []
+            components: [backButton]
         });
     }
     
@@ -1333,8 +1433,13 @@ async function checkAchievements(userArtifacts, newArtifacts) {
     if (userArtifacts.statistics.totalArtifactsFound === 1 && !userArtifacts.achievements.some(a => a.id === 'firstFind')) {
         await userArtifacts.unlockAchievement('firstFind', achievements.firstFind);
         if (user) {
-            user.gold += achievements.firstFind.reward;
+            // 버그 사냥꾼 칭호 효과 적용
+            const { applyGoldBonus } = require('../common/specialEffects');
+            let reward = applyGoldBonus(achievements.firstFind.reward, user);
+            
+            user.gold += reward;
             await user.save();
+            await MissionHelper.updateGoldEarned(userId, reward);
         }
     }
     
@@ -1342,16 +1447,26 @@ async function checkAchievements(userArtifacts, newArtifacts) {
     if (userArtifacts.statistics.totalArtifactsFound >= 10 && !userArtifacts.achievements.some(a => a.id === 'collector10')) {
         await userArtifacts.unlockAchievement('collector10', achievements.collector10);
         if (user) {
-            user.gold += achievements.collector10.reward;
+            // 버그 사냥꾼 칭호 효과 적용
+            const { applyGoldBonus } = require('../common/specialEffects');
+            let reward = applyGoldBonus(achievements.collector10.reward, user);
+            
+            user.gold += reward;
             await user.save();
+            await MissionHelper.updateGoldEarned(userId, reward);
         }
     }
     
     if (userArtifacts.statistics.totalArtifactsFound >= 100 && !userArtifacts.achievements.some(a => a.id === 'collector100')) {
         await userArtifacts.unlockAchievement('collector100', achievements.collector100);
         if (user) {
-            user.gold += achievements.collector100.reward;
+            // 버그 사냥꾼 칭호 효과 적용
+            const { applyGoldBonus } = require('../common/specialEffects');
+            let reward = applyGoldBonus(achievements.collector100.reward, user);
+            
+            user.gold += reward;
             await user.save();
+            await MissionHelper.updateGoldEarned(userId, reward);
         }
     }
     
@@ -1360,29 +1475,49 @@ async function checkAchievements(userArtifacts, newArtifacts) {
         if (artifact.rarity === 'rare' && !userArtifacts.achievements.some(a => a.id === 'rareFinder')) {
             await userArtifacts.unlockAchievement('rareFinder', achievements.rareFinder);
             if (user) {
-                user.gold += achievements.rareFinder.reward;
+                // 버그 사냥꾼 칭호 효과 적용
+                const { applyGoldBonus } = require('../common/specialEffects');
+                let reward = applyGoldBonus(achievements.rareFinder.reward, user);
+                
+                user.gold += reward;
                 await user.save();
+                await MissionHelper.updateGoldEarned(userId, reward);
             }
         }
         if (artifact.rarity === 'epic' && !userArtifacts.achievements.some(a => a.id === 'epicFinder')) {
             await userArtifacts.unlockAchievement('epicFinder', achievements.epicFinder);
             if (user) {
-                user.gold += achievements.epicFinder.reward;
+                // 버그 사냥꾼 칭호 효과 적용
+                const { applyGoldBonus } = require('../common/specialEffects');
+                let reward = applyGoldBonus(achievements.epicFinder.reward, user);
+                
+                user.gold += reward;
                 await user.save();
+                await MissionHelper.updateGoldEarned(userId, reward);
             }
         }
         if (artifact.rarity === 'legendary' && !userArtifacts.achievements.some(a => a.id === 'legendaryFinder')) {
             await userArtifacts.unlockAchievement('legendaryFinder', achievements.legendaryFinder);
             if (user) {
-                user.gold += achievements.legendaryFinder.reward;
+                // 버그 사냥꾼 칭호 효과 적용
+                const { applyGoldBonus } = require('../common/specialEffects');
+                let reward = applyGoldBonus(achievements.legendaryFinder.reward, user);
+                
+                user.gold += reward;
                 await user.save();
+                await MissionHelper.updateGoldEarned(userId, reward);
             }
         }
         if (artifact.rarity === 'mythic' && !userArtifacts.achievements.some(a => a.id === 'mythicFinder')) {
             await userArtifacts.unlockAchievement('mythicFinder', achievements.mythicFinder);
             if (user) {
-                user.gold += achievements.mythicFinder.reward;
+                // 버그 사냥꾼 칭호 효과 적용
+                const { applyGoldBonus } = require('../common/specialEffects');
+                let reward = applyGoldBonus(achievements.mythicFinder.reward, user);
+                
+                user.gold += reward;
                 await user.save();
+                await MissionHelper.updateGoldEarned(userId, reward);
             }
         }
     }
@@ -1404,10 +1539,20 @@ async function handleArtifactInteraction(interaction) {
         if (action === 'mine' && params[0] === 'enter') {
             await interaction.deferReply();  // 전체 공개
         } else {
-            await interaction.deferUpdate();  // 기존 메시지 업데이트
+            try {
+                await interaction.deferUpdate();  // 기존 메시지 업데이트
+            } catch (error) {
+                // 이미 defer되었거나 응답된 경우 무시
+                console.log('Defer update error (already deferred/replied):', error.message);
+            }
         }
     } else if (interaction.isStringSelectMenu()) {
-        await interaction.deferUpdate();
+        try {
+            await interaction.deferUpdate();
+        } catch (error) {
+            // 이미 defer되었거나 응답된 경우 무시
+            console.log('Defer update error (already deferred/replied):', error.message);
+        }
     }
 
     try {
@@ -1435,7 +1580,13 @@ async function handleArtifactInteraction(interaction) {
                 } else if (params[0] === 'sell' && params[1] === 'menu') {
                     await showArtifactSellMenu(interaction, userId);
                 } else if (params[0] === 'sell' && params[1] === 'select') {
-                    await executeArtifactSell(interaction, userId);
+                    // StringSelectMenu로 선택한 유물 판매
+                    if (interaction.isStringSelectMenu()) {
+                        const selectedArtifactIds = interaction.values;
+                        await executeArtifactSell(interaction, userId, selectedArtifactIds);
+                    } else {
+                        await executeArtifactSell(interaction, userId);
+                    }
                 } else if (params[0] === 'price' && params[1] === 'check') {
                     await showArtifactPriceCheck(interaction, userId);
                 }
@@ -1479,16 +1630,20 @@ async function handleArtifactInteraction(interaction) {
     } catch (error) {
         console.error('Artifact exploration error:', error);
         // 이미 응답된 경우를 처리
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ 
-                content: '❌ 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 
-                ephemeral: true 
-            });
-        } else {
-            await interaction.followUp({ 
-                content: '❌ 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 
-                ephemeral: true 
-            });
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ 
+                    content: '❌ 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 
+                    ephemeral: true 
+                });
+            } else {
+                await interaction.followUp({ 
+                    content: '❌ 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 
+                    ephemeral: true 
+                });
+            }
+        } catch (replyError) {
+            console.error('Error sending error message:', replyError);
         }
     }
 }
@@ -1537,10 +1692,16 @@ async function upgradePickaxe(interaction, pickaxeType, userId) {
                 { name: '품질 보너스', value: `${pickaxe.qualityBonus(userPickaxe.level + 1).toFixed(2)}x`, inline: true }
             );
         
-        await interaction.editReply({ embeds: [embed], components: [] });
-        setTimeout(async () => {
-            await showPickaxeMenu(interaction, userId);
-        }, 1000);
+        // 강화 성공 메시지와 함께 곡괭이 메뉴로 돌아가기 버튼 추가
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`artifact_pickaxe_${userId}`)
+                    .setLabel('곡괭이 메뉴로 돌아가기')
+                    .setStyle(ButtonStyle.Primary)
+            );
+        
+        await interaction.editReply({ embeds: [embed], components: [backButton] });
     } catch (error) {
         console.error('Pickaxe upgrade error:', error);
         const errorMessage = `❌ 곡괭이 강화 중 오류가 발생했습니다: ${error.message}`;

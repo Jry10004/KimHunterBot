@@ -35,9 +35,17 @@ const dailyMissionSchema = new mongoose.Schema({
     // 완료한 일일미션 개수
     dailyCompletedCount: { type: Number, default: 0 },
     weeklyCompletedCount: { type: Number, default: 0 },
-    // 마지막 리셋 시간
-    lastDailyReset: { type: Date, default: Date.now },
-    lastWeeklyReset: { type: Date, default: Date.now },
+    // 마지막 리셋 시간 - 어제 날짜로 설정하여 오늘 첫 접속시 리셋되도록
+    lastDailyReset: { type: Date, default: () => {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        return yesterday;
+    }},
+    lastWeeklyReset: { type: Date, default: () => {
+        const lastWeek = new Date();
+        lastWeek.setDate(lastWeek.getDate() - 7);
+        return lastWeek;
+    }},
     // 연속 완료 일수
     dailyStreak: { type: Number, default: 0 },
     lastStreakDate: { type: Date }
@@ -59,6 +67,9 @@ dailyMissionSchema.methods.updateDailyProgress = function(missionType, amount = 
                 this.dailyCompletedCount++;
             }
         }
+        
+        // Mongoose가 subdocument 변경을 감지하도록 명시적으로 표시
+        this.markModified(`dailyMissions.${missionType}`);
     }
 };
 
@@ -76,6 +87,9 @@ dailyMissionSchema.methods.updateWeeklyProgress = function(missionType, amount =
                 this.weeklyCompletedCount++;
             }
         }
+        
+        // Mongoose가 subdocument 변경을 감지하도록 명시적으로 표시
+        this.markModified(`weeklyMissions.${missionType}`);
     }
 };
 
@@ -84,8 +98,17 @@ dailyMissionSchema.methods.resetDaily = function() {
     const now = new Date();
     const lastReset = new Date(this.lastDailyReset);
     
-    // 날짜가 바뀌었는지 확인
-    if (now.toDateString() !== lastReset.toDateString()) {
+    // 한국 시간 기준으로 날짜 비교
+    const nowKST = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+    const lastResetKST = new Date(lastReset.getTime() + (9 * 60 * 60 * 1000));
+    
+    // 날짜가 바뀌었는지 확인 (년, 월, 일 비교)
+    const nowDate = nowKST.toISOString().split('T')[0];
+    const lastResetDate = lastResetKST.toISOString().split('T')[0];
+    
+    if (nowDate !== lastResetDate) {
+        console.log(`[DailyMission] 일일미션 리셋 - userId: ${this.userId}, 마지막리셋: ${lastResetDate}, 현재: ${nowDate}`);
+        
         // 모든 일일미션 초기화
         Object.keys(this.dailyMissions).forEach(key => {
             this.dailyMissions[key].completed = false;
@@ -106,7 +129,10 @@ dailyMissionSchema.methods.resetDaily = function() {
             // 연속 출석 리셋
             this.dailyStreak = 0;
         }
+        
+        return true;
     }
+    return false;
 };
 
 // 주간 리셋

@@ -116,7 +116,7 @@ const userSchema = new mongoose.Schema({
     },
     lastHuntingTicketRegen: {
         type: Date,
-        default: Date.now
+        default: null
     },
     lastTicketRegen: {
         type: Date,
@@ -130,7 +130,17 @@ const userSchema = new mongoose.Schema({
     },
     lastPvpTicketRegen: {
         type: Date,
-        default: Date.now
+        default: null
+    },
+    // 던전 티켓 시스템
+    dungeonTickets: {
+        type: Number,
+        default: 5,
+        max: 5
+    },
+    lastDungeonTicketRegen: {
+        type: Date,
+        default: null
     },
     registered: {
         type: Boolean,
@@ -215,6 +225,7 @@ const userSchema = new mongoose.Schema({
             luck: { type: Number, default: 0 }
         },
         price: { type: Number, default: 0 },
+        sellPrice: { type: Number, default: 0 }, // 판매 가격
         description: { type: String, default: '' },
         equipped: { type: Boolean, default: false }, // 장착 여부
         inventorySlot: { type: Number, required: false }, // 인벤토리 슬롯 번호
@@ -232,6 +243,7 @@ const userSchema = new mongoose.Schema({
         helmet: { type: Number, default: -1 },
         gloves: { type: Number, default: -1 },
         boots: { type: Number, default: -1 },
+        shield: { type: Number, default: -1 },
         accessory: { type: Number, default: -1 }
     },
     protectionScrolls: { type: Number, default: 0 }, // 보호권 개수
@@ -307,6 +319,7 @@ const userSchema = new mongoose.Schema({
         totalDuels: { type: Number, default: 0 }, // 총 결투 횟수
         wins: { type: Number, default: 0 }, // 승리 횟수
         losses: { type: Number, default: 0 }, // 패배 횟수
+        draws: { type: Number, default: 0 }, // 무승부 횟수
         winStreak: { type: Number, default: 0 }, // 연승
         maxWinStreak: { type: Number, default: 0 }, // 최고 연승
         seasonWins: { type: Number, default: 0 }, // 시즌 승리
@@ -706,6 +719,12 @@ const userSchema = new mongoose.Schema({
         maxLevel: { type: Number, default: 0 } // 최고 달성 레벨
     },
     
+    // 미니게임 티켓 시스템
+    minigameTickets: {
+        tickets: { type: Number, default: 20, max: 20 },
+        lastRegen: { type: Date, default: null }
+    },
+    
     // 미니게임 통계
     gameStats: {
         dice: { 
@@ -1023,6 +1042,7 @@ const userSchema = new mongoose.Schema({
     },
     dungeonClears: { type: Number, default: 0 },                     // 던전 완전 클리어 횟수
     titles: [{ type: String }],                                       // 획득한 칭호들
+    equippedTitle: { type: String, default: null },                   // 현재 장착 중인 칭호
     
     // 휴식 보상 시스템
     lastActivity: { type: Date, default: Date.now },                 // 마지막 활동 시간
@@ -1035,8 +1055,32 @@ const userSchema = new mongoose.Schema({
 // 데이터 보호 시스템 import
 const { backupUserData, validateUserData } = require('../database/dataProtection');
 
+// 이전 골드 값 저장을 위한 post init 훅
+userSchema.post('init', function() {
+    this._previousGold = this.gold;
+});
+
+// 이전 골드 값 저장을 위한 post find 훅
+userSchema.post('findOne', function(doc) {
+    if (doc) {
+        doc._previousGold = doc.gold;
+    }
+});
+
 // 장비 및 데이터 무결성 확인 pre-save 미들웨어
 userSchema.pre('save', async function(next) {
+    // 골드 변경 추적
+    if (this.isModified('gold') && this._previousGold !== undefined) {
+        const change = this.gold - this._previousGold;
+        const changeType = change > 0 ? '증가' : '감소';
+        console.log(`[골드 변경] ${this.nickname || this.discordId}: ${this._previousGold} → ${this.gold} (${changeType} ${Math.abs(change)}G)`);
+        
+        // 큰 변화량 경고 (10만 이상)
+        if (Math.abs(change) > 100000) {
+            console.warn(`[골드 경고] 큰 변화량 감지! ${this.nickname}: ${change}G ${changeType}`);
+        }
+    }
+    
     // 데이터 변경 전 백업 (중요한 변경사항이 있을 때만)
     if (this.isModified('level') || this.isModified('gold') || this.isModified('inventory') || this.isModified('equipment')) {
         try {
@@ -1046,7 +1090,7 @@ userSchema.pre('save', async function(next) {
         }
     }
     
-    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'shield', 'accessory'];
     
     // 장비 슬롯 데이터 타입 확인
     equipmentSlots.forEach(slot => {
@@ -1184,7 +1228,7 @@ userSchema.methods.validateInventoryIntegrity = function() {
     }
     
     // 장비 슬롯 검증
-    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+    const equipmentSlots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'shield', 'accessory'];
     equipmentSlots.forEach(slot => {
         const slotValue = this.equipment[slot];
         if (slotValue !== -1 && slotValue !== undefined && slotValue !== null) {
@@ -1203,6 +1247,33 @@ userSchema.methods.validateInventoryIntegrity = function() {
     }
     
     return issues;
+};
+
+// 안전한 골드 업데이트 메서드
+userSchema.statics.updateGold = async function(discordId, amount, reason = '알 수 없음') {
+    try {
+        const result = await this.findOneAndUpdate(
+            { discordId },
+            { $inc: { gold: amount } },
+            { new: true, runValidators: true }
+        );
+        
+        if (result) {
+            console.log(`[골드 업데이트] ${result.nickname || discordId}: ${amount}G (사유: ${reason})`);
+            
+            // 음수 골드 방지
+            if (result.gold < 0) {
+                result.gold = 0;
+                await result.save();
+                console.warn(`[골드 보정] ${result.nickname}: 음수 골드 → 0G`);
+            }
+        }
+        
+        return result;
+    } catch (error) {
+        console.error(`[골드 업데이트 오류] ${discordId}: ${error.message}`);
+        throw error;
+    }
 };
 
 module.exports = mongoose.model('User', userSchema);

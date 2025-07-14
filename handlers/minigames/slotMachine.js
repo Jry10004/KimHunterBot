@@ -1,6 +1,7 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const User = require('../../models/User');
 const { applyMinigameBonus } = require('../common/specialEffects');
+const ActivityLog = require('../../models/ActivityLog');
 
 // 김헌터 슬롯머신 시스템
 const SLOT_MACHINE = {
@@ -209,7 +210,8 @@ class SlotMachineSystem {
                     ? `🏆 **잭팟 당첨!** ${result.winAmount.toLocaleString()}G 획득!`
                     : result.winAmount > 0 
                         ? `💰 ${result.winAmount.toLocaleString()}G 획득!`
-                        : '다음 기회에...')
+                        : '다음 기회에...') +
+                (result.bonusApplied ? `\n\n🏷️ **버그 사냥꾼 칭호 효과** +${result.bonusAmount.toLocaleString()}G` : '')
             )
             .addFields(
                 { name: '💸 베팅', value: `${betAmount.toLocaleString()}G`, inline: true },
@@ -334,9 +336,18 @@ class SlotMachineSystem {
             winAmount = Math.floor(betAmount * 0.5);
         }
         
-        // 미니게임 보상 특수 효과 적용 (잭팟 제외)
+        // 미니게임 보상 특수 효과 적용 (잭팟 제외) - 버그 사냥꾼 칭호 효과 포함
+        let bonusApplied = false;
+        let bonusAmount = 0;
         if (winAmount > 0 && !isJackpot) {
+            const originalWin = winAmount;
             winAmount = applyMinigameBonus(winAmount, user);
+            
+            if (winAmount > originalWin) {
+                bonusApplied = true;
+                bonusAmount = winAmount - originalWin;
+                console.log(`[SlotMachine] ${user.nickname || user.discordId} - 특수 효과 적용: ${originalWin} → ${winAmount} (+${bonusAmount})`);
+            }
         }
         
         // 골드 지급
@@ -378,7 +389,40 @@ class SlotMachineSystem {
             user.slotStats.currentStreak = 0;
         }
         
+        // gameStats 업데이트
+        if (!user.gameStats) user.gameStats = {};
+        if (!user.gameStats.slot) user.gameStats.slot = { played: 0, won: 0 };
+        user.gameStats.slot.played++;
+        if (winAmount > 0) {
+            user.gameStats.slot.won++;
+        }
+        
+        // 활동 로그 기록
+        await ActivityLog.create({
+            userId: user.discordId,
+            nickname: user.nickname,
+            activityType: 'minigame',
+            details: {
+                gameType: 'slot',
+                gameResult: winAmount > 0 ? 'win' : 'lose',
+                betAmount: betAmount,
+                winAmount: winAmount,
+                goldChange: winAmount - betAmount,
+                expGained: 0
+            }
+        });
+        
         await user.save();
+        
+        // 미션 진행도 업데이트
+        const MissionHelper = require('../../utils/missionHelper');
+        await MissionHelper.updateMiniGame(interaction.user.id);
+        
+        // 골드 획득 미션 업데이트 (순수익이 있을 때만)
+        const netWin = winAmount - betAmount;
+        if (netWin > 0) {
+            await MissionHelper.updateGoldEarned(interaction.user.id, netWin);
+        }
         
         // 스핀 기록 저장
         const spinHistory = this.history.get(user.discordId) || [];
@@ -397,7 +441,9 @@ class SlotMachineSystem {
         return {
             symbols: reelResults,
             winAmount: winAmount,
-            isJackpot: isJackpot
+            isJackpot: isJackpot,
+            bonusApplied: bonusApplied,
+            bonusAmount: bonusAmount
         };
     }
 

@@ -80,10 +80,61 @@ async function handleEconomyInteraction(interaction) {
         console.log('[Shop Debug] Executing gacha for category:', category);
         return await executeRandomGacha(interaction, category);
     }
+    // 새로운 판매 시스템 처리 및 멀티 가챠 페이지네이션
+    else if (customId.includes('sell_mode_') || customId.includes('sell_grade_') ||
+             customId.includes('grade_sell_') || customId.includes('quick_sell_') || 
+             customId === 'sell_menu_back' || customId === 'sell_menu_return' || 
+             customId === 'grade_sell_menu' || customId.includes('confirm_grade_sell_') || 
+             customId === 'sell_grade_menu' || customId.includes('quick_sell_page_') ||
+             customId === 'multi_next' || customId === 'multi_prev') {
+        // shop.js의 handleShopInteraction 호출
+        const { handleShopInteraction } = require('../../systems/shop');
+        const { getUser } = require('../common/utils');
+        // saveUser 함수 정의
+        const saveUser = async (user) => {
+            try {
+                await user.save();
+            } catch (error) {
+                console.error('[Economy] saveUser error:', error);
+                throw error;
+            }
+        };
+        return await handleShopInteraction(interaction, getUser, saveUser);
+    }
+    // shop_slot_select 처리
+    else if (customId === 'shop_slot_select') {
+        const { handleShopInteraction } = require('../../systems/shop');
+        const { getUser } = require('../common/utils');
+        // saveUser 함수 정의
+        const saveUser = async (user) => {
+            try {
+                await user.save();
+            } catch (error) {
+                console.error('[Economy] saveUser error:', error);
+                throw error;
+            }
+        };
+        return await handleShopInteraction(interaction, getUser, saveUser);
+    }
     
     // 드롭다운 메뉴 처리
     else if (interaction.isStringSelectMenu()) {
-        if (customId === 'shop_category_select') {
+        // 판매 관련 드롭다운
+        if (customId === 'quick_sell_select') {
+            const { handleShopInteraction } = require('../../systems/shop');
+            const { getUser } = require('../common/utils');
+            // saveUser 함수 정의
+            const saveUser = async (user) => {
+                try {
+                    await user.save();
+                } catch (error) {
+                    console.error('[Economy] saveUser error:', error);
+                    throw error;
+                }
+            };
+            return await handleShopInteraction(interaction, getUser, saveUser);
+        }
+        else if (customId === 'shop_category_select') {
             const selectedValue = interaction.values[0];
             console.log('[Shop Debug] Selected value:', selectedValue);
             

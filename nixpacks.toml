@@ -1,0 +1,5 @@
+[phases.setup]
+nixPkgs = ["nodejs-18_x", "libuuid", "libGL", "libGLU", "cairo", "pango", "libjpeg", "giflib", "librsvg", "pixman"]
+
+[phases.install]
+cmds = ["npm install --build-from-source"]

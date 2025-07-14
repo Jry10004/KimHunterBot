@@ -1,7 +1,7 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
-const User = require('../models/User');
-const { fishingManager } = require('../systems/fishingSystem');
-const { FISHING_SYSTEM } = require('../data/fishingSystem');
+const User = require('../../models/User');
+const { fishingManager } = require('../../systems/fishingSystem');
+const { FISHING_SYSTEM } = require('../../data/fishingSystem');
 
 async function handleFishingInteraction(interaction, user) {
     if (!user) {
@@ -13,10 +13,19 @@ async function handleFishingInteraction(interaction, user) {
     
     // 낚시 시작
     if (customId === 'fishing_cast') {
-        await interaction.reply({ 
-            embeds: [fishingManager.createMainEmbed(user)], 
-            components: fishingManager.createMainComponents(user) 
-        });
+        // 이미 reply된 상태인지 확인
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ 
+                embeds: [fishingManager.createMainEmbed(user)], 
+                components: fishingManager.createMainComponents(user) 
+            });
+        } else {
+            await interaction.reply({ 
+                embeds: [fishingManager.createMainEmbed(user)], 
+                components: fishingManager.createMainComponents(user),
+                ephemeral: true
+            });
+        }
     }
     
     // 낚시터 선택

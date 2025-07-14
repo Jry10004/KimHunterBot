@@ -39,33 +39,13 @@ function createAnnouncementModal(template) {
     // 템플릿별 기본 내용 설정
     switch (template) {
         case 'maintenance':
-            contentInput.setPlaceholder(
-                '📅 점검 일시: 2024년 00월 00일 00:00 ~ 00:00\n\n' +
-                '📋 점검 내용:\n' +
-                '- 서버 안정성 개선\n' +
-                '- 버그 수정\n\n' +
-                '점검 중에는 게임 이용이 불가능합니다.\n' +
-                '이용에 불편을 드려 죄송합니다.'
-            );
+            contentInput.setPlaceholder('점검 일시, 내용을 입력하세요...');
             break;
         case 'event':
-            contentInput.setPlaceholder(
-                '🎊 이벤트 기간: 2024년 00월 00일 ~ 00월 00일\n\n' +
-                '🎁 이벤트 내용:\n' +
-                '- 이벤트 보상\n' +
-                '- 참여 방법\n\n' +
-                '많은 참여 부탁드립니다!'
-            );
+            contentInput.setPlaceholder('이벤트 기간, 내용을 입력하세요...');
             break;
         case 'update':
-            contentInput.setPlaceholder(
-                '🆕 신규 콘텐츠:\n' +
-                '- 새로운 기능\n\n' +
-                '🔧 개선 사항:\n' +
-                '- 버그 수정\n' +
-                '- 시스템 개선\n\n' +
-                '자세한 내용은...'
-            );
+            contentInput.setPlaceholder('업데이트 내용을 입력하세요...');
             break;
         default:
             contentInput.setPlaceholder('공지사항 내용을 입력하세요...');

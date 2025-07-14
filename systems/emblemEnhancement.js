@@ -124,7 +124,7 @@ const FAIL_PENALTIES = {
 const EMBLEM_ENHANCE_STATS = {
     warrior: {
         name: '전사',
-        stats: { strength: 0.5, vitality: 0.3 }
+        stats: { strength: 0.7, vitality: 0.4 }
     },
     archer: {
         name: '궁수',
@@ -208,7 +208,7 @@ function createEmblemEnhanceEmbed(user, emblemType) {
                 inline: true
             },
             { 
-                name: '💎 강화석', 
+                name: '💎 엠블럼강화조각', 
                 value: [
                     `필요: **1개**`,
                     `보유: **${user.items?.emblemEnhanceStone || 0}개**`
@@ -244,13 +244,14 @@ async function processEmblemEnhancement(user, emblemType) {
             stats: {},
             totalAttempts: 0,
             totalStonesUsed: 0,
-            maxLevel: 0
+            maxLevel: 0,
+            appliedStats: {}
         };
     }
     
     // 강화석 확인
     if (!user.items?.emblemEnhanceStone || user.items.emblemEnhanceStone < 1) {
-        return { success: false, message: '엠블럼 강화석이 부족합니다!' };
+        return { success: false, message: '엠블럼강화조각이 부족합니다!' };
     }
     
     // 강화석 소모
@@ -292,7 +293,8 @@ async function processEmblemEnhancement(user, emblemType) {
         user.emblemEnhancement.stats[stat] = Math.floor(value * newLevel);
     }
     
-    await user.save();
+    // 레벨이 변경되었으므로 저장하지 않고 반환
+    // enhanceEmblem 함수에서 applyEmblemStats를 호출한 후 저장할 것임
     
     return {
         success: true,

@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const { createGameStartEmbed } = require('../../data/mushroomGameImproved');
 const spectatorBetting = require('../../data/spectatorBetting');
 const { applyMinigameBonus } = require('../common/specialEffects');
+const TicketManager = require('../../utils/ticketManager');
 
 const RPS_GAME = {
     choices: ['✊', '✌️', '✋'],
@@ -50,7 +51,7 @@ class RockPaperScissorsSystem {
         }
 
         // 티켓 재생성
-        await this.regenerateTickets(user);
+        await TicketManager.regenerateTickets(user);
 
         const embed = new EmbedBuilder()
             .setTitle('✊✌️✋ 가위바위보 게임')
@@ -165,19 +166,24 @@ class RockPaperScissorsSystem {
             return interaction.reply({ content: '❌ 등록되지 않은 사용자입니다.', flags: 64 });
         }
 
-        if (user.rpsGameData.botTickets <= 0) {
-            return interaction.reply({ content: '❌ 봇 대전 티켓이 부족합니다!', flags: 64 });
+        // 티켓 확인 및 사용
+        const ticketResult = await TicketManager.useTicket(interaction.user.id, 'rps_bot');
+        if (!ticketResult.success) {
+            const ticketInfo = await TicketManager.getTicketInfo(interaction.user.id);
+            return interaction.reply({
+                content: `❌ ${ticketResult.error}\n🎫 남은 가위바위보 봇 티켓: ${ticketInfo.rps_bot}장\n⏱️ 티켓은 5분마다 1장씩 충전됩니다.`,
+                flags: 64
+            });
         }
-
-        // 티켓 차감
-        user.rpsGameData.botTickets--;
-        await user.save();
+        
+        // 티켓이 차감된 최신 user 객체로 업데이트
+        user = ticketResult.user;
 
         const gameEmbed = new EmbedBuilder()
             .setTitle('🤖 봇과의 가위바위보 대결!')
             .setDescription('아래에서 하나를 선택하세요!\n\n봇이 당신의 선택을 기다리고 있습니다...')
             .setColor('#4169E1')
-            .setFooter({ text: `남은 티켓: ${user.rpsGameData.botTickets}개` });
+            .setFooter({ text: `남은 티켓: ${ticketResult.user.rpsGameData.botTickets}개` });
 
         const choiceButtons = new ActionRowBuilder()
             .addComponents(
@@ -246,14 +252,39 @@ class RockPaperScissorsSystem {
         }
 
         // 골드 지급
+        let bonusApplied = false;
+        let bonusAmount = 0;
+        let bonusReward = reward;
+        
         if (reward > 0) {
             // 미니게임 보상 특수 효과 적용
-            const bonusReward = applyMinigameBonus(reward, user);
+            bonusReward = applyMinigameBonus(reward, user);
+            if (bonusReward > reward) {
+                bonusApplied = true;
+                bonusAmount = bonusReward - reward;
+            }
             user.gold += bonusReward;
             user.rpsGameData.totalGoldWon += bonusReward;
         }
         
+        // gameStats 업데이트
+        if (!user.gameStats) user.gameStats = {};
+        if (!user.gameStats.rps) user.gameStats.rps = { played: 0, won: 0 };
+        user.gameStats.rps.played++;
+        if (result === 'win') {
+            user.gameStats.rps.won++;
+        }
+        
         await user.save();
+        
+        // 미션 진행도 업데이트
+        const MissionHelper = require('../../utils/missionHelper');
+        await MissionHelper.updateMiniGame(interaction.user.id);
+        
+        // 골드 획득 미션 업데이트
+        if (reward > 0) {
+            await MissionHelper.updateGoldEarned(interaction.user.id, bonusReward);
+        }
 
         // 결과 표시
         const resultEmbed = new EmbedBuilder()
@@ -261,7 +292,8 @@ class RockPaperScissorsSystem {
             .setDescription(
                 `**당신의 선택:** ${userChoice} ${RPS_GAME.choiceNames[userChoice]}\n` +
                 `**봇의 선택:** ${botChoice} ${RPS_GAME.choiceNames[botChoice]}\n\n` +
-                (reward > 0 ? `💰 **획득 골드:** ${reward}G` : '골드를 획득하지 못했습니다.')
+                (reward > 0 ? `💰 **획득 골드:** ${bonusReward}G` : '골드를 획득하지 못했습니다.') +
+                (bonusApplied ? `\n🏷️ **버그 사냥꾼 칭호 효과** +${bonusAmount}G` : '')
             )
             .addFields(
                 { name: '🏆 현재 전적', value: `${user.rpsGameData.wins}승 ${user.rpsGameData.draws}무 ${user.rpsGameData.losses}패`, inline: true },
@@ -301,7 +333,18 @@ class RockPaperScissorsSystem {
         }
 
         if (user.rpsGameData.userTickets <= 0) {
-            return interaction.reply({ content: '❌ 유저 대전 티켓이 부족합니다!', flags: 64 });
+            // 다음 티켓 재생성까지 남은 시간 계산
+            const now = Date.now();
+            const REGEN_TIME = 15 * 60 * 1000; // 15분
+            const lastRegen = user.lastTicketRegen || now;
+            const nextRegenTime = lastRegen + REGEN_TIME;
+            const timeUntilRegen = Math.max(0, nextRegenTime - now);
+            const minutesLeft = Math.ceil(timeUntilRegen / 60000);
+            
+            return interaction.reply({ 
+                content: `❌ 유저 대전 티켓이 부족합니다!\n🕐 다음 티켓 재생성까지: **${minutesLeft}분**\n💡 미니게임 티켓은 15분마다 1장씩 재생성됩니다. (최대 10장)`, 
+                flags: 64 
+            });
         }
 
         const userId = interaction.user.id;
@@ -718,6 +761,11 @@ class RockPaperScissorsSystem {
             winnerUser.rpsGameData.wins++;
             winnerUser.rpsGameData.totalGoldWon += bonusWinAmount;
             await winnerUser.save();
+            
+            // 미션 진행도 업데이트
+            const MissionHelper = require('../../utils/missionHelper');
+            await MissionHelper.updateMiniGame(winner.userId);
+            await MissionHelper.updateGoldEarned(winner.userId, bonusWinAmount);
         }
 
         // 패자 기록 업데이트
@@ -944,6 +992,15 @@ class RockPaperScissorsSystem {
         }
 
         await user.save();
+        
+        // 미션 진행도 업데이트
+        const MissionHelper = require('../../utils/missionHelper');
+        await MissionHelper.updateMiniGame(interaction.user.id);
+        
+        // 골드 획득 미션 업데이트
+        if (winAmount > 0) {
+            await MissionHelper.updateGoldEarned(interaction.user.id, bonusWinAmount);
+        }
 
         // 결과 표시
         const resultEmbed = new EmbedBuilder()
@@ -1007,8 +1064,16 @@ class RockPaperScissorsSystem {
 
         // 티켓 확인
         if (user.rpsGameData.userTickets <= 0) {
+            // 다음 티켓 재생성까지 남은 시간 계산
+            const now = Date.now();
+            const REGEN_TIME = 15 * 60 * 1000; // 15분
+            const lastRegen = user.lastTicketRegen || now;
+            const nextRegenTime = lastRegen + REGEN_TIME;
+            const timeUntilRegen = Math.max(0, nextRegenTime - now);
+            const minutesLeft = Math.ceil(timeUntilRegen / 60000);
+            
             return interaction.reply({ 
-                content: '❌ 유저 대전 티켓이 부족합니다!', 
+                content: `❌ 유저 대전 티켓이 부족합니다!\n🕐 다음 티켓 재생성까지: **${minutesLeft}분**\n💡 미니게임 티켓은 15분마다 1장씩 재생성됩니다. (최대 10장)`, 
                 flags: 64 
             });
         }

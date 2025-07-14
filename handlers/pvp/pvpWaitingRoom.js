@@ -1,4 +1,4 @@
-const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const User = require('../../models/User');
 const spectatorBetting = require('../../data/spectatorBetting');
 
@@ -37,9 +37,9 @@ class PVPWaitingRoom {
                 },
                 {
                     name: '📊 방장 정보',
-                    value: `레이팅: ${this.host.user.pvpRating || 1000}점\n` +
-                           `티어: ${this.host.user.pvpTier || 'Silver'}\n` +
-                           `전적: ${this.host.user.pvpWins || 0}승 ${this.host.user.pvpLosses || 0}패`,
+                    value: `레이팅: ${this.host.user.pvp?.rating || 1000}점\n` +
+                           `티어: ${this.host.user.pvp?.tier || 'Bronze'}\n` +
+                           `전적: ${this.host.user.pvp?.wins || 0}승 ${this.host.user.pvp?.losses || 0}패`,
                     inline: true
                 },
                 {
@@ -53,9 +53,9 @@ class PVPWaitingRoom {
         if (this.opponent) {
             embed.addFields({
                 name: '📊 상대 정보',
-                value: `레이팅: ${this.opponent.user.pvpRating || 1000}점\n` +
-                       `티어: ${this.opponent.user.pvpTier || 'Silver'}\n` +
-                       `전적: ${this.opponent.user.pvpWins || 0}승 ${this.opponent.user.pvpLosses || 0}패`,
+                value: `레이팅: ${this.opponent.user.pvp?.rating || 1000}점\n` +
+                       `티어: ${this.opponent.user.pvp?.tier || 'Bronze'}\n` +
+                       `전적: ${this.opponent.user.pvp?.wins || 0}승 ${this.opponent.user.pvp?.losses || 0}패`,
                 inline: true
             });
         }
@@ -132,15 +132,47 @@ class PVPWaitingRoom {
             return { success: false, message: '자기 자신과는 대전할 수 없습니다!' };
         }
 
-        // 결투권 확인 (시스템 필드명에 맞춤)
-        if (!user.pvpRating) user.pvpRating = 1000;
-        if (!user.pvpTier) user.pvpTier = 'Bronze';
-        if (!user.pvpWins) user.pvpWins = 0;
-        if (!user.pvpLosses) user.pvpLosses = 0;
-        if (!user.pvpTickets) user.pvpTickets = 20;
+        // PVP 티켓 재생성
+        const now = Date.now();
+        const lastRegen = user.lastPvpTicketRegen || now;
+        const timePassed = now - lastRegen;
+        const REGEN_TIME = 30 * 60 * 1000; // 30분
+        const ticketsToAdd = Math.floor(timePassed / REGEN_TIME);
+        
+        if (ticketsToAdd > 0) {
+            const currentTickets = user.pvpTickets || 0;
+            user.pvpTickets = Math.min(20, currentTickets + ticketsToAdd);
+            user.lastPvpTicketRegen = now - (timePassed % REGEN_TIME);
+            await user.save();
+            console.log(`[PVP Waiting Room] Regenerated ${ticketsToAdd} tickets for ${user.nickname}. Total: ${user.pvpTickets}`);
+        }
 
-        if (user.pvpTickets <= 0) {
-            return { success: false, message: '결투권이 부족합니다!' };
+        // pvp 객체 초기화
+        if (!user.pvp) {
+            user.pvp = {
+                rating: 1000,
+                tier: 'Bronze',
+                wins: 0,
+                losses: 0,
+                duelTickets: user.pvpTickets || 20
+            };
+        }
+        
+        // pvpTickets를 pvp.duelTickets로 동기화
+        if (user.pvpTickets !== undefined) {
+            user.pvp.duelTickets = user.pvpTickets;
+        }
+
+        if (!user.pvp.duelTickets || user.pvp.duelTickets <= 0) {
+            // 다음 티켓 재생성까지 남은 시간 계산
+            const now = Date.now();
+            const REGEN_TIME = 30 * 60 * 1000; // 30분
+            const lastRegen = user.lastPvpTicketRegen || now;
+            const nextRegenTime = lastRegen + REGEN_TIME;
+            const timeUntilRegen = Math.max(0, nextRegenTime - now);
+            const minutesLeft = Math.ceil(timeUntilRegen / 60000);
+            
+            return { success: false, message: `결투권이 부족합니다!\n🕐 다음 티켓 재생성까지: **${minutesLeft}분**\n💡 PVP 티켓은 30분마다 1장씩 재생성됩니다. (최대 20장)` };
         }
 
         this.opponent = {
@@ -160,19 +192,26 @@ class PVPWaitingRoom {
 
         this.gameStarted = true;
 
-        // 결투권 차감
-        this.host.user.pvpTickets--;
-        this.opponent.user.pvpTickets--;
-        await this.host.user.save();
-        await this.opponent.user.save();
+        // 결투권 차감 (TicketManager 사용)
+        const TicketManager = require('../../utils/ticketManager');
+        const hostTicketResult = await TicketManager.useTicket(this.host.id, 'pvp');
+        const opponentTicketResult = await TicketManager.useTicket(this.opponent.id, 'pvp');
+        
+        if (!hostTicketResult.success || !opponentTicketResult.success) {
+            this.gameStarted = false;
+            return { success: false, message: 'PVP 티켓이 부족합니다.' };
+        }
+        
+        this.host.user = hostTicketResult.user;
+        this.opponent.user = opponentTicketResult.user;
 
         // PVP 매치 생성
         const player1Data = {
             id: this.host.id,
             userId: this.host.id,
             user: this.host.user,
-            rating: this.host.user.pvpRating,
-            tier: this.host.user.pvpTier,
+            rating: this.host.user.pvp?.rating || 1000,
+            tier: this.host.user.pvp?.tier || 'Bronze',
             isBot: false,
             channel: this.channel
         };
@@ -181,8 +220,8 @@ class PVPWaitingRoom {
             id: this.opponent.id,
             userId: this.opponent.id,
             user: this.opponent.user,
-            rating: this.opponent.user.pvpRating,
-            tier: this.opponent.user.pvpTier,
+            rating: this.opponent.user.pvp?.rating || 1000,
+            tier: this.opponent.user.pvp?.tier || 'Bronze',
             isBot: false,
             channel: this.channel
         };
@@ -194,6 +233,9 @@ class PVPWaitingRoom {
         pvpWaitingRooms.delete(this.roomId);
         if (this.startTimer) {
             clearTimeout(this.startTimer);
+        }
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
         }
 
         return { success: true };
@@ -207,9 +249,16 @@ class PVPWaitingRoom {
 
         this.gameStarted = true;
 
-        // 결투권 차감
-        this.host.user.pvpTickets--;
-        await this.host.user.save();
+        // 결투권 차감 (TicketManager 사용)
+        const TicketManager = require('../../utils/ticketManager');
+        const ticketResult = await TicketManager.useTicket(this.host.id, 'pvp');
+        
+        if (!ticketResult.success) {
+            this.gameStarted = false;
+            return { success: false, message: ticketResult.error };
+        }
+        
+        this.host.user = ticketResult.user;
 
         // 오프라인 유저 찾기
         const offlineUser = await pvpSystem.findOfflineOpponent(this.host.user);
@@ -218,8 +267,8 @@ class PVPWaitingRoom {
             id: this.host.id,
             userId: this.host.id,
             user: this.host.user,
-            rating: this.host.user.pvpRating,
-            tier: this.host.user.pvpTier,
+            rating: this.host.user.pvp?.rating || 1000,
+            tier: this.host.user.pvp?.tier || 'Bronze',
             isBot: false,
             channel: this.channel
         };
@@ -250,12 +299,23 @@ class PVPWaitingRoom {
     async updateWaitingRoom() {
         if (this.waitingMessage) {
             try {
+                // 메시지가 삭제되었는지 먼저 확인
+                await this.waitingMessage.fetch().catch(() => null);
+                
                 await this.waitingMessage.edit({
                     embeds: [this.createWaitingEmbed()],
                     components: [this.createWaitingButtons()]
                 });
             } catch (error) {
-                console.error('대기실 업데이트 오류:', error);
+                // Unknown Message 에러는 무시 (메시지가 삭제된 경우)
+                if (error.code === 10008) {
+                    console.log('[PVP Waiting Room] 대기실 메시지가 삭제되었습니다. 업데이트 중단.');
+                    this.waitingMessage = null;
+                    // 대기실도 정리
+                    pvpWaitingRooms.delete(this.roomId);
+                } else {
+                    console.error('대기실 업데이트 오류:', error);
+                }
             }
         }
     }
@@ -264,6 +324,7 @@ class PVPWaitingRoom {
 // PVP 대기실 생성
 async function createPVPWaitingRoom(interaction, user, pvpSystem) {
     console.log('[PVP Waiting Room] Creating waiting room for user:', user.nickname);
+    console.log('[PVP Waiting Room] Interaction state - replied:', interaction.replied, 'deferred:', interaction.deferred);
     
     // 이미 대기실이 있는지 확인
     for (const room of pvpWaitingRooms.values()) {
@@ -272,35 +333,59 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
             if (interaction.replied || interaction.deferred) {
                 return interaction.followUp({ 
                     content: '❌ 이미 다른 대전방에 참가중입니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: '❌ 이미 다른 대전방에 참가중입니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
         }
     }
 
-    // 결투권 확인 (시스템 필드명에 맞춤)  
-    if (!user.pvpRating) user.pvpRating = 1000;
-    if (!user.pvpTier) user.pvpTier = 'Bronze';
-    if (!user.pvpWins) user.pvpWins = 0;
-    if (!user.pvpLosses) user.pvpLosses = 0;
-    if (!user.pvpTickets) user.pvpTickets = 20;
+    // PVP 티켓 재생성 (TicketManager 사용)
+    const TicketManager = require('../../utils/ticketManager');
+    const ticketInfo = await TicketManager.getTicketInfo(user.discordId);
+    user.pvpTickets = ticketInfo.pvp;
+    
+    // pvp 객체 초기화
+    if (!user.pvp) {
+        user.pvp = {
+            rating: 1000,
+            tier: 'Bronze',
+            wins: 0,
+            losses: 0,
+            duelTickets: user.pvpTickets || 20
+        };
+    } else {
+        // pvpTickets를 pvp.duelTickets로 동기화
+        user.pvp.duelTickets = user.pvpTickets;
+    }
+    
+    console.log(`[PVP Waiting Room] ${user.nickname}의 PVP 티켓: ${user.pvp.duelTickets}`);
     await user.save();
 
-    if (user.pvpTickets <= 0) {
+    if (!user.pvp.duelTickets || user.pvp.duelTickets <= 0) {
+        // 다음 티켓 재생성까지 남은 시간 계산
+        const now = Date.now();
+        const REGEN_TIME = 30 * 60 * 1000; // 30분
+        const lastRegen = user.lastPvpTicketRegen || now;
+        const nextRegenTime = lastRegen + REGEN_TIME;
+        const timeUntilRegen = Math.max(0, nextRegenTime - now);
+        const minutesLeft = Math.ceil(timeUntilRegen / 60000);
+        
+        const errorMessage = `❌ 결투권이 부족합니다!\n🕐 다음 티켓 재생성까지: **${minutesLeft}분**\n💡 PVP 티켓은 30분마다 1장씩 재생성됩니다. (최대 20장)`;
+        
         if (interaction.replied || interaction.deferred) {
             return interaction.followUp({ 
-                content: '❌ 결투권이 부족합니다! (현재: 0개)', 
-                ephemeral: true 
+                content: errorMessage, 
+                flags: 64 
             });
         } else {
             return interaction.reply({ 
-                content: '❌ 결투권이 부족합니다! (현재: 0개)', 
-                ephemeral: true 
+                content: errorMessage, 
+                flags: 64 
             });
         }
     }
@@ -314,12 +399,15 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
     try {
         let waitingMessage;
         if (interaction.replied || interaction.deferred) {
-            // 이미 응답된 경우 editReply 사용
-            waitingMessage = await interaction.editReply({
+            console.log('[PVP Waiting Room] Using followUp for already responded interaction');
+            // 이미 응답된 경우 followUp 사용 (editReply는 원래 응답을 수정하므로 새 메시지에는 부적절)
+            waitingMessage = await interaction.followUp({
                 embeds: [room.createWaitingEmbed()],
-                components: [room.createWaitingButtons()]
+                components: [room.createWaitingButtons()],
+                fetchReply: true
             });
         } else {
+            console.log('[PVP Waiting Room] Using reply for new interaction');
             // 응답하지 않은 경우 reply 사용
             waitingMessage = await interaction.reply({
                 embeds: [room.createWaitingEmbed()],
@@ -330,6 +418,7 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
         room.waitingMessage = waitingMessage;
     } catch (error) {
         console.error('[PVP Waiting Room] Error sending message:', error);
+        console.error('[PVP Waiting Room] Error details:', error.message);
         throw error;
     }
 
@@ -342,24 +431,31 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
                     await room.startOfflineMatch(pvpSystem);
                     await interaction.followUp({
                         content: '⏰ 대기 시간이 종료되어 오프라인 유저와 자동 매칭되었습니다!',
-                        ephemeral: true
+                        flags: 64
                     });
                 } catch (error) {
                     console.error('자동 오프라인 매칭 오류:', error);
                 }
+            }
+            // 타이머와 인터벌 정리
+            if (room.updateInterval) {
+                clearInterval(room.updateInterval);
             }
             pvpWaitingRooms.delete(room.roomId);
         }
     }, 60000);
 
     // 대기실 상태 업데이트 (5초마다)
-    const updateInterval = setInterval(() => {
-        if (pvpWaitingRooms.has(room.roomId)) {
-            room.updateWaitingRoom();
+    const updateInterval = setInterval(async () => {
+        if (pvpWaitingRooms.has(room.roomId) && room.waitingMessage) {
+            await room.updateWaitingRoom();
         } else {
             clearInterval(updateInterval);
         }
     }, 5000);
+    
+    // 룸에 인터벌 저장 (나중에 정리용)
+    room.updateInterval = updateInterval;
 }
 
 // PVP 대기실 인터랙션 처리
@@ -373,7 +469,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
     if (!room) {
         return interaction.reply({ 
             content: '❌ 대전방을 찾을 수 없습니다.', 
-            ephemeral: true 
+            flags: 64 
         });
     }
 
@@ -385,7 +481,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
             if (!user) {
                 return interaction.reply({ 
                     content: '❌ 먼저 회원가입을 해주세요!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
 
@@ -394,12 +490,12 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
                 await room.updateWaitingRoom();
                 return interaction.reply({ 
                     content: '✅ ' + joinResult.message, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: '❌ ' + joinResult.message, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
 
@@ -407,7 +503,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
             if (userId !== room.host.id) {
                 return interaction.reply({ 
                     content: '❌ 방장만 게임을 시작할 수 있습니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
 
@@ -415,12 +511,12 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
             if (startResult.success) {
                 return interaction.reply({ 
                     content: '✅ 게임을 시작합니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: '❌ ' + startResult.message, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
 
@@ -428,7 +524,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
             if (userId !== room.host.id) {
                 return interaction.reply({ 
                     content: '❌ 방장만 오프라인 대전을 시작할 수 있습니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
 
@@ -436,12 +532,12 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
             if (offlineResult.success) {
                 return interaction.reply({ 
                     content: '✅ 오프라인 유저와 대전을 시작합니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: '❌ ' + offlineResult.message, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
 
@@ -452,10 +548,13 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
                 if (room.startTimer) {
                     clearTimeout(room.startTimer);
                 }
-                await room.updateWaitingRoom();
+                if (room.updateInterval) {
+                    clearInterval(room.updateInterval);
+                }
+                // 메시지 삭제는 시도하지 않음 (이미 업데이트에서 처리)
                 return interaction.reply({ 
                     content: '✅ 대전방을 닫았습니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else if (room.opponent && userId === room.opponent.id) {
                 // 상대가 나가면
@@ -463,7 +562,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
                 await room.updateWaitingRoom();
                 return interaction.reply({ 
                     content: '✅ 대전방에서 나갔습니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             break;
@@ -476,7 +575,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
             if (userId === room.host.id || (room.opponent && userId === room.opponent.id)) {
                 return interaction.reply({ 
                     content: '❌ 이미 경기에 참가중입니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             
@@ -486,7 +585,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
                         id: room.host.id,
                         userId: room.host.id,
                         name: room.host.user.nickname,
-                        rating: room.host.user.pvpRating || 1000
+                        rating: room.host.user.pvp?.rating || 1000
                     }
                 ],
                 channel: room.channel
@@ -497,7 +596,7 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
                     id: room.opponent.id,
                     userId: room.opponent.id,
                     name: room.opponent.user.nickname,
-                    rating: room.opponent.user.pvpRating || 1000
+                    rating: room.opponent.user.pvp?.rating || 1000
                 });
             }
             

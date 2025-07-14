@@ -3,8 +3,9 @@ const User = require('../../models/User');
 const { getUser, formatNumber } = require('../common/utils');
 const { calculateCombatPower } = require('../common/combatPower');
 const { huntingAreas, DROP_ITEMS } = require('../../data/huntingAreas');
+const ActivityLog = require('../../models/ActivityLog');
 const { MONSTER_EMOJIS } = require('../../data/monsterEmojis');
-const { applyHuntingDamageBonus, applyGoldBonus, applyExpBonus } = require('../common/specialEffects');
+const { applyHuntingDamageBonus, applyGoldBonus, applyExpBonus, applyDropRateBonus } = require('../common/specialEffects');
 const { MONSTER_MUTATIONS, generateMutation, calculateElementalDamage } = require('../../data/monsterMutations');
 const { calculateHuntingDamage, calculateDodgeChance, calculateDamageReduction } = require('../common/damageCalculator');
 const buffSystem = require('../common/buffSystem');
@@ -58,20 +59,27 @@ function getStreakBonus(streak) {
 
 // 다음 티켓 재생성 시간 계산
 function getNextTicketRegenTime(user) {
+    // 티켓이 이미 최대치인 경우
     if (!user.lastHuntingTicketRegen || user.huntingTickets >= 20) return null;
     
-    const timeSinceLastRegen = Date.now() - new Date(user.lastHuntingTicketRegen).getTime();
-    const timeUntilNextRegen = 300000 - (timeSinceLastRegen % 300000); // 5분
+    // 티켓이 0 이상 20 미만인 경우에만 재생성 시간 계산
+    if (user.huntingTickets >= 0 && user.huntingTickets < 20) {
+        const lastRegen = new Date(user.lastHuntingTicketRegen).getTime();
+        const timeSinceLastRegen = Date.now() - lastRegen;
+        const timeUntilNextRegen = 1800000 - (timeSinceLastRegen % 1800000); // 30분
+        
+        const minutes = Math.floor(timeUntilNextRegen / 60000);
+        const seconds = Math.floor((timeUntilNextRegen % 60000) / 1000);
+        
+        return `${minutes}분 ${seconds}초`;
+    }
     
-    const minutes = Math.floor(timeUntilNextRegen / 60000);
-    const seconds = Math.floor((timeUntilNextRegen % 60000) / 1000);
-    
-    return `${minutes}분 ${seconds}초`;
+    return null;
 }
 
 // 사냥터 메인 메뉴
 async function showHuntingMenu(interaction, page = 0) {
-    const user = await getUser(interaction.user.id);
+    let user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
         return await interaction.reply({ 
             content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
@@ -79,8 +87,10 @@ async function showHuntingMenu(interaction, page = 0) {
         });
     }
 
-    // 티켓 재생성
-    regenerateHuntingTickets(user);
+    // 티켓 재생성 (TicketManager 사용)
+    const TicketManager = require('../../utils/ticketManager');
+    const ticketInfo = await TicketManager.getTicketInfo(user.discordId);
+    user.huntingTickets = ticketInfo.hunting;
     
     // 레벨에 맞는 사냥터 자동 해금
     const unlockedBefore = user.unlockedAreas.length;
@@ -117,7 +127,7 @@ async function showHuntingMenu(interaction, page = 0) {
         })
         .setTitle('⚔️ 사냥터 선택')
         .setThumbnail(HUNTING_GIFS.tracking[0])
-        .setDescription(`## 🏞️ 사냥 지역 선택\n> 🎫 **사냥권**: \`${user.huntingTickets || 20}/20\`${getNextTicketRegenTime(user) ? ` | 다음 재생성: ${getNextTicketRegenTime(user)}` : ''}\n> ⚔️ **내 전투력**: \`${userPower}\`\n> 🔥 **연속 사냥**: \`${user.huntingStreak || 0}\` ${user.huntingStreak >= 3 ? `(보너스 ${Math.floor((streakBonus.expBonus - 1) * 100)}% 적용중!)` : ''}\n> 💡 5분마다 1장씩 자동 재생성됩니다`)
+        .setDescription(`## 🏞️ 사냥 지역 선택\n> 🎫 **사냥권**: \`${user.huntingTickets || 0}/20\`${getNextTicketRegenTime(user) ? ` | 다음 재생성: ${getNextTicketRegenTime(user)}` : ''}\n> ⚔️ **내 전투력**: \`${userPower}\`\n> 🔥 **연속 사냥**: \`${user.huntingStreak || 0}\` ${user.huntingStreak >= 3 ? `(보너스 ${Math.floor((streakBonus.expBonus - 1) * 100)}% 적용중!)` : ''}\n> 💡 30분마다 1장씩 자동 재생성됩니다`)
         .addFields(
             { name: '📊 사냥 정보', value: '```yaml\n전투력이 높을수록 승률 상승\n레벨이 높은 지역일수록 보상 증가\n각 지역마다 고유 드롭 아이템 존재\n연속 사냥 시 보너스 증가!\n```', inline: false },
             { name: '🏆 사냥 통계', value: `> 총 사냥 횟수: \`${user.totalHunts || 0}\`\n> 보스 처치: \`${user.bossKills || 0}\``, inline: false }
@@ -177,19 +187,37 @@ async function showHuntingMenu(interaction, page = 0) {
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    return await interaction.reply({
-        embeds: [embed],
-        components: [huntingButtons, navButtons],
-        flags: 64
-    });
+    // 이미 응답되었는지 확인
+    if (interaction.deferred || interaction.replied) {
+        return await interaction.editReply({
+            embeds: [embed],
+            components: [huntingButtons, navButtons]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            components: [huntingButtons, navButtons],
+            flags: 64
+        });
+    }
 }
 
 // 사냥 실행
 async function executeHunt(interaction, areaId) {
-    // 먼저 defer 처리
-    await interaction.deferReply({ ephemeral: true });
+    // 먼저 defer 처리 (에러 무시)
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply({ flags: 64 });
+        }
+    } catch (error) {
+        console.log('[Hunt] Defer failed:', error.message);
+        // 이미 만료된 상호작용인 경우 종료
+        if (error.code === 10062) {
+            return;
+        }
+    }
     
-    const user = await getUser(interaction.user.id);
+    let user = await getUser(interaction.user.id);
     // areaId를 숫자로 변환
     const numericAreaId = parseInt(areaId);
     const area = huntingAreas.find(a => a.id === numericAreaId);
@@ -206,21 +234,9 @@ async function executeHunt(interaction, areaId) {
         });
     }
     
-    if (user.huntingTickets <= 0) {
-        return await interaction.editReply({ 
-            content: '❌ 사냥권이 부족합니다! 5분마다 1장씩 재생성됩니다.' 
-        });
-    }
     
-    // 연속 사냥 체크 (5분 이내에 다시 사냥하면 연속)
-    const now = new Date();
-    if (user.lastHuntingTime && (now - user.lastHuntingTime) < 300000) {
-        user.huntingStreak = (user.huntingStreak || 0) + 1;
-    } else {
-        user.huntingStreak = 1;
-    }
-    user.lastHuntingTime = now;
-    user.totalHunts = (user.totalHunts || 0) + 1;
+    // 나중에 전투 성공 시 처리하도록 이동
+    // user.totalHunts = (user.totalHunts || 0) + 1;
     
     // 전투력 계산 (UI 표시용)
     const userPower = calculateCombatPower(user);
@@ -372,8 +388,18 @@ async function executeHunt(interaction, areaId) {
     const monsterTurnsToKill = Math.ceil(userHealth / expectedMonsterDamage);
     const winChance = Math.min(0.95, Math.max(0.05, monsterTurnsToKill / (userTurnsToKill + monsterTurnsToKill)));
     
-    // 티켓 차감
-    user.huntingTickets--;
+    // 티켓 차감 (TicketManager 사용)
+    const TicketManager = require('../../utils/ticketManager');
+    const ticketResult = await TicketManager.useTicket(user.discordId, 'hunting');
+    if (!ticketResult.success) {
+        return await interaction.editReply({ 
+            content: `❌ ${ticketResult.error}\n🎫 티켓은 30분마다 1장씩 충전됩니다.` 
+        });
+    }
+    
+    // 중요: ticketResult.user로 교체하지 않고 기존 user 객체의 티켓 정보만 업데이트
+    user.huntingTickets = ticketResult.user.huntingTickets;
+    user.lastHuntingTicketRegen = ticketResult.user.lastHuntingTicketRegen;
     
     // 추가 보상 확률 체크
     const treasureChance = 0.1 + (user.huntingStreak * 0.01); // 기본 10% + 연속당 1%
@@ -457,9 +483,27 @@ async function executeHunt(interaction, areaId) {
     
     // 3단계: 결과
     let embed;
+    let levelUpInfo = null; // 레벨업 정보를 저장할 변수
+    let goldGain = 0;
+    let expGain = 0;
+    let dropItems = [];
+    let leveledUp = false;
     
     if (isWin) {
         // 승리 처리
+        // 연속 사냥 체크 (120분 이내에 다시 사냥하면 연속) - 승리 시에만 카운트
+        const now = new Date();
+        if (user.lastHuntingTime && (now - user.lastHuntingTime) < 7200000) {
+            user.huntingStreak = (user.huntingStreak || 0) + 1;
+        } else {
+            user.huntingStreak = 1;
+        }
+        user.lastHuntingTime = now;
+        user.totalHunts = (user.totalHunts || 0) + 1;
+        
+        // 연속 사냥 정보 즉시 저장
+        await user.save();
+        
         // 몬스터의 exp와 gold는 배열 형태 [최소값, 최대값]
         const expMin = monster.exp[0];
         const expMax = monster.exp[1];
@@ -467,8 +511,8 @@ async function executeHunt(interaction, areaId) {
         const goldMax = monster.gold[1];
         
         // 랜덤값 선택
-        let expGain = Math.floor(expMin + Math.random() * (expMax - expMin));
-        let goldGain = Math.floor(goldMin + Math.random() * (goldMax - goldMin));
+        expGain = Math.floor(expMin + Math.random() * (expMax - expMin));
+        goldGain = Math.floor(goldMin + Math.random() * (goldMax - goldMin));
         
         // 보스/희귀 몬스터 보너스
         if (isBoss) {
@@ -492,8 +536,10 @@ async function executeHunt(interaction, areaId) {
         goldGain = Math.floor(goldGain * streakBonus.goldBonus);
         
         // 특수 효과 적용
+        console.log(`[Hunting] ${user.nickname || user.discordId} - 특수 효과 적용 전 골드: ${goldGain}, 경험치: ${expGain}`);
         goldGain = applyGoldBonus(goldGain, user);
         expGain = applyExpBonus(expGain, user);
+        console.log(`[Hunting] ${user.nickname || user.discordId} - 특수 효과 적용 후 골드: ${goldGain}, 경험치: ${expGain}`);
         
         // 휴식 보상 적용
         expGain = restBonusSystem.applyExpWithRestBonus(expGain, user.discordId);
@@ -509,14 +555,17 @@ async function executeHunt(interaction, areaId) {
         user.exp += expGain;
         user.gold += goldGain;
         
+        console.log(`[사냥] ${user.discordId} - 경험치: ${user.exp} (+${expGain}), 골드: ${user.gold} (+${goldGain})`);
+        
         // 유저 활동 업데이트 (휴식 보상 시스템)
         await restBonusSystem.updateUserActivity(user.discordId);
         
-        // 레벨업 체크
-        const requiredExp = user.level * 100;
-        if (user.exp >= requiredExp) {
-            user.level++;
-            user.exp -= requiredExp;
+        // 레벨업 체크 (checkAndProcessLevelUp 사용)
+        const { checkAndProcessLevelUp } = require('../common/levelUp');
+        const levelUpResult = await checkAndProcessLevelUp(user);
+        leveledUp = levelUpResult.leveledUp;
+        
+        if (leveledUp) {
             
             // 라이프 시스템 뉴스 연동 - 레벨 신기록
             if (user.level % 50 === 0 || user.level >= 100) {
@@ -528,18 +577,26 @@ async function executeHunt(interaction, areaId) {
             if (nextArea && !user.unlockedAreas.includes(nextArea.id)) {
                 user.unlockedAreas.push(nextArea.id);
                 
-                // 레벨업 및 지역 해금 메시지 추가
-                embed.addFields({
-                    name: '🎊 레벨 업!',
-                    value: `레벨 ${user.level}이 되었습니다!\n🗺️ 새로운 지역 해금: **${nextArea.name}**`,
-                    inline: false
-                });
+                // 레벨업 및 지역 해금 정보 저장
+                levelUpInfo = {
+                    level: user.level,
+                    newArea: nextArea.name
+                };
+            } else {
+                // 지역 해금이 없어도 레벨업 정보 저장
+                levelUpInfo = {
+                    level: user.level,
+                    newArea: null
+                };
             }
         }
         
         // 드롭 아이템 확인 (연속 사냥 보너스 적용)
-        let dropItems = [];
-        const dropChance = area.dropRate + streakBonus.dropBonus;
+        dropItems = [];
+        let dropChance = area.dropRate + streakBonus.dropBonus;
+        
+        // 칭호 효과 적용 (드롭률 보너스)
+        dropChance = applyDropRateBonus(dropChance, user);
         
         // 보스는 100% 드롭, 희귀는 2배 확률
         const finalDropChance = isBoss ? 1.0 : (isRare ? dropChance * 2 : dropChance);
@@ -547,19 +604,28 @@ async function executeHunt(interaction, areaId) {
         if (Math.random() < finalDropChance) {
             const dropPool = DROP_ITEMS[area.dropTable];
             if (dropPool && dropPool.length > 0) {
-                // 기본 드롭
-                const dropItem = dropPool[Math.floor(Math.random() * dropPool.length)];
-                let dropQuantity = 1;
-                
-                // 더블 드롭 이벤트
-                if (doubleDrop) {
-                    dropQuantity = 2;
+                // 드롭 개수 결정 (보스는 2-3개, 희귀는 1-2개, 일반은 1개)
+                let dropCount = 1;
+                if (isBoss) {
+                    dropCount = Math.random() < 0.5 ? 3 : 2;
+                } else if (isRare) {
+                    dropCount = Math.random() < 0.3 ? 2 : 1;
                 }
                 
-                // 보스는 추가 드롭 가능
-                if (isBoss && Math.random() < 0.5) {
-                    dropQuantity++;
-                }
+                // 여러 개의 아이템 드롭
+                for (let i = 0; i < dropCount; i++) {
+                    const dropItem = dropPool[Math.floor(Math.random() * dropPool.length)];
+                    let dropQuantity = 1;
+                    
+                    // 더블 드롭 이벤트
+                    if (doubleDrop) {
+                        dropQuantity = 2;
+                    }
+                    
+                    // 보스는 추가 수량 가능
+                    if (isBoss && Math.random() < 0.3) {
+                        dropQuantity++;
+                    }
                 
                 // 라이프 시스템 뉴스 연동 - 보스 처치
                 if (isBoss) {
@@ -567,55 +633,92 @@ async function executeHunt(interaction, areaId) {
                     lifeSystem.reportBossKill(user, monster, isFirst, true);
                 }
                 
-                dropItems.push({ item: dropItem, quantity: dropQuantity });
-                
-                // 라이프 시스템 뉴스 연동 - 희귀 아이템 획득
-                if (dropItem.rarity === '레전드리' || (dropItem.rarity === '에픽' && dropQuantity >= 5)) {
-                    lifeSystem.reportRareDrop(user, dropItem, area.name, dropQuantity);
-                }
-                
-                // 인벤토리에 재료 추가
-                const existingItem = user.inventory.find(item => 
-                    item.id === dropItem.id && item.type === 'material'
-                );
-                
-                if (existingItem) {
-                    // 이미 있는 아이템이면 수량 증가
-                    existingItem.quantity = (existingItem.quantity || 1) + dropQuantity;
-                } else {
-                    // 새 아이템 추가
-                    const newSlot = user.inventory.length > 0 ? 
-                        Math.max(...user.inventory.map(i => i.inventorySlot || 0)) + 1 : 0;
+                    dropItems.push({ item: dropItem, quantity: dropQuantity });
                     
-                    user.inventory.push({
-                        id: dropItem.id,
-                        name: dropItem.name,
-                        type: 'material',
-                        rarity: dropItem.rarity,
-                        setName: '재료',
-                        level: 1,
-                        quantity: dropQuantity,
-                        enhanceLevel: 0,
-                        stats: { attack: 0, defense: 0, dodge: 0, luck: 0 },
-                        price: dropItem.value || 100,
-                        description: `${area.name}에서 획득한 재료`,
-                        equipped: false,
-                        inventorySlot: newSlot
-                    });
+                    // 라이프 시스템 뉴스 연동 - 희귀 아이템 획득
+                    if (dropItem.rarity === '레전드리' || (dropItem.rarity === '에픽' && dropQuantity >= 5)) {
+                        lifeSystem.reportRareDrop(user, dropItem, area.name, dropQuantity);
+                    }
+                    
+                    // 인벤토리에 재료 추가
+                    console.log(`[사냥 드롭 시도] ${user.nickname}: ${dropItem.name} (ID: ${dropItem.id})`);
+                    const existingItem = user.inventory.find(item => 
+                        item.id === dropItem.id && item.type === 'material'
+                    );
+                    
+                    if (existingItem) {
+                        // 이미 있는 아이템이면 수량 증가
+                        const oldQuantity = existingItem.quantity || 1;
+                        existingItem.quantity = oldQuantity + dropQuantity;
+                        console.log(`[사냥 드롭] ${user.nickname}: ${dropItem.name} 수량 증가 ${oldQuantity} → ${existingItem.quantity}`);
+                    } else {
+                        // 새 아이템 추가
+                        const newSlot = user.inventory.length > 0 ? 
+                            Math.max(...user.inventory.map(i => i.inventorySlot || 0)) + 1 : 0;
+                        
+                        user.inventory.push({
+                            id: dropItem.id,
+                            name: dropItem.name,
+                            type: 'material',
+                            rarity: dropItem.rarity,
+                            setName: '재료',
+                            level: 1,
+                            quantity: dropQuantity,
+                            enhanceLevel: 0,
+                            stats: { attack: 0, defense: 0, dodge: 0, luck: 0 },
+                            price: dropItem.value || 100,
+                            description: `${area.name}에서 획득한 재료`,
+                            equipped: false,
+                            inventorySlot: newSlot
+                        });
+                        console.log(`[사냥 드롭] ${user.nickname}: ${dropItem.name} 새로 추가 (수량: ${dropQuantity})`);
+                    }
                 }
             }
         }
         
         // 변이 몬스터 특수 드롭
         if (mutation && Math.random() < mutation.specialDrop.chance) {
+            const mutationDrop = mutation.specialDrop;
             dropItems.push({ 
-                item: mutation.specialDrop, 
+                item: mutationDrop, 
                 quantity: 1,
                 isMutationDrop: true 
             });
             
             // 변이 특수 드롭도 뉴스로 보고
-            lifeSystem.reportRareDrop(user, mutation.specialDrop, area.name, 1);
+            lifeSystem.reportRareDrop(user, mutationDrop, area.name, 1);
+            
+            // 인벤토리에 변이 드롭 추가
+            const existingMutationItem = user.inventory.find(item => 
+                item.id === mutationDrop.id && item.type === 'material'
+            );
+            
+            if (existingMutationItem) {
+                // 이미 있는 아이템이면 수량 증가
+                existingMutationItem.quantity = (existingMutationItem.quantity || 1) + 1;
+            } else {
+                // 새 아이템 추가
+                const newSlot = user.inventory.length > 0 ? 
+                    Math.max(...user.inventory.map(i => i.inventorySlot || 0)) + 1 : 0;
+                
+                user.inventory.push({
+                    id: mutationDrop.id,
+                    name: mutationDrop.name,
+                    type: 'material',
+                    rarity: mutationDrop.rarity || '희귀',
+                    setName: '재료',
+                    level: 1,
+                    quantity: 1,
+                    enhanceLevel: 0,
+                    stats: { attack: 0, defense: 0, dodge: 0, luck: 0 },
+                    price: mutationDrop.value || 500,
+                    description: `${area.name}에서 획득한 변이 재료`,
+                    equipped: false,
+                    inventorySlot: newSlot,
+                    fromMutation: true
+                });
+            }
         }
         
         // 미확인 아이템 드롭 (변이 몬스터와 보스는 확률 증가)
@@ -643,12 +746,18 @@ async function executeHunt(interaction, areaId) {
                 };
             }
             
+            const beforeCount = user.lootAppraisal.unidentifiedItems.length;
             user.lootAppraisal.unidentifiedItems.push({
                 grade,
                 foundAt: new Date(),
                 fromMonster: monster.name,
                 fromArea: area.id
             });
+            const afterCount = user.lootAppraisal.unidentifiedItems.length;
+            console.log(`[미확인물품] ${user.nickname || user.discordId}: ${beforeCount} -> ${afterCount} (${grade})`);
+            
+            // Mongoose 변경 감지를 위한 markModified
+            user.markModified('lootAppraisal.unidentifiedItems');
         }
         
         const victoryMessages = {
@@ -731,6 +840,15 @@ async function executeHunt(interaction, areaId) {
         if (restBonusSystem.isRestBonusActive(user.discordId)) rewardText += ` _(x${restBonusSystem.getRestBonusMultiplier(user.discordId, 'exp')} 휴식보상)_`;
         
         embed.addFields({ name: '🎁 획득 보상', value: rewardText, inline: true });
+        
+        // 레벨업 정보 추가
+        if (levelUpInfo) {
+            let levelUpText = `🎊 **레벨 ${levelUpInfo.level}** 달성!\n💪 스탯포인트 +5`;
+            if (levelUpInfo.newArea) {
+                levelUpText += `\n🗺️ 새로운 지역 해금: **${levelUpInfo.newArea}**`;
+            }
+            embed.addFields({ name: '⬆️ 레벨 업!', value: levelUpText, inline: true });
+        }
         
         // 연속 사냥 정보
         if (user.huntingStreak > 1) {
@@ -884,6 +1002,9 @@ async function executeHunt(interaction, areaId) {
         const previousStreak = user.huntingStreak;
         user.huntingStreak = 0;
         
+        // 연속 사냥 초기화 즉시 저장
+        await user.save();
+        
         embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle(`💀 사냥 실패... ${isBoss ? '😱 보스전 패배!' : ''}`)
@@ -953,9 +1074,58 @@ async function executeHunt(interaction, areaId) {
     }
     
     // 미션 진행도 업데이트
-    await MissionHelper.updateHunting(user.discordId);
+    await MissionHelper.updateHunting(interaction.user.id);
     
+    // 골드 획득 미션 업데이트 (승리한 경우에만, goldGain이 정의되어 있을 때)
+    if (isWin && typeof goldGain !== 'undefined' && goldGain > 0) {
+        await MissionHelper.updateGoldEarned(interaction.user.id, goldGain);
+    }
+    
+    // 인벤토리 변경사항을 Mongoose에 알림
+    user.markModified('inventory');
+    
+    // 활동 로그 기록 - 승리 시에만
+    if (isWin) {
+        await ActivityLog.create({
+            userId: user.discordId,
+            nickname: user.nickname,
+            activityType: 'hunting',
+            details: {
+                huntingArea: area.name,
+                monsterKilled: isBoss ? bossName : (isRare ? area.rareMonster : area.monster),
+                huntingRewards: {
+                    gold: goldGain || 0,
+                    exp: expGain || 0,
+                    items: dropItems || []
+                },
+                goldChange: goldGain || 0,
+                expGained: expGain || 0,
+                levelUp: leveledUp || false,
+                newLevel: leveledUp ? user.level : null
+            }
+        });
+    }
+    
+    // 경험치, 골드, 아이템 등 모든 변경사항 저장
     await user.save();
+    
+    // 보스/희귀 몬스터 처치 시 결과 채널로 전송
+    if ((isBoss || isRare) && isWin) {
+        try {
+            const gameResultManager = require('../../utils/gameResultManager').getInstance();
+            await gameResultManager.sendHuntingResult(user, {
+                monsterName: monster.name,
+                areaName: area.name,
+                gold: goldGain,
+                exp: expGain,
+                items: dropItems.map(d => ({ name: d.item.name })),
+                isBoss: isBoss,
+                isRare: isRare
+            });
+        } catch (err) {
+            console.error('[Hunting] 결과 전송 실패:', err);
+        }
+    }
     
     const buttons = new ActionRowBuilder();
     
@@ -1041,21 +1211,37 @@ function calculateMonsterPower(monster) {
 
 // 사냥권 재생성
 function regenerateHuntingTickets(user) {
-    if (user.huntingTickets >= 20) return;
+    // 이미 최대치인 경우 또는 값이 없는 경우
+    if (!user.huntingTickets || user.huntingTickets >= 20) return 0;
     
     const now = Date.now();
-    const lastRegen = user.lastHuntingTicketRegen || now;
+    const REGEN_TIME = 300000; // 5분
+    
+    // 마지막 재생성 시간이 없으면 현재 시간으로 설정
+    if (!user.lastHuntingTicketRegen) {
+        user.lastHuntingTicketRegen = new Date();
+        return 0;
+    }
+    
+    const lastRegen = new Date(user.lastHuntingTicketRegen).getTime();
     const timePassed = now - lastRegen;
-    const ticketsToAdd = Math.floor(timePassed / 300000); // 5분당 1장
+    const ticketsToAdd = Math.floor(timePassed / REGEN_TIME);
     
     if (ticketsToAdd > 0) {
-        user.huntingTickets = Math.min(20, user.huntingTickets + ticketsToAdd);
-        user.lastHuntingTicketRegen = now;
+        const currentTickets = user.huntingTickets;
+        const newTickets = Math.min(20, currentTickets + ticketsToAdd);
+        const addedTickets = newTickets - currentTickets;
+        
+        // 실제로 추가된 티켓 수만큼만 시간 업데이트
+        user.huntingTickets = newTickets;
+        user.lastHuntingTicketRegen = new Date(lastRegen + (addedTickets * REGEN_TIME));
+        return addedTickets;
     }
+    
+    return 0;
 }
 
 module.exports = {
     showHuntingMenu,
-    executeHunt,
-    regenerateHuntingTickets
+    executeHunt
 };

@@ -2,6 +2,7 @@ const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('
 const User = require('../../models/User');
 const { getUser, formatNumber } = require('../common/utils');
 const { isAdmin } = require('./adminSystem');
+const MissionHelper = require('../../utils/missionHelper');
 
 // 레벨/경험치 설정 처리
 async function handleLevelModal(interaction) {
@@ -85,6 +86,11 @@ async function handleGoldModal(interaction) {
     targetUser.gold += amount;
     if (targetUser.gold < 0) targetUser.gold = 0;
     await targetUser.save();
+    
+    // 골드 획득 미션 업데이트 (양수일 때만)
+    if (amount > 0) {
+        await MissionHelper.updateGoldEarned(targetUserId, amount);
+    }
 
     const embed = new EmbedBuilder()
         .setColor('#00ff00')

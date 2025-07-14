@@ -15,7 +15,7 @@ module.exports = {
             });
         }
 
-        const worldBossSystem = require('../systems/worldBossSystem');
+        const worldBossSystem = require('../../systems/worldBossSystem');
         
         // 현재 진행중인 보스가 있는지 확인
         if (worldBossSystem.activeWorldBoss) {
