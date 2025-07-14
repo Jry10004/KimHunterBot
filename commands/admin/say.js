@@ -20,7 +20,7 @@ module.exports = {
         if (!adminIds.includes(interaction.user.id)) {
             return await interaction.reply({
                 content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -34,7 +34,7 @@ module.exports = {
             // 성공 응답
             await interaction.reply({
                 content: `✅ 메시지가 ${targetChannel.id === interaction.channel.id ? '현재 채널' : targetChannel.toString()}에 전송되었습니다!`,
-                ephemeral: true
+                flags: 64
             });
 
             // 로그
@@ -45,7 +45,7 @@ module.exports = {
             
             await interaction.reply({
                 content: '❌ 메시지 전송 중 오류가 발생했습니다. 봇이 해당 채널에 메시지를 보낼 권한이 있는지 확인해주세요.',
-                ephemeral: true
+                flags: 64
             });
         }
     }

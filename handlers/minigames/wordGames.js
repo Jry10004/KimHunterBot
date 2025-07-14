@@ -2220,7 +2220,7 @@ async function handleWordGamesInteraction(interaction) {
             if (!interaction.replied) {
                 await interaction.reply({
                     content: '❌ 대기가 취소되었습니다.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
         }
@@ -2280,7 +2280,7 @@ async function handleWordGamesInteraction(interaction) {
                 return await interaction.editReply({ content: '❌ 게임을 찾을 수 없습니다.' });
             } catch (error) {
                 console.error('[WordGames] spectate session error:', error);
-                return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', ephemeral: true });
+                return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', flags: 64 });
             }
         }
         
@@ -2309,7 +2309,7 @@ async function handleWordGamesInteraction(interaction) {
         }
         
         if (!session) {
-            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', ephemeral: true });
+            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', flags: 64 });
         }
         
         return await handleSpectatorInteraction(interaction, gameType, session);

@@ -53,7 +53,7 @@ async function handleAdminInteraction(interaction) {
         // 선택된 기능 가져오기
         const selectedFeature = interaction.message.components[0]?.components[0]?.data?.options?.find(opt => opt.default)?.value;
         if (!selectedFeature) {
-            return await interaction.reply({ content: '❌ 점검할 기능을 선택해주세요!', ephemeral: true });
+            return await interaction.reply({ content: '❌ 점검할 기능을 선택해주세요!', flags: 64 });
         }
         
         // 모달 표시
@@ -86,12 +86,12 @@ async function handleAdminInteraction(interaction) {
     else if (customId === 'maintenance_end') {
         const selectedFeature = interaction.message.components[0]?.components[0]?.data?.options?.find(opt => opt.default)?.value;
         if (!selectedFeature) {
-            return await interaction.reply({ content: '❌ 종료할 점검 기능을 선택해주세요!', ephemeral: true });
+            return await interaction.reply({ content: '❌ 종료할 점검 기능을 선택해주세요!', flags: 64 });
         }
         
         const embed = await endMaintenance(interaction, selectedFeature);
         if (!embed) {
-            return await interaction.reply({ content: '❌ 선택한 기능은 점검 중이 아닙니다!', ephemeral: true });
+            return await interaction.reply({ content: '❌ 선택한 기능은 점검 중이 아닙니다!', flags: 64 });
         }
         
         await interaction.reply({ embeds: [embed] });
@@ -104,7 +104,7 @@ async function handleAdminInteraction(interaction) {
     }
     else if (customId === 'maintenance_status') {
         const embed = await showDetailedStatus(interaction);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
+        return await interaction.reply({ embeds: [embed], flags: 64 });
     }
     else if (customId === 'maintenance_feature_select') {
         // 선택된 기능 업데이트
@@ -512,7 +512,7 @@ async function handleAdminModal(interaction) {
         if (!bulk) {
             return await interaction.reply({
                 content: '❌ 보상 설정 정보를 찾을 수 없습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
         

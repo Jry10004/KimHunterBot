@@ -35,7 +35,7 @@ function secureCommand(options = {}) {
                 if (!rateLimitResult.allowed) {
                     await interaction.reply({
                         content: `⏱️ ${rateLimitResult.message}`,
-                        ephemeral: true
+                        flags: 64
                     });
                     return false;
                 }
@@ -52,7 +52,7 @@ function secureCommand(options = {}) {
                 if (!hasPermission) {
                     await interaction.reply({
                         content: '❌ 이 명령어를 사용할 권한이 없습니다.',
-                        ephemeral: true
+                        flags: 64
                     });
                     
                     logger.warn('Unauthorized command attempt', {
@@ -78,7 +78,7 @@ function secureCommand(options = {}) {
                         if (!validation.valid) {
                             await interaction.reply({
                                 content: `❌ 입력 오류: ${validation.error}`,
-                                ephemeral: true
+                                flags: 64
                             });
                             
                             logger.warn('Invalid input detected', {
@@ -141,7 +141,7 @@ function secureInteraction(options = {}) {
                 if (!rateLimitResult.allowed) {
                     await interaction.reply({
                         content: '⏱️ 너무 빠른 상호작용입니다. 잠시 후 다시 시도하세요.',
-                        ephemeral: true
+                        flags: 64
                     });
                     return false;
                 }
@@ -176,7 +176,7 @@ function secureInteraction(options = {}) {
                     if (!hasPermission) {
                         await interaction.reply({
                             content: '❌ 권한이 없습니다.',
-                            ephemeral: true
+                            flags: 64
                         });
                         return false;
                     }

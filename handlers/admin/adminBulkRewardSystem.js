@@ -371,7 +371,7 @@ class AdminBulkRewardSystem {
         if (!bulk || this.bulkProcessing.has(adminId)) {
             return await interaction.reply({
                 content: '❌ 이미 처리 중이거나 보상 정보가 없습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
 

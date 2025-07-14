@@ -384,7 +384,7 @@ class PermissionManager {
             if (!hasPermission) {
                 await interaction.reply({
                     content: '❌ 이 명령어를 사용할 권한이 없습니다.',
-                    ephemeral: true
+                    flags: 64
                 });
                 
                 return false;
@@ -406,7 +406,7 @@ class PermissionManager {
             if (!hasLevel) {
                 await interaction.reply({
                     content: '❌ 이 명령어를 사용하기 위한 역할 레벨이 부족합니다.',
-                    ephemeral: true
+                    flags: 64
                 });
                 
                 return false;

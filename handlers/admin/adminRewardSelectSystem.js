@@ -512,7 +512,7 @@ class AdminRewardSelectSystem {
             } else {
                 await interaction.reply({
                     content: '❌ 먼저 대상 유저를 선택해주세요!',
-                    ephemeral: true
+                    flags: 64
                 });
             }
         }
@@ -649,7 +649,7 @@ class AdminRewardSelectSystem {
             if (!targetUser) {
                 return await interaction.reply({
                     content: '❌ 유저를 찾을 수 없습니다.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
 

@@ -13,7 +13,7 @@ module.exports = {
         if (existingUser && existingUser.registered) {
             return await interaction.reply({ 
                 content: '❌ 이미 회원가입이 완료되었습니다!', 
-                ephemeral: true 
+                flags: 64 
             });
         }
         
@@ -60,7 +60,7 @@ module.exports = {
         if (!emailRegex.test(email)) {
             return await interaction.reply({
                 content: '❌ 올바른 이메일 형식이 아닙니다!',
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -69,11 +69,11 @@ module.exports = {
         if (!nicknameRegex.test(nickname)) {
             return await interaction.reply({
                 content: '❌ 닉네임은 한글, 영문, 숫자만 사용할 수 있습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
         
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: 64 });
         
         try {
             // 이메일 중복 확인
@@ -191,7 +191,7 @@ module.exports = {
         if (interaction.user.id !== userId) {
             return await interaction.reply({
                 content: '❌ 본인의 인증만 진행할 수 있습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -219,7 +219,7 @@ module.exports = {
             console.error('[회원가입] 인증 모달 표시 오류:', error);
             await interaction.reply({
                 content: '❌ 인증 코드 입력창을 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.',
-                ephemeral: true
+                flags: 64
             });
         }
     },
@@ -230,7 +230,7 @@ module.exports = {
         
         const code = interaction.fields.getTextInputValue('verification_code');
         
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: 64 });
         
         try {
             const user = await User.findOne({ discordId: interaction.user.id });

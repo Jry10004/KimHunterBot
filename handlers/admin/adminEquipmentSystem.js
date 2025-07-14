@@ -155,7 +155,7 @@ class AdminEquipmentSystem {
         if (!equipment || !equipment.rarity || !equipment.type) {
             return await interaction.reply({
                 content: '❌ 먼저 기본 설정을 완료해주세요!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -246,7 +246,7 @@ class AdminEquipmentSystem {
         if (!equipment || !equipment.itemName) {
             return await interaction.reply({
                 content: '❌ 먼저 3단어를 선택해주세요!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -572,7 +572,7 @@ class AdminEquipmentSystem {
             if (!targetUser) {
                 return await interaction.reply({
                     content: '❌ 유저를 찾을 수 없습니다.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
 
@@ -657,7 +657,7 @@ class AdminEquipmentSystem {
             console.error('장비 생성 오류:', error);
             await interaction.reply({
                 content: '❌ 장비 생성 중 오류가 발생했습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
     }

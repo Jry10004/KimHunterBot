@@ -737,7 +737,7 @@ async function handleTicTacToeButton(interaction) {
         // 게임 참가
         else if (customId.startsWith('tictactoe_join_')) {
             // 즉시 defer 처리 (3초 타임아웃 방지)
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 });
             
             const sessionId = customId.replace('tictactoe_join_', '');
             const session = tictactoeGameSessions.get(sessionId);
@@ -848,7 +848,7 @@ async function handleTicTacToeButton(interaction) {
                 // 이미 update했으므로 followUp 사용
                 return interaction.followUp({
                     content: '❌ 게임 세션을 찾을 수 없습니다.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -856,7 +856,7 @@ async function handleTicTacToeButton(interaction) {
             if (session.hostId !== userId) {
                 return interaction.followUp({
                     content: '❌ 호스트만 게임을 시작할 수 있습니다!',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -893,7 +893,7 @@ async function handleTicTacToeButton(interaction) {
                 
                 return interaction.followUp({
                     content: '❌ 아직 참가자가 없습니다!',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -1130,7 +1130,7 @@ async function handleTicTacToeButton(interaction) {
                             // 버튼을 유지하면서 에러 메시지만 표시
                             await interaction.followUp({
                                 content: `❌ ${result.error || result.reason}`,
-                                ephemeral: true
+                                flags: 64
                             });
                         } catch (e) {
                             // 응답 실패 무시
@@ -1145,7 +1145,7 @@ async function handleTicTacToeButton(interaction) {
                             // 버튼을 유지하면서 에러 메시지만 표시
                             await interaction.followUp({
                                 content: `❌ ${result.error || result.reason}`,
-                                ephemeral: true
+                                flags: 64
                             });
                         } catch (e) {
                             // 응답 실패 무시

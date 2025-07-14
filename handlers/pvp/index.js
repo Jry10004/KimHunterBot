@@ -32,7 +32,7 @@ async function handlePVPInteraction(interaction) {
         if (!user || !user.registered) {
             return await interaction.followUp({ 
                 content: '먼저 회원가입을 해주세요!', 
-                ephemeral: true 
+                flags: 64 
             });
         }
 
@@ -201,14 +201,14 @@ async function handlePVPInteraction(interaction) {
         const match = pvpSystem.activeMatches.get(matchId);
         
         if (!match) {
-            return interaction.reply({ content: '❌ 매치를 찾을 수 없습니다.', ephemeral: true });
+            return interaction.reply({ content: '❌ 매치를 찾을 수 없습니다.', flags: 64 });
         }
         
         // 이미 참가자인지 확인
         const userId = interaction.user.id;
         if (match.player1.user.discordId === userId || 
             (!match.player2.isBot && match.player2.user.discordId === userId)) {
-            return interaction.reply({ content: '❌ 이미 경기에 참가중입니다!', ephemeral: true });
+            return interaction.reply({ content: '❌ 이미 경기에 참가중입니다!', flags: 64 });
         }
         
         // match 객체를 sessionData 형식으로 변환
@@ -241,7 +241,7 @@ async function handlePVPInteraction(interaction) {
         const match = pvpSystem.activeMatches.get(gameId);
         
         if (!match) {
-            return interaction.reply({ content: '❌ 매치를 찾을 수 없습니다.', ephemeral: true });
+            return interaction.reply({ content: '❌ 매치를 찾을 수 없습니다.', flags: 64 });
         }
         
         const sessionData = {

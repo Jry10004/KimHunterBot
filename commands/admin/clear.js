@@ -53,11 +53,11 @@ module.exports = {
         if (!adminIds.includes(interaction.user.id) && !interaction.member.permissions.has('ManageMessages')) {
             return await interaction.reply({
                 content: '❌ 이 명령어는 관리자나 메시지 관리 권한이 필요합니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: 64 });
 
         const subcommand = interaction.options.getSubcommand();
         let messages;

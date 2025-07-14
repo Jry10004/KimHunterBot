@@ -1151,7 +1151,7 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
             } else {
                 await interaction.followUp({
                     content: '⏳ 뽑기가 이미 진행 중입니다. 잠시 기다려주세요.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
         } catch (e) {
@@ -1428,7 +1428,7 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
         try {
             await interaction.followUp({
                 content: `❌ 아이템 저장 중 오류가 발생했습니다.\n오류 내용: ${error.message}\n잠시 후 다시 시도해주세요.`,
-                ephemeral: true
+                flags: 64
             });
         } catch (e) {
             console.error('[handleMultiGacha] 오류 메시지 전송 실패:', e.message);
@@ -1524,7 +1524,7 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
                     if (channel) {
                         await channel.send({
                             content: '⏰ 시간이 초과되어 새로운 뽑기를 시작합니다.',
-                            ephemeral: true
+                            flags: 64
                         }).catch(() => {});
                     }
                 }

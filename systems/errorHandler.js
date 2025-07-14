@@ -56,7 +56,7 @@ function setupErrorHandlers(client) {
             try {
                 const errorMessage = {
                     content: '❌ 오류가 발생했습니다. `/버그발견` 명령어로 신고해주세요!',
-                    ephemeral: true
+                    flags: 64
                 };
 
                 if (interaction.deferred || interaction.replied) {

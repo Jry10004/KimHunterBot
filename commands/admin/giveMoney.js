@@ -22,7 +22,7 @@ module.exports = {
         if (!adminIds.includes(interaction.user.id)) {
             return await interaction.reply({
                 content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -34,7 +34,7 @@ module.exports = {
         if (!userData || !userData.registered) {
             return await interaction.reply({
                 content: '❌ 해당 유저는 게임에 등록되지 않았습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 

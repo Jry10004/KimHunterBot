@@ -69,7 +69,7 @@ async function safeInteractionHandler(interaction, handler, options = {}) {
                 await interaction.reply({
                     content: userMessage,
                     embeds: [errorEmbed],
-                    ephemeral: true
+                    flags: 64
                 });
             }
         } catch (replyError) {

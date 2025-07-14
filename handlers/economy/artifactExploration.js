@@ -16,7 +16,7 @@ async function showExplorationMenu(interaction, userId) {
     if (!user || !user.registered) {
         return await interaction.reply({ 
             content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
-            ephemeral: true 
+            flags: 64 
         });
     }
     
@@ -65,9 +65,9 @@ async function showExplorationMenu(interaction, userId) {
         await interaction.editReply({ embeds: [embed], components: [buttons] });
     } else if (interaction.replied) {
         // 이미 응답한 경우 followUp 사용
-        await interaction.followUp({ embeds: [embed], components: [buttons], ephemeral: true });
+        await interaction.followUp({ embeds: [embed], components: [buttons], flags: 64 });
     } else {
-        await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: true });
+        await interaction.reply({ embeds: [embed], components: [buttons], flags: 64 });
     }
 }
 
@@ -144,7 +144,7 @@ async function showCompanySelection(interaction, userId) {
     } else if (interaction.isButton()) {
         await interaction.update({ embeds: [embed], components: [row, backButton] });
     } else {
-        await interaction.reply({ embeds: [embed], components: [row, backButton], ephemeral: true });
+        await interaction.reply({ embeds: [embed], components: [row, backButton], flags: 64 });
     }
 }
 
@@ -162,7 +162,7 @@ async function executeExploration(interaction, userId, companyId) {
             const remainingTime = Math.ceil((artifactData.exploration.cooldown - cooldownTime) / 1000);
             return interaction.reply({
                 content: `⏱️ 탐사 쿨다운 중입니다! ${remainingTime}초 후에 다시 시도하세요.`,
-                ephemeral: true
+                flags: 64
             });
         }
     }
@@ -173,7 +173,7 @@ async function executeExploration(interaction, userId, companyId) {
     if (user.gold < explorationCost) {
         return interaction.reply({
             content: `💸 탐사 비용이 부족합니다! 필요: ${explorationCost.toLocaleString()} 골드`,
-            ephemeral: true
+            flags: 64
         });
     }
 
@@ -514,7 +514,7 @@ async function showInventory(interaction, userId, page = 0) {
         console.error('Inventory response error:', error);
         // 이미 응답한 경우 followUp 사용
         if (error.code === 'InteractionAlreadyReplied') {
-            await interaction.followUp({ embeds: [embed], components, ephemeral: true });
+            await interaction.followUp({ embeds: [embed], components, flags: 64 });
         }
     }
 }
@@ -570,13 +570,13 @@ async function showArtifactShop(interaction, userId) {
         } else if (interaction.isButton() || interaction.isStringSelectMenu()) {
             await interaction.update({ embeds: [embed], components: [buttons] });
         } else {
-            await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: true });
+            await interaction.reply({ embeds: [embed], components: [buttons], flags: 64 });
         }
     } catch (error) {
         console.error('Artifact shop response error:', error);
         // 이미 응답한 경우 followUp 사용
         if (error.code === 'InteractionAlreadyReplied') {
-            await interaction.followUp({ embeds: [embed], components: [buttons], ephemeral: true });
+            await interaction.followUp({ embeds: [embed], components: [buttons], flags: 64 });
         }
     }
 }
@@ -686,7 +686,7 @@ async function showPickaxeMenu(interaction, userId) {
     if (interaction.deferred) {
         await interaction.editReply({ embeds: [embed], components: buttons });
     } else if (interaction.replied) {
-        await interaction.followUp({ embeds: [embed], components: buttons, ephemeral: true });
+        await interaction.followUp({ embeds: [embed], components: buttons, flags: 64 });
     } else {
         await interaction.update({ embeds: [embed], components: buttons });
     }
@@ -1094,7 +1094,7 @@ async function showMineSelection(interaction, userId) {
     } else if (interaction.isButton()) {
         await interaction.update({ embeds: [embed], components: mineButtons });
     } else {
-        await interaction.reply({ embeds: [embed], components: mineButtons, ephemeral: true });
+        await interaction.reply({ embeds: [embed], components: mineButtons, flags: 64 });
     }
 }
 
@@ -1530,7 +1530,7 @@ async function handleArtifactInteraction(interaction) {
 
     // 권한 체크
     if (interaction.user.id !== userId) {
-        return interaction.reply({ content: '❌ 다른 유저의 메뉴는 사용할 수 없습니다!', ephemeral: true });
+        return interaction.reply({ content: '❌ 다른 유저의 메뉴는 사용할 수 없습니다!', flags: 64 });
     }
 
     // 버튼 인터랙션인 경우 먼저 defer
@@ -1634,12 +1634,12 @@ async function handleArtifactInteraction(interaction) {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ 
                     content: '❌ 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 await interaction.followUp({ 
                     content: '❌ 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
         } catch (replyError) {
@@ -1709,7 +1709,7 @@ async function upgradePickaxe(interaction, pickaxeType, userId) {
         if (interaction.deferred || interaction.replied) {
             return interaction.editReply({ content: errorMessage });
         } else {
-            return interaction.reply({ content: errorMessage, ephemeral: true });
+            return interaction.reply({ content: errorMessage, flags: 64 });
         }
     }
 }
@@ -1724,7 +1724,7 @@ async function unlockPickaxe(interaction, pickaxeType, userId) {
     if (user.gold < unlockCost) {
         return interaction.reply({
             content: `💸 해금 비용이 부족합니다! 필요: ${unlockCost.toLocaleString()} 골드`,
-            ephemeral: true
+            flags: 64
         });
     }
     
@@ -1737,7 +1737,7 @@ async function unlockPickaxe(interaction, pickaxeType, userId) {
         .setTitle('🔓 잠금 해제!')
         .setDescription(`${artifactData.pickaxes[pickaxeType].name}을(를) 사용할 수 있게 되었습니다!`);
     
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed], flags: 64 });
     await showPickaxeMenu(interaction, userId);
 }
 
@@ -1753,7 +1753,7 @@ async function changePickaxe(interaction, pickaxeType, userId) {
         .setTitle('⛏️ 곡괭이 변경')
         .setDescription(`${artifactData.pickaxes[pickaxeType].name}을(를) 사용하도록 변경했습니다!`);
     
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed], flags: 64 });
     await showPickaxeMenu(interaction, userId);
 }
 

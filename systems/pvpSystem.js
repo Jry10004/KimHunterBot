@@ -238,7 +238,7 @@ class PVPSystem {
             if (interaction) {
                 return await interaction.reply({ 
                     content: '❌ 오류가 발생했습니다. 다시 시도해주세요.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             return;
@@ -255,7 +255,7 @@ class PVPSystem {
             if (interaction) {
                 return await interaction.reply({ 
                     content: '❌ 매치가 종료되었거나 찾을 수 없습니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             return;
@@ -266,7 +266,7 @@ class PVPSystem {
             if (interaction) {
                 return await interaction.reply({ 
                     content: '❌ 매치가 아직 시작되지 않았거나 이미 종료되었습니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             return;
@@ -281,7 +281,7 @@ class PVPSystem {
             if (interaction) {
                 return await interaction.reply({ 
                     content: '❌ 이 매치의 참가자가 아닙니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             return;
@@ -292,7 +292,7 @@ class PVPSystem {
             if (interaction) {
                 return await interaction.reply({ 
                     content: '⚠️ 이미 선택하셨습니다!', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
             return;
@@ -310,7 +310,7 @@ class PVPSystem {
             
             await interaction.reply({ 
                 content: `✅ **${positionLabels[position]}**를 선택했습니다!`, 
-                ephemeral: true 
+                flags: 64 
             });
         }
 

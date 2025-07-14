@@ -65,7 +65,7 @@ async function replyWithMaintenance(interaction, feature, featureName) {
         if (interaction.deferred || interaction.replied) {
             return await interaction.editReply({ embeds: [embed], components: [] });
         } else {
-            return await interaction.reply({ embeds: [embed], ephemeral: true });
+            return await interaction.reply({ embeds: [embed], flags: 64 });
         }
     }
     

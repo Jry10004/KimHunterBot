@@ -166,7 +166,7 @@ async function handleMainInteraction(interaction) {
                 
                 return await interaction.reply({
                     content: `🚫 ${penaltyStatus.message}\n\n⏰ 남은 시간: ${remainingTime}`,
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -446,7 +446,7 @@ async function handleMainInteraction(interaction) {
                 if (!interaction.member.permissions.has('Administrator')) {
                     return await interaction.reply({ 
                         content: '❌ 이 명령어는 관리자만 사용할 수 있습니다.', 
-                        ephemeral: true 
+                        flags: 64 
                     });
                 }
                 
@@ -457,13 +457,13 @@ async function handleMainInteraction(interaction) {
                     await targetChannel.send(message);
                     await interaction.reply({ 
                         content: `✅ 메시지를 ${targetChannel.name} 채널에 전송했습니다.`, 
-                        ephemeral: true 
+                        flags: 64 
                     });
                 } catch (error) {
                     console.error('말 명령어 오류:', error);
                     await interaction.reply({ 
                         content: '❌ 메시지 전송 중 오류가 발생했습니다.', 
-                        ephemeral: true 
+                        flags: 64 
                     });
                 }
             }
@@ -474,7 +474,7 @@ async function handleMainInteraction(interaction) {
                 if (!interaction.member.permissions.has('Administrator')) {
                     return await interaction.reply({ 
                         content: '❌ 이 명령어는 관리자만 사용할 수 있습니다.', 
-                        ephemeral: true 
+                        flags: 64 
                     });
                 }
                 
@@ -496,13 +496,13 @@ async function handleMainInteraction(interaction) {
                         if (!previewNotice) {
                             return await interaction.reply({ 
                                 content: '❌ 해당 ID의 공지를 찾을 수 없습니다.', 
-                                ephemeral: true 
+                                flags: 64 
                             });
                         }
                         
                         await interaction.reply({ 
                             embeds: [previewNotice.embed], 
-                            ephemeral: true 
+                            flags: 64 
                         });
                         break;
                         
@@ -516,7 +516,7 @@ async function handleMainInteraction(interaction) {
                         if (!sendNotice) {
                             return await interaction.reply({ 
                                 content: '❌ 해당 ID의 공지를 찾을 수 없습니다.', 
-                                ephemeral: true 
+                                flags: 64 
                             });
                         }
                         
@@ -532,13 +532,13 @@ async function handleMainInteraction(interaction) {
                             
                             await interaction.reply({ 
                                 content: `✅ 공지를 ${channel.name} 채널에 발송했습니다.`, 
-                                ephemeral: true 
+                                flags: 64 
                             });
                         } catch (error) {
                             console.error('공지 발송 오류:', error);
                             await interaction.reply({ 
                                 content: '❌ 공지 발송 중 오류가 발생했습니다.', 
-                                ephemeral: true 
+                                flags: 64 
                             });
                         }
                         break;
@@ -549,7 +549,7 @@ async function handleMainInteraction(interaction) {
                         if (notices.length === 0) {
                             return await interaction.reply({ 
                                 content: '📋 저장된 공지가 없습니다.', 
-                                ephemeral: true 
+                                flags: 64 
                             });
                         }
                         
@@ -561,7 +561,7 @@ async function handleMainInteraction(interaction) {
                             ).join('\n'))
                             .setFooter({ text: `총 ${notices.length}개의 공지` });
                             
-                        await interaction.reply({ embeds: [listEmbed], ephemeral: true });
+                        await interaction.reply({ embeds: [listEmbed], flags: 64 });
                         break;
                         
                     case '삭제':
@@ -571,12 +571,12 @@ async function handleMainInteraction(interaction) {
                         if (deleted) {
                             await interaction.reply({ 
                                 content: '✅ 공지가 삭제되었습니다.', 
-                                ephemeral: true 
+                                flags: 64 
                             });
                         } else {
                             await interaction.reply({ 
                                 content: '❌ 해당 ID의 공지를 찾을 수 없습니다.', 
-                                ephemeral: true 
+                                flags: 64 
                             });
                         }
                         break;
@@ -995,7 +995,7 @@ async function handleMainInteraction(interaction) {
                 const ping = Math.round(interaction.client.ws.ping);
                 return await interaction.reply({
                     content: `🏓 퐁! 지연시간: ${ping}ms`,
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -1144,7 +1144,7 @@ async function handleMainInteraction(interaction) {
                         content: `✅ 공지가 저장되었습니다!\n**ID:** ${noticeId}\n\n미리보기:`,
                         embeds: [embed],
                         components: [row],
-                        ephemeral: true
+                        flags: 64
                     });
                 }
             } else if (interaction.isButton() && interaction.customId.startsWith('verify_email_')) {
@@ -1168,7 +1168,7 @@ async function handleMainInteraction(interaction) {
                 if (!notice) {
                     return await interaction.reply({
                         content: '❌ 공지를 찾을 수 없습니다.',
-                        ephemeral: true
+                        flags: 64
                     });
                 }
                 
@@ -1180,13 +1180,13 @@ async function handleMainInteraction(interaction) {
                     
                     await interaction.reply({
                         content: '✅ 공지가 현재 채널에 발송되었습니다!',
-                        ephemeral: true
+                        flags: 64
                     });
                 } catch (error) {
                     console.error('공지 발송 오류:', error);
                     await interaction.reply({
                         content: '❌ 공지 발송 중 오류가 발생했습니다.',
-                        ephemeral: true
+                        flags: 64
                     });
                 }
             }

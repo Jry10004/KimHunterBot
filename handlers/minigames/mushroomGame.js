@@ -2264,7 +2264,7 @@ async function handleMushroomInteraction(interaction) {
         const session = mushroomMultiplayerSessions.get(gameId);
         
         if (!session) {
-            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', ephemeral: true });
+            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', flags: 64 });
         }
         
         // 통합 핸들러로 처리
@@ -2278,7 +2278,7 @@ async function handleMushroomInteraction(interaction) {
         const session = mushroomMultiplayerSessions.get(gameId);
         
         if (!session) {
-            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', ephemeral: true });
+            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', flags: 64 });
         }
         
         return await handleSpectatorInteraction(interaction, 'mushroom', session);

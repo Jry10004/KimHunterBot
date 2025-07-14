@@ -6,7 +6,7 @@ module.exports = {
         .setDescription('게임 메인 메뉴를 표시합니다'),
     
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: 64 });
         
         // 유저 데이터 확인
         const User = require('../../models/User');

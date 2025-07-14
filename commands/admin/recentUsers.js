@@ -17,12 +17,12 @@ module.exports = {
         if (!interaction.member.permissions.has('Administrator')) {
             return interaction.reply({ 
                 content: '❌ 이 명령어는 관리자만 사용할 수 있습니다.', 
-                ephemeral: true 
+                flags: 64 
             });
         }
 
         const days = interaction.options.getInteger('일수') || 7;
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: 64 });
 
         try {
             const dateLimit = new Date();
@@ -119,7 +119,7 @@ module.exports = {
 
             await interaction.followUp({
                 embeds: [statsEmbed],
-                ephemeral: true
+                flags: 64
             });
 
         } catch (error) {

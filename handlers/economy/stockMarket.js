@@ -261,7 +261,7 @@ async function showStockMarket(interaction) {
         return await interaction.followUp({
             embeds: [marketEmbed],
             components: [buttons],
-            ephemeral: true
+            flags: 64
         });
     } else {
         return await interaction.reply({

@@ -27,11 +27,11 @@ module.exports = {
         if (!developerIds.includes(interaction.user.id)) {
             return await interaction.reply({
                 content: '❌ 이 명령어는 개발자만 사용할 수 있습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: 64 });
 
         const scope = interaction.options.getString('범위') || 'guild';
         const clearFirst = interaction.options.getBoolean('초기화') || false;

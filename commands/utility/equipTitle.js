@@ -28,7 +28,7 @@ module.exports = {
         if (!user || !user.registered) {
             return await interaction.reply({
                 content: '❌ 먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -37,7 +37,7 @@ module.exports = {
         if (userTitles.length === 0) {
             return await interaction.reply({
                 content: '❌ 장착할 수 있는 칭호가 없습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -80,7 +80,7 @@ module.exports = {
         const response = await interaction.reply({
             embeds: [embed],
             components: [row],
-            ephemeral: true
+            flags: 64
         });
 
         // 선택 대기 (30초)

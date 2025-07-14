@@ -406,7 +406,7 @@ async function executeGradeSell(interaction, userId, maxRarity) {
         if (sellingInProgress.has(userId)) {
             return await interaction.followUp({
                 content: '⏳ 이미 판매가 진행 중입니다.',
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -418,7 +418,7 @@ async function executeGradeSell(interaction, userId, maxRarity) {
             sellingInProgress.delete(userId);
             return await interaction.followUp({
                 content: '❌ 사용자 정보를 찾을 수 없습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -459,7 +459,7 @@ async function executeGradeSell(interaction, userId, maxRarity) {
             sellingInProgress.delete(userId);
             return await interaction.followUp({
                 content: '❌ 판매할 아이템이 없습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -578,7 +578,7 @@ async function executeGradeSell(interaction, userId, maxRarity) {
         sellingInProgress.delete(userId);
         await interaction.followUp({
             content: '❌ 판매 중 오류가 발생했습니다.',
-            ephemeral: true
+            flags: 64
         }).catch(() => {});
     }
 }
@@ -600,7 +600,7 @@ async function executeQuickSell(interaction, userId, itemIndex) {
             sellingInProgress.delete(sellKey);
             return await interaction.followUp({
                 content: '❌ 아이템을 찾을 수 없습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -620,7 +620,7 @@ async function executeQuickSell(interaction, userId, itemIndex) {
             console.log(`[판매 차단] ${item.name} - Slot: ${isEquippedBySlot}, Flag: ${isEquippedByFlag}, Index: ${isEquippedByIndex}`);
             return await interaction.followUp({
                 content: '❌ 장착 중인 아이템은 판매할 수 없습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -667,7 +667,7 @@ async function executeQuickSell(interaction, userId, itemIndex) {
             content: `✅ **${RARITY_EMOJIS[item.rarity]} ${item.name}${enhancement}**을(를) **${sellPrice.toLocaleString()}G**에 판매했습니다.\n` +
                 (bonusApplied ? `🏷️ **버그 사냥꾼 칭호 효과** +${bonusAmount.toLocaleString()}G\n` : '') +
                 `💰 현재 골드: **${user.gold.toLocaleString()}G**`,
-            ephemeral: true
+            flags: 64
         });
         
         // 판매 후 새로운 아이템 목록 가져오기
@@ -695,7 +695,7 @@ async function executeQuickSell(interaction, userId, itemIndex) {
         sellingInProgress.delete(`${userId}_${itemIndex}`);
         await interaction.followUp({
             content: '❌ 판매 중 오류가 발생했습니다.',
-            ephemeral: true
+            flags: 64
         }).catch(() => {});
     }
 }

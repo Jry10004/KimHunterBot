@@ -22,7 +22,7 @@ async function showAdminMenu(interaction) {
         if (interaction.isButton() || interaction.customId === 'admin_panel') {
             await interaction.deferUpdate();
         } else {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 });
         }
     }
 

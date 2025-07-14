@@ -242,7 +242,7 @@ class WorldBossSystem {
         if (!this.activeWorldBoss) {
             return interaction.reply({
                 content: '❌ 현재 진행중인 보스가 없습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -253,7 +253,7 @@ class WorldBossSystem {
         if (participantIndex === -1) {
             return interaction.reply({
                 content: '❌ 레이드에 참가하지 않았습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -286,7 +286,7 @@ class WorldBossSystem {
         if (!this.activeWorldBoss) {
             return interaction.reply({
                 content: '❌ 현재 진행중인 보스가 없습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -296,7 +296,7 @@ class WorldBossSystem {
         if (this.activeWorldBoss.participants.some(p => p.userId === userId)) {
             return interaction.reply({
                 content: '❌ 이미 레이드에 참가하셨습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -304,7 +304,7 @@ class WorldBossSystem {
         if (this.activeWorldBoss.participants.length >= this.MAX_PARTICIPANTS) {
             return interaction.reply({
                 content: `❌ 레이드 참가 인원이 가득 찼습니다! (${this.MAX_PARTICIPANTS}/${this.MAX_PARTICIPANTS})`,
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -313,7 +313,7 @@ class WorldBossSystem {
         if (!user) {
             return interaction.reply({
                 content: '❌ 먼저 회원가입을 해주세요!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -321,7 +321,7 @@ class WorldBossSystem {
         if (user.level < this.activeWorldBoss.boss.requiredLevel) {
             return interaction.reply({
                 content: `❌ 레벨 ${this.activeWorldBoss.boss.requiredLevel} 이상이 되어야 참가할 수 있습니다!`,
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -425,7 +425,7 @@ class WorldBossSystem {
         if (!this.activeWorldBoss) {
             return interaction.reply({
                 content: '❌ 현재 진행중인 보스가 없습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -436,7 +436,7 @@ class WorldBossSystem {
         if (!participant) {
             return interaction.reply({
                 content: '❌ 레이드에 참가하지 않았습니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -444,7 +444,7 @@ class WorldBossSystem {
         if (this.READY_PARTICIPANTS.has(userId)) {
             return interaction.reply({
                 content: '❌ 이미 준비 완료 상태입니다!',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -1648,7 +1648,7 @@ async function handleWorldBossStart(interaction) {
     if (!worldBossSystemInstance.activeWorldBoss) {
         return interaction.reply({
             content: '❌ 현재 진행중인 보스가 없습니다!',
-            ephemeral: true
+            flags: 64
         });
     }
     
@@ -1657,7 +1657,7 @@ async function handleWorldBossStart(interaction) {
     if (!participant) {
         return interaction.reply({
             content: '❌ 레이드에 참가하지 않았습니다!',
-            ephemeral: true
+            flags: 64
         });
     }
     
@@ -1665,7 +1665,7 @@ async function handleWorldBossStart(interaction) {
     if (worldBossSystemInstance.activeWorldBoss.participants.length < worldBossSystemInstance.MIN_PARTICIPANTS) {
         return interaction.reply({
             content: `❌ 최소 ${worldBossSystemInstance.MIN_PARTICIPANTS}명이 모여야 시작할 수 있습니다!`,
-            ephemeral: true
+            flags: 64
         });
     }
     

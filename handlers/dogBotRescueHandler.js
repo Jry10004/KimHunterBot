@@ -63,7 +63,7 @@ async function handleAttack(interaction) {
             console.log('[댕댕봇구출] 이벤트 비활성화 상태');
             return await interaction.reply({
                 content: '🚫 현재 댕댕봇 구출 이벤트가 진행중이지 않습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
     
@@ -71,7 +71,7 @@ async function handleAttack(interaction) {
     if (stateManager.state.status.rescueComplete) {
         return await interaction.reply({
             content: '🎉 댕댕봇은 이미 구출되었습니다!',
-            ephemeral: true
+            flags: 64
         });
     }
     
@@ -542,7 +542,7 @@ async function handleAttack(interaction) {
         } else if (!interaction.replied) {
             await interaction.reply({
                 content: '⚠️ 공격 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
-                ephemeral: true
+                flags: 64
             });
         }
     }
@@ -714,7 +714,7 @@ async function showRanking(interaction) {
 
 // 현황 표시
 async function showStatus(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
     
     // state 체크
     if (!stateManager.state || !stateManager.state.status) {

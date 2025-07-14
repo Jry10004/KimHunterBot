@@ -13,7 +13,7 @@ async function handleBugReportModal(interaction) {
     if (!bugReportChannel) {
         return await interaction.reply({
             content: '❌ 버그재보 채널을 찾을 수 없습니다. 관리자에게 문의해주세요.',
-            ephemeral: true
+            flags: 64
         });
     }
 
@@ -50,7 +50,7 @@ async function handleBugReportModal(interaction) {
         // 제보자에게 확인 메시지
         await interaction.reply({
             content: '✅ 버그 제보가 성공적으로 접수되었습니다!\n개발자가 확인 후 조치할 예정입니다. 감사합니다!',
-            ephemeral: true
+            flags: 64
         });
 
         // 로그 기록
@@ -60,7 +60,7 @@ async function handleBugReportModal(interaction) {
         console.error('버그 제보 전송 실패:', error);
         await interaction.reply({
             content: '❌ 버그 제보 전송 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
-            ephemeral: true
+            flags: 64
         });
     }
 }

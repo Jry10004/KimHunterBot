@@ -13,7 +13,7 @@ module.exports = {
         if (!user) {
             return await interaction.reply({
                 content: '❌ 등록된 계정이 없습니다.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -52,7 +52,7 @@ module.exports = {
         const response = await interaction.reply({
             embeds: [embed],
             components: [buttons],
-            ephemeral: true,
+            flags: 64,
             fetchReply: true
         });
 

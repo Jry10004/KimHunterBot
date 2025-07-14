@@ -23,7 +23,7 @@ async function handleFishingInteraction(interaction, user) {
             await interaction.reply({ 
                 embeds: [fishingManager.createMainEmbed(user)], 
                 components: fishingManager.createMainComponents(user),
-                ephemeral: true
+                flags: 64
             });
         }
     }

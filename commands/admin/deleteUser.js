@@ -16,14 +16,14 @@ module.exports = {
         if (!interaction.member.permissions.has('Administrator')) {
             return interaction.reply({ 
                 content: '❌ 이 명령어는 관리자만 사용할 수 있습니다.', 
-                ephemeral: true 
+                flags: 64 
             });
         }
 
         const emailPattern = interaction.options.getString('이메일패턴');
         
         try {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 });
         } catch (error) {
             if (error.code === 10062) {
                 console.log('[DeleteUser] Interaction expired');

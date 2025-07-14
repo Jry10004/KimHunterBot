@@ -216,7 +216,7 @@ class AutoDungeonSystem {
             
             return await interaction.reply({
                 content: `🎫 던전 티켓이 부족합니다!\n⏰ **${minutesLeft}분 후** 티켓이 생성됩니다.\n30분마다 1장씩 재생성됩니다.`,
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -225,7 +225,7 @@ class AutoDungeonSystem {
         if (!ticketResult.success) {
             return await interaction.reply({
                 content: ticketResult.error,
-                ephemeral: true
+                flags: 64
             });
         }
         userData = ticketResult.user;

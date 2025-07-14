@@ -1538,7 +1538,7 @@ async function handleRPSInteraction(interaction) {
         const session = rpsGame.sessions.get(sessionId);
         
         if (!session) {
-            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', ephemeral: true });
+            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', flags: 64 });
         }
         
         return await handleSpectatorInteraction(interaction, 'pvp', session);
@@ -1551,7 +1551,7 @@ async function handleRPSInteraction(interaction) {
         const session = rpsGame.sessions.get(gameId);
         
         if (!session) {
-            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', ephemeral: true });
+            return interaction.reply({ content: '❌ 게임을 찾을 수 없습니다.', flags: 64 });
         }
         
         return await handleSpectatorInteraction(interaction, 'pvp', session);

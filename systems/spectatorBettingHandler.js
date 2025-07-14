@@ -21,12 +21,12 @@ async function handleSpectatorInteraction(interaction, gameType, sessionData) {
                 if (interaction.replied || interaction.deferred) {
                     return interaction.followUp({ 
                         content: '❌ 이미 게임에 참가중입니다!', 
-                        ephemeral: true 
+                        flags: 64 
                     });
                 } else {
                     return interaction.reply({ 
                         content: '❌ 이미 게임에 참가중입니다!', 
-                        ephemeral: true 
+                        flags: 64 
                     });
                 }
             }
@@ -87,13 +87,13 @@ async function handleSpectatorInteraction(interaction, gameType, sessionData) {
             await interaction.followUp({
                 embeds: [betEmbed],
                 components: [betButtons],
-                ephemeral: true
+                flags: 64
             });
         } else {
             await interaction.reply({
                 embeds: [betEmbed],
                 components: [betButtons],
-                ephemeral: true
+                flags: 64
             });
         }
         
@@ -125,12 +125,12 @@ async function handleSpectatorInteraction(interaction, gameType, sessionData) {
             if (interaction.replied || interaction.deferred) {
                 return interaction.followUp({ 
                     content: '❌ 등록되지 않은 사용자입니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: '❌ 등록되지 않은 사용자입니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
         }
@@ -139,12 +139,12 @@ async function handleSpectatorInteraction(interaction, gameType, sessionData) {
             if (interaction.replied || interaction.deferred) {
                 return interaction.followUp({ 
                     content: `❌ 골드가 부족합니다! (필요: ${amount.toLocaleString()}G, 보유: ${user.gold.toLocaleString()}G)`, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: `❌ 골드가 부족합니다! (필요: ${amount.toLocaleString()}G, 보유: ${user.gold.toLocaleString()}G)`, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
         }
@@ -155,12 +155,12 @@ async function handleSpectatorInteraction(interaction, gameType, sessionData) {
             if (interaction.replied || interaction.deferred) {
                 return interaction.followUp({ 
                     content: '❌ 베팅이 마감되었습니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: '❌ 베팅이 마감되었습니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
         }
@@ -213,12 +213,12 @@ async function handleSpectatorInteraction(interaction, gameType, sessionData) {
             if (interaction.replied || interaction.deferred) {
                 return interaction.followUp({ 
                     content: '❌ 골드가 부족합니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 return interaction.reply({ 
                     content: '❌ 골드가 부족합니다.', 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
         }
@@ -255,12 +255,12 @@ async function handleSpectatorInteraction(interaction, gameType, sessionData) {
             if (interaction.replied || interaction.deferred) {
                 await interaction.followUp({ 
                     content: `❌ ${result.error}`, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             } else {
                 await interaction.reply({ 
                     content: `❌ ${result.error}`, 
-                    ephemeral: true 
+                    flags: 64 
                 });
             }
         }

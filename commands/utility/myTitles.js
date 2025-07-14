@@ -28,7 +28,7 @@ module.exports = {
         if (!user || !user.registered) {
             return await interaction.reply({
                 content: '❌ 먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.',
-                ephemeral: true
+                flags: 64
             });
         }
 
