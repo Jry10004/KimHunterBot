@@ -6,7 +6,13 @@ module.exports = {
         .setDescription('게임 메인 메뉴를 표시합니다'),
     
     async execute(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        // 안전한 defer 처리
+        const { safeDefer, safeReply } = require('../../utils/interactionUtils');
+        const deferResult = await safeDefer(interaction, { flags: 64 });
+        
+        if (!deferResult.success && deferResult.expired) {
+            return; // 만료된 상호작용
+        }
         
         // 유저 데이터 확인
         const User = require('../../models/User');

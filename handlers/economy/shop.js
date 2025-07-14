@@ -74,13 +74,12 @@ const RANDOM_CATEGORIES = {
 
 // 상점 메인 메뉴
 async function showShopMenu(interaction) {
-    // 먼저 defer 처리
-    try {
-        if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferReply({ flags: 64 });
-        }
-    } catch (error) {
-        console.error('Shop menu defer error:', error);
+    // 안전한 defer 처리
+    const { safeDefer, safeReply } = require('../../utils/interactionUtils');
+    const deferResult = await safeDefer(interaction, { flags: 64 });
+    
+    if (!deferResult.success && deferResult.expired) {
+        return; // 만료된 상호작용
     }
     
     const user = await getUser(interaction.user.id);
@@ -107,23 +106,11 @@ async function showShopMenu(interaction) {
     const embed = createShopEmbed(user);
     const selectMenu = createSlotSelectMenu(user);
     
-    try {
-        if (interaction.deferred || interaction.replied) {
-            return await interaction.editReply({
-                embeds: [embed],
-                components: [selectMenu]
-            });
-        } else {
-            return await interaction.reply({
-                embeds: [embed],
-                components: [selectMenu],
-                flags: 64
-            });
-        }
-    } catch (error) {
-        console.error('[Shop] Final reply error:', error.message);
-        return;
-    }
+    // 안전한 응답
+    return await safeReply(interaction, {
+        embeds: [embed],
+        components: [selectMenu]
+    });
     
     /* 기존 상점 코드는 주석 처리
     // 유저의 최고 강화 레벨 확인

@@ -152,6 +152,32 @@ function createMainMenu(user, isAdmin = false) {
 // 메인 인터랙션 핸들러
 async function handleMainInteraction(interaction) {
     try {
+        // 상호작용 만료 타임아웃 체크 (3초)
+        const startTime = Date.now();
+        const INTERACTION_TIMEOUT = 2500; // 2.5초 후 defer 시도 중단
+        
+        // 타임아웃 안전 검사
+        const timeoutCheck = () => {
+            return Date.now() - startTime > INTERACTION_TIMEOUT;
+        };
+        
+        // defer 처리를 더 빠르게 (150ms 이내)
+        if (!interaction.deferred && !interaction.replied && !timeoutCheck()) {
+            try {
+                // 상호작용 타입에 따라 defer 방식 결정
+                if (interaction.isCommand?.() || interaction.isModalSubmit?.()) {
+                    await interaction.deferReply({ flags: 64 });
+                } else if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+                    await interaction.deferUpdate();
+                }
+            } catch (deferError) {
+                if (deferError.code === 10062) {
+                    console.log('⚠️ 상호작용 타임아웃:', interaction.id);
+                    return;
+                }
+                // 다른 defer 오류는 계속 진행
+            }
+        }
         // 매크로 감지 시스템
         const userId = interaction.user.id;
         
@@ -164,10 +190,21 @@ async function handleMainInteraction(interaction) {
                     `${Math.ceil(penaltyStatus.timeLeft / 60000)}분` : 
                     '영구';
                 
-                return await interaction.reply({
-                    content: `🚫 ${penaltyStatus.message}\n\n⏰ 남은 시간: ${remainingTime}`,
-                    flags: 64
-                });
+                // 안전한 응답
+                try {
+                    if (interaction.deferred) {
+                        return await interaction.editReply({
+                            content: `🚫 ${penaltyStatus.message}\n\n⏰ 남은 시간: ${remainingTime}`
+                        });
+                    } else if (!interaction.replied) {
+                        return await interaction.reply({
+                            content: `🚫 ${penaltyStatus.message}\n\n⏰ 남은 시간: ${remainingTime}`,
+                            flags: 64
+                        });
+                    }
+                } catch (e) {
+                    console.error('제재 응답 오류:', e.message);
+                }
             }
             
             // 사용자 행동 기록
