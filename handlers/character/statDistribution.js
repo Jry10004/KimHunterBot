@@ -221,6 +221,10 @@ async function addStatPoint(interaction, statName) {
     user.stats[statName]++;
     user.statPoints--;
 
+    // 전투력 재계산
+    const { calculateCombatPower } = require('../common/combatPower');
+    user.combatPower = calculateCombatPower(user);
+
     await user.save();
 
     await interaction.followUp({
@@ -393,6 +397,10 @@ async function handleCustomStatDistribution(interaction) {
     user.stats.vitality += vitality;
     user.stats.luck += luck;
     user.statPoints -= totalPoints;
+
+    // 전투력 재계산
+    const { calculateCombatPower } = require('../common/combatPower');
+    user.combatPower = calculateCombatPower(user);
 
     await user.save();
     
@@ -646,6 +654,10 @@ async function executeStatReset(interaction) {
     
     // 스탯 포인트 회수
     user.statPoints = (user.statPoints || 0) + totalStatPoints;
+    
+    // 전투력 재계산
+    const { calculateCombatPower } = require('../common/combatPower');
+    user.combatPower = calculateCombatPower(user);
     
     await user.save();
     

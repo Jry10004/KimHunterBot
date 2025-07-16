@@ -38,6 +38,10 @@ async function checkAndProcessLevelUp(user) {
     }
     
     if (leveledUp) {
+        // 전투력 재계산
+        const { calculateCombatPower } = require('./combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
         await user.save();
     }
     
