@@ -5,7 +5,13 @@ const User = require('../../models/User');
 
 // 엠블럼 메인 화면
 async function showEmblem(interaction) {
-    await interaction.deferUpdate().catch(() => {});
+    // interaction 타입에 따라 다르게 처리
+    if (interaction.isCommand && interaction.isCommand()) {
+        // 이미 defer 되어있으므로 아무것도 하지 않음
+    } else {
+        // 버튼이나 select menu에서 호출된 경우
+        await interaction.deferUpdate().catch(() => {});
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
@@ -18,13 +24,42 @@ async function showEmblem(interaction) {
 
     // 엠블럼이 없는 경우 엠블럼 상점으로 이동
     if (!user.emblem) {
-        return await handleEmblemShopInteraction(interaction);
+        const shopEmbed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🏆 엠블럼 상점')
+            .setDescription('엠블럼을 구매하여 특별한 칭호를 획득하세요!\n\n**⚠️ 엠블럼은 한 번 선택하면 계열을 변경할 수 없습니다!**');
+            
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('emblem_shop_category')
+            .setPlaceholder('엠블럼 카테고리를 선택하세요')
+            .addOptions([
+                { label: '전사 계열', value: 'warrior', emoji: '⚔️', description: '힘 주스탯' },
+                { label: '궁수 계열', value: 'archer', emoji: '🏹', description: '민첩 주스탯' },
+                { label: '마법사 계열', value: 'mage', emoji: '🧿', description: '지능 주스탯' },
+                { label: '수호자 계열', value: 'defender', emoji: '🛡️', description: '체력 주스탯' },
+                { label: '도적 계열', value: 'thief', emoji: '🗡️', description: '행운 주스탯' }
+            ]);
+            
+        const actionRow = new ActionRowBuilder().addComponents(selectMenu);
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('main_menu')
+                    .setLabel('🏠 메인 메뉴')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            
+        return await interaction.editReply({
+            embeds: [shopEmbed],
+            components: [actionRow, backButton]
+        });
     }
 
     // 엠블럼 강화 정보 가져오기
     const { EMBLEM_ENHANCE_STATS } = require('../../systems/emblemEnhancement');
+    const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, ''); // 강화 레벨 제거
     const emblemType = Object.keys(EMBLEMS).find(type => 
-        EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+        EMBLEMS[type].emblems.some(e => e.name === baseEmblemName)
     );
     const emblemData = emblemType ? EMBLEM_ENHANCE_STATS[emblemType] : null;
     const enhanceLevel = user.emblemEnhancement?.level || 0;

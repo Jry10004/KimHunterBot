@@ -946,7 +946,6 @@ async function handleMainInteraction(interaction) {
             
             // 엠블럼 명령어
             else if (commandName === '엠블럼') {
-                await interaction.deferReply({ flags: 64 });
                 const user = await getUser(interaction.user.id);
                 if (!user || !user.registered) {
                     return await interaction.editReply({ 
@@ -955,9 +954,8 @@ async function handleMainInteraction(interaction) {
                 }
                 
                 // 엠블럼 메뉴로 바로 이동
-                const { handleCharacterInteraction } = require('./handlers/character');
-                interaction.values = ['emblem'];
-                return await handleCharacterInteraction(interaction);
+                const { showEmblem } = require('./handlers/character/emblem');
+                return await showEmblem(interaction);
             }
             
             // 사냥 명령어

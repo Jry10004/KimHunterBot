@@ -19,11 +19,11 @@
       }
     ],
     [
-      "ancient",
+      "legendary",
       {
-        "openedAt": 1752671329624,
-        "closesAt": 1752673129624,
-        "event": null,
+        "openedAt": 1752672949829,
+        "closesAt": 1752673549829,
+        "event": "special",
         "visitors": [],
         "closingWarned": true
       }
@@ -71,5 +71,5 @@
       }
     ]
   ],
-  "savedAt": 1752672647718
+  "savedAt": 1752673547737
 }
