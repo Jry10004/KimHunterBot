@@ -1,5 +1,6 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { getUser, formatNumber } = require('../common/utils');
+const { calculateCombatPower } = require('../common/combatPower');
 const User = require('../../models/User');
 
 // 장비 슬롯 정보
@@ -259,7 +260,6 @@ async function showEquipment(interaction) {
     }
 
     // 전투력 계산 - 통합 함수 사용
-    const { calculateCombatPower } = require('../common/combatPower');
     const combatPower = calculateCombatPower(user);
     equipmentEmbed.addFields({
         name: '⚔️ 전투력',
@@ -690,11 +690,9 @@ async function optimizeEquipment(interaction) {
     
     try {
         // 전투력 재계산
-        const { calculateCombatPower } = require('../common/combatPower');
         user.combatPower = calculateCombatPower(user);
         
         // 전투력 재계산
-        const { calculateCombatPower } = require('../common/combatPower');
         user.combatPower = calculateCombatPower(user);
         
         await user.save();
@@ -795,7 +793,6 @@ async function equipItem(interaction, slot, itemIndex) {
         if (currentSlot >= 0) {
             user.equipment[slot] = -1;
             // 전투력 재계산
-        const { calculateCombatPower } = require('../common/combatPower');
         user.combatPower = calculateCombatPower(user);
         
         await user.save();
@@ -862,7 +859,6 @@ async function equipItem(interaction, slot, itemIndex) {
         }
         
         // 전투력 재계산
-        const { calculateCombatPower } = require('../common/combatPower');
         user.combatPower = calculateCombatPower(user);
         
         await user.save();
@@ -937,7 +933,6 @@ async function unequipAll(interaction) {
         });
     } else {
         // 전투력 재계산
-        const { calculateCombatPower } = require('../common/combatPower');
         user.combatPower = calculateCombatPower(user);
         
         await user.save();
@@ -994,7 +989,6 @@ async function handleUnequip(interaction) {
     if (user.equipment && user.equipment[slot] >= 0) {
         user.equipment[slot] = -1;
         // 전투력 재계산
-        const { calculateCombatPower } = require('../common/combatPower');
         user.combatPower = calculateCombatPower(user);
         
         await user.save();
