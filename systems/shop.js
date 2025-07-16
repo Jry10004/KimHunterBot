@@ -1419,15 +1419,29 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
             return;
         } else if (i.customId === 'shop_refresh') {
             try {
-                collector.stop();
-                const User = require('../models/User');
-                const updatedUser = await User.findOne({ discordId: user.discordId });
-                const embed = createShopEmbed(updatedUser);
-                const selectMenu = createSlotSelectMenu(updatedUser);
-                await i.update({
-                    embeds: [embed],
-                    components: [selectMenu]
-                });
+                // interaction이 이미 acknowledged된 경우를 처리
+                if (i.deferred || i.replied) {
+                    collector.stop();
+                    const User = require('../models/User');
+                    const updatedUser = await User.findOne({ discordId: user.discordId });
+                    const embed = createShopEmbed(updatedUser);
+                    const selectMenu = createSlotSelectMenu(updatedUser);
+                    await i.editReply({
+                        embeds: [embed],
+                        components: [selectMenu]
+                    });
+                } else {
+                    await i.deferUpdate();
+                    collector.stop();
+                    const User = require('../models/User');
+                    const updatedUser = await User.findOne({ discordId: user.discordId });
+                    const embed = createShopEmbed(updatedUser);
+                    const selectMenu = createSlotSelectMenu(updatedUser);
+                    await i.editReply({
+                        embeds: [embed],
+                        components: [selectMenu]
+                    });
+                }
             } catch (error) {
                 console.error('shop_refresh 처리 중 오류:', error);
                 if (!i.replied && !i.deferred) {

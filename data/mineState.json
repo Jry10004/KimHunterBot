@@ -8,25 +8,6 @@
         "event": null,
         "visitors": []
       }
-    ],
-    [
-      "crystal",
-      {
-        "openedAt": 1752670849564,
-        "closesAt": 1752674400564,
-        "event": null,
-        "visitors": []
-      }
-    ],
-    [
-      "legendary",
-      {
-        "openedAt": 1752672949829,
-        "closesAt": 1752673549829,
-        "event": "special",
-        "visitors": [],
-        "closingWarned": true
-      }
     ]
   ],
   "lastRandomOpen": [
@@ -71,5 +52,5 @@
       }
     ]
   ],
-  "savedAt": 1752673547737
+  "savedAt": 1752674747760
 }
