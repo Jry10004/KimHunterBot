@@ -537,7 +537,7 @@ async function tryEnhanceEmblem(interaction, count = 1) {
     try {
         // InteractionHandler에서 이미 defer했으므로 제거
         
-        const { getUser, saveUser } = require('../handlers/common/utils');
+        const { getUser } = require('../handlers/common/utils');
         const user = await getUser(interaction.user.id);
         
         if (!user || !user.emblem) {
@@ -591,7 +591,7 @@ async function tryEnhanceEmblem(interaction, count = 1) {
             if (user.items.emblemEnhanceStone <= 0) break;
         }
         
-        await saveUser(user);
+        await user.save();
         
         // 결과 표시
         const embed = createEmblemEnhanceEmbed(user, emblemType);
