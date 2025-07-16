@@ -336,16 +336,16 @@ function registerDefaultJobs() {
         priority: scheduler.priorities.NORMAL
     });
     
-    // 보스 스폰 체크 (1시간마다)
-    scheduler.registerJob('boss-spawn', {
-        name: '보스 스폰 체크',
-        schedule: '0 * * * *',
-        handler: async () => {
-            const bossSystem = require('../data/bossSystem');
-            await bossSystem.checkBossSpawn();
-        },
-        priority: scheduler.priorities.HIGH
-    });
+    // 보스 스폰 체크 (제거 - worldBossSystem이 자체적으로 관리)
+    // scheduler.registerJob('boss-spawn', {
+    //     name: '보스 스폰 체크',
+    //     schedule: '0 * * * *',
+    //     handler: async () => {
+    //         const bossSystem = require('../data/bossSystem');
+    //         await bossSystem.checkBossSpawn();
+    //     },
+    //     priority: scheduler.priorities.HIGH
+    // });
     
     // 캐시 정리 (1시간마다)
     scheduler.registerJob('cache-cleanup', {

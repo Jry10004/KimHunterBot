@@ -6,31 +6,49 @@ module.exports = {
         .setDescription('게임 메인 메뉴를 표시합니다'),
     
     async execute(interaction) {
-        // 안전한 defer 처리
-        const { safeDefer, safeReply } = require('../../utils/interactionUtils');
-        const deferResult = await safeDefer(interaction, { flags: 64 });
-        
-        if (!deferResult.success && deferResult.expired) {
-            return; // 만료된 상호작용
+        // 먼저 즉시 defer 처리 (타임아웃 방지)
+        try {
+            await interaction.deferReply({ flags: 64 });
+        } catch (error) {
+            if (error.code === 10062) {
+                console.log('[게임 명령어] 상호작용 만료');
+                return;
+            }
+            console.error('[게임 명령어] defer 오류:', error);
         }
         
-        // 유저 데이터 확인
-        const User = require('../../models/User');
-        const user = await User.findOne({ discordId: interaction.user.id });
-        
-        if (!user || !user.registered) {
-            return await interaction.editReply({
-                content: '❌ 먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
-            });
-        }
-        
-        // 전투력 계산
-        const { calculateCombatPower } = require('../../handlers/common/utils');
-        const combatPower = calculateCombatPower(user);
-        
-        // 관리자 확인
-        const ADMIN_IDS = ['424480594542592009', '295980447849250817', '532128778175619084', '592659577384730645'];
-        const isAdmin = ADMIN_IDS.includes(interaction.user.id);
+        try {
+            // 유저 데이터 확인 (병렬 처리로 최적화)
+            const User = require('../../models/User');
+            const [user] = await Promise.all([
+                User.findOne({ discordId: interaction.user.id }).lean()
+            ]);
+            
+            if (!user || !user.registered) {
+                return await interaction.editReply({
+                    content: '❌ 먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
+                });
+            }
+            
+            // 전투력 계산
+            const { calculateCombatPower } = require('../../handlers/common/utils');
+            const combatPower = calculateCombatPower(user);
+            
+            // 마법사 엠블럼 확인
+            const isMage = user.equippedEmblem && (
+                user.equippedEmblem.includes('마법사') || 
+                user.equippedEmblem.includes('원소 술사') ||
+                user.equippedEmblem.includes('신비한 현자') ||
+                user.equippedEmblem.includes('대마법사') ||
+                user.equippedEmblem.includes('아크메이지')
+            );
+            
+            const powerLabel = isMage ? '마력' : '전투력';
+            const powerEmoji = isMage ? '🔮' : '⚔️';
+            
+            // 관리자 확인
+            const ADMIN_IDS = ['424480594542592009', '295980447849250817', '532128778175619084', '592659577384730645'];
+            const isAdmin = ADMIN_IDS.includes(interaction.user.id);
         
         const embed = new EmbedBuilder()
             .setColor('#0099ff')
@@ -39,7 +57,7 @@ module.exports = {
             .addFields(
                 { name: '💰 보유 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
                 { name: '📊 레벨', value: `Lv.${user.level}`, inline: true },
-                { name: '⚔️ 전투력', value: `${combatPower}`, inline: true }
+                { name: `${powerEmoji} ${powerLabel}`, value: `${combatPower}`, inline: true }
             )
             .setFooter({ text: '아래 드롭다운 메뉴에서 원하는 기능을 선택하세요!' })
             .setTimestamp();
@@ -141,6 +159,12 @@ module.exports = {
                 description: '전리품 시세 정보',
                 value: 'market_prices',
                 emoji: '📊'
+            },
+            {
+                label: '🎣 낚시',
+                description: '낚시터에서 물고기 잡기',
+                value: 'fishing',
+                emoji: '🎣'
             }
         ];
 
@@ -159,11 +183,25 @@ module.exports = {
             .setPlaceholder('✨ 김헌터 월드에 오신 것을 환영합니다!')
             .addOptions(menuOptions.slice(0, 25)); // 최대 25개까지만
 
-        const selectRow = new ActionRowBuilder().addComponents(mainSelect);
+            const selectRow = new ActionRowBuilder().addComponents(mainSelect);
 
-        await interaction.editReply({
-            embeds: [embed],
-            components: [selectRow]
-        });
+            await interaction.editReply({
+                embeds: [embed],
+                components: [selectRow]
+            });
+        } catch (error) {
+            console.error('[게임 명령어] 실행 오류:', error);
+            
+            // 오류 응답 시도
+            try {
+                await interaction.editReply({
+                    content: '❌ 게임 메뉴를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+                    embeds: [],
+                    components: []
+                });
+            } catch (replyError) {
+                console.error('[게임 명령어] 오류 응답 실패:', replyError);
+            }
+        }
     }
 };

@@ -22,14 +22,7 @@ module.exports = {
 
         const emailPattern = interaction.options.getString('이메일패턴');
         
-        // 이메일 패턴 유효성 검사
-        if (!emailPattern || typeof emailPattern !== 'string' || emailPattern.trim() === '') {
-            return interaction.reply({ 
-                content: '❌ 올바른 이메일 패턴을 입력해주세요.', 
-                flags: 64 
-            });
-        }
-        
+        // 먼저 defer 처리
         try {
             await interaction.deferReply({ flags: 64 });
         } catch (error) {
@@ -39,6 +32,13 @@ module.exports = {
             }
             console.error('[DeleteUser] Defer error:', error);
             return;
+        }
+        
+        // 이메일 패턴 유효성 검사
+        if (!emailPattern || typeof emailPattern !== 'string' || emailPattern.trim() === '') {
+            return interaction.editReply({ 
+                content: '❌ 올바른 이메일 패턴을 입력해주세요.'
+            });
         }
 
         try {

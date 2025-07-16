@@ -5,7 +5,15 @@ const { calculateCombatPower } = require('../handlers/common/utils');
 const ActivityLog = require('../models/ActivityLog');
 const { applyPVPBonus } = require('../handlers/common/specialEffects');
 const lifeSystem = require('./lifeSystemIntegration');
-const { calculatePvPDamage, calculateDodgeChance } = require('../handlers/common/damageCalculator');
+const { 
+    calculatePvPDamage, 
+    calculateDodgeChance,
+    applyWarriorDamageReduction,
+    calculateDefenderShield,
+    calculateDefenderDamageReduction,
+    calculateDefenderCounterAttack,
+    calculateThiefDodgeCounter
+} = require('../handlers/common/damageCalculator');
 const buffSystem = require('../handlers/common/buffSystem');
 
 class PVPSystem {
@@ -253,10 +261,20 @@ class PVPSystem {
             console.error(`[PVP] 매치를 찾을 수 없음: ${matchId}`);
             console.log('[PVP] 현재 활성 매치들:', Array.from(this.activeMatches.keys()));
             if (interaction) {
-                return await interaction.reply({ 
-                    content: '❌ 매치가 종료되었거나 찾을 수 없습니다.', 
-                    flags: 64 
-                });
+                try {
+                    if (interaction.deferred) {
+                        return await interaction.editReply({ 
+                            content: '❌ 매치가 종료되었거나 찾을 수 없습니다.'
+                        });
+                    } else if (!interaction.replied) {
+                        return await interaction.reply({ 
+                            content: '❌ 매치가 종료되었거나 찾을 수 없습니다.', 
+                            flags: 64 
+                        });
+                    }
+                } catch (error) {
+                    console.error('[PVP] 매치 없음 응답 오류:', error.code);
+                }
             }
             return;
         }
@@ -264,10 +282,20 @@ class PVPSystem {
         if (match.status !== 'active') {
             console.error(`[PVP] 매치가 활성 상태가 아님: ${matchId}, 현재 상태: ${match.status}`);
             if (interaction) {
-                return await interaction.reply({ 
-                    content: '❌ 매치가 아직 시작되지 않았거나 이미 종료되었습니다.', 
-                    flags: 64 
-                });
+                try {
+                    if (interaction.deferred) {
+                        return await interaction.editReply({ 
+                            content: '❌ 매치가 아직 시작되지 않았거나 이미 종료되었습니다.'
+                        });
+                    } else if (!interaction.replied) {
+                        return await interaction.reply({ 
+                            content: '❌ 매치가 아직 시작되지 않았거나 이미 종료되었습니다.', 
+                            flags: 64 
+                        });
+                    }
+                } catch (error) {
+                    console.error('[PVP] 매치 상태 응답 오류:', error.code);
+                }
             }
             return;
         }
@@ -290,10 +318,20 @@ class PVPSystem {
         // 이미 선택했는지 확인
         if (match.pendingActions.has(actualUserId)) {
             if (interaction) {
-                return await interaction.reply({ 
-                    content: '⚠️ 이미 선택하셨습니다!', 
-                    flags: 64 
-                });
+                try {
+                    if (interaction.deferred) {
+                        return await interaction.editReply({ 
+                            content: '⚠️ 이미 선택하셨습니다!'
+                        });
+                    } else if (!interaction.replied) {
+                        return await interaction.reply({ 
+                            content: '⚠️ 이미 선택하셨습니다!', 
+                            flags: 64 
+                        });
+                    }
+                } catch (error) {
+                    console.error('[PVP] 중복 선택 응답 오류:', error.code);
+                }
             }
             return;
         }
@@ -303,15 +341,25 @@ class PVPSystem {
         
         if (interaction) {
             const positionLabels = {
-                'high': '⭐ 별똥베기',
-                'middle': '🍄 슈가스팅',
-                'low': '💥 버섯팡'
+                'high': '🗿 강공',
+                'middle': '⚖️ 균형',
+                'low': '💨 회피'
             };
             
-            await interaction.reply({ 
-                content: `✅ **${positionLabels[position]}**를 선택했습니다!`, 
-                flags: 64 
-            });
+            try {
+                if (interaction.deferred) {
+                    await interaction.editReply({ 
+                        content: `✅ **${positionLabels[position]}**를 선택했습니다!` 
+                    });
+                } else if (!interaction.replied) {
+                    await interaction.reply({ 
+                        content: `✅ **${positionLabels[position]}**를 선택했습니다!`, 
+                        flags: 64 
+                    });
+                }
+            } catch (error) {
+                console.error('[PVP] 펜들럼 선택 응답 오류:', error.code);
+            }
         }
 
         // 두 플레이어 모두 선택했는지 확인
@@ -359,9 +407,9 @@ class PVPSystem {
     // 위치 이름 변환
     getPositionName(position) {
         const names = {
-            'high': '⭐ 별똥베기',
-            'middle': '🍄 슈가스팅',
-            'low': '💥 버섯팡'
+            'high': '🗡️ 강공',
+            'middle': '⚖️ 균형',
+            'low': '💨 회피'
         };
         return names[position] || position;
     }
@@ -391,98 +439,169 @@ class PVPSystem {
         let p2Effects = [];
         let resultText = '';
 
-        // 기술별 특성
-        const skillBonus = {
-            'high': { damage: 1.2, accuracy: 0.85, name: '⭐ 별똥베기' },
-            'middle': { damage: 1.0, accuracy: 0.95, name: '🍄 슈가스팅' },
-            'low': { damage: 0.8, accuracy: 1.0, name: '💥 버섯팡' }
-        };
+        // 새로운 스킬 시스템 - 레벨 기반 스케일링
+        const p1Level = match.player1.user.level;
+        const p2Level = match.player2.user.level;
+        
+        // 라운드 기반 증폭 (고스펙 전투를 빨리 끝내기 위해)
+        const roundAmplifier = 1 + (match.round * 0.1); // 매 라운드 10% 증폭
+        
+        const getSkillStats = (level) => ({
+            'high': { 
+                damage: 1.05 + (level * 0.0025),     // 1.05 → 1.30 (레벨 100)
+                accuracy: 0.70 + (level * 0.001),     // 70% → 80%
+                successBuff: 0.05 + (level * 0.001),  // 5% → 15% 공격력 증가
+                failDebuff: 0.05 + (level * 0.001),   // 5% → 15% 받는 피해 증가
+                name: '🗡️ 강공' 
+            },
+            'middle': { 
+                damage: 0.85 + (level * 0.001),      // 0.85 → 0.95
+                accuracy: 1.0,                        // 100% 고정
+                penetration: 0.05 + (level * 0.0015), // 5% → 20% 방어 무시
+                nextTurnDefense: 0.05 + (level * 0.001), // 5% → 15% 방어력 증가
+                name: '⚖️ 균형' 
+            },
+            'low': { 
+                damage: 0.3 + (level * 0.002),       // 0.3 → 0.5
+                accuracy: 1.0,                        // 100% 고정
+                dodgeRate: 0.15 + (level * 0.0025),  // 15% → 40% 회피율
+                counterMultiplier: 1.3 + (level * 0.005), // 1.3 → 1.8배 반격
+                name: '💨 회피' 
+            }
+        });
+        
+        const p1SkillBonus = getSkillStats(p1Level)[p1Choice];
+        const p2SkillBonus = getSkillStats(p2Level)[p2Choice];
+        
+        // 강화 효과 적용
+        const p1Enhancement = match.player1.user.pvpEnhancement || { high: 0, middle: 0, low: 0 };
+        const p2Enhancement = match.player2.user.pvpEnhancement || { high: 0, middle: 0, low: 0 };
+        
+        // Player 1 강화 적용 (곡괭이와 유사한 수치)
+        if (p1Choice === 'high') {
+            p1SkillBonus.damage += (p1Enhancement.high * 0.004); // 레벨당 0.4% (100레벨 = 40%)
+            p1SkillBonus.accuracy += (p1Enhancement.high * 0.002); // 레벨당 0.2% (100레벨 = 20%)
+        } else if (p1Choice === 'middle') {
+            p1SkillBonus.penetration += (p1Enhancement.middle * 0.005); // 레벨당 0.5% (100레벨 = 50%)
+            p1SkillBonus.nextTurnDefense += (p1Enhancement.middle * 0.003); // 레벨당 0.3% (100레벨 = 30%)
+        } else if (p1Choice === 'low') {
+            p1SkillBonus.dodgeRate += (p1Enhancement.low * 0.006); // 레벨당 0.6% (100레벨 = 60%)
+            p1SkillBonus.counterMultiplier += (p1Enhancement.low * 0.004); // 레벨당 0.4% (100레벨 = 40%)
+        }
+        
+        // Player 2 강화 적용
+        // Player 2 강화 적용 (곡괭이와 유사한 수치)
+        if (p2Choice === 'high') {
+            p2SkillBonus.damage += (p2Enhancement.high * 0.004); // 레벨당 0.4% (100레벨 = 40%)
+            p2SkillBonus.accuracy += (p2Enhancement.high * 0.002); // 레벨당 0.2% (100레벨 = 20%)
+        } else if (p2Choice === 'middle') {
+            p2SkillBonus.penetration += (p2Enhancement.middle * 0.005); // 레벨당 0.5% (100레벨 = 50%)
+            p2SkillBonus.nextTurnDefense += (p2Enhancement.middle * 0.003); // 레벨당 0.3% (100레벨 = 30%)
+        } else if (p2Choice === 'low') {
+            p2SkillBonus.dodgeRate += (p2Enhancement.low * 0.006); // 레벨당 0.6% (100레벨 = 60%)
+            p2SkillBonus.counterMultiplier += (p2Enhancement.low * 0.004); // 레벨당 0.4% (100레벨 = 40%)
+        }
 
         // 공격 결과 계산
         if (p1Choice === p2Choice) {
-            resultText = `🛡️ **페리!** 두 플레이어가 ${skillBonus[p1Choice].name}를 동시에 사용!\n💥 공격이 충돌하며 서로를 밀어냅니다!\n\n`;
+            resultText = `🛡️ **페리!** 두 플레이어가 ${p1SkillBonus.name}를 동시에 사용!\n💥 공격이 충돌하며 서로를 밀어냅니다!\n\n`;
             
-            // 30% 확률로 운빨 이벤트 발생
-            if (Math.random() < 0.3) {
-                // 랜덤으로 운명의 장난 당첨자 결정
-                const isPlayer1Lucky = Math.random() < 0.5;
-                const luckyPlayer = isPlayer1Lucky ? match.player1 : match.player2;
-                const unluckyPlayer = isPlayer1Lucky ? match.player2 : match.player1;
-                const luckyStats = isPlayer1Lucky ? p1Stats : p2Stats;
-                
-                // 당첨자의 최대 강화 부위 찾기
-                const enhancements = luckyPlayer.user.pvpEnhancement || { high: 0, middle: 0, low: 0 };
-                let maxEnhancement = { skill: 'middle', value: 0 };
-                
-                for (const [skill, value] of Object.entries(enhancements)) {
-                    if (value > maxEnhancement.value) {
-                        maxEnhancement = { skill, value };
-                    }
-                }
-                
-                const skillNames = {
-                    'high': '⭐ 별똥베기',
-                    'middle': '🍄 슈가스팅',
-                    'low': '💥 버섯팡'
-                };
-                
-                // 최대 강화 스킬로 추가 공격
-                const bonusSkill = skillBonus[maxEnhancement.skill];
-                let bonusDamage = Math.floor(luckyStats.attack * bonusSkill.damage * 1.5); // 1.5배 보너스
-                
-                // 강화 수치 추가 반영
-                if (maxEnhancement.value > 0) {
-                    bonusDamage += maxEnhancement.value * 3;
-                }
-                
-                // 피해 적용
-                if (isPlayer1Lucky) {
-                    match.player2HP = Math.max(0, match.player2HP - bonusDamage);
-                } else {
-                    match.player1HP = Math.max(0, match.player1HP - bonusDamage);
-                }
-                
-                resultText += `\n🎰 **운명의 장난!**\n`;
-                resultText += `💫 충돌의 여파로 **${luckyPlayer.user.nickname}**의 최강 스킬이 발동!\n`;
-                resultText += `🎯 ${skillNames[maxEnhancement.skill]} 강화 +${maxEnhancement.value}의 힘으로\n`;
-                resultText += `💥 **${unluckyPlayer.user.nickname}**에게 ${bonusDamage} 추가 데미지!\n`;
-            } else {
-                // 일반 반사 데미지
-                const reflectDamage1 = Math.floor(p1Stats.attack * 0.1);
-                const reflectDamage2 = Math.floor(p2Stats.attack * 0.1);
-                match.player1HP = Math.max(0, match.player1HP - reflectDamage2);
-                match.player2HP = Math.max(0, match.player2HP - reflectDamage1);
-                
-                resultText += `⚡ 서로에게 반사 데미지: ${reflectDamage1} / ${reflectDamage2}`;
-            }
+            // 새로운 페리 시스템 - 각자의 스킬 효과는 적용되지만 데미지는 50% 감소
+            const reflectDamage1 = Math.floor(p1Stats.attack * p1SkillBonus.damage * 0.5 * roundAmplifier);
+            const reflectDamage2 = Math.floor(p2Stats.attack * p2SkillBonus.damage * 0.5 * roundAmplifier);
+            
+            match.player1HP = Math.max(0, match.player1HP - reflectDamage2);
+            match.player2HP = Math.max(0, match.player2HP - reflectDamage1);
+            
+            resultText += `⚡ 충돌로 인한 반동 데미지!\n`;
+            resultText += `💥 ${match.player1.user.nickname}: -${reflectDamage2} HP\n`;
+            resultText += `💥 ${match.player2.user.nickname}: -${reflectDamage1} HP`;
         } else {
             resultText = '🎯 **공방 교환!**\n\n';
             
-            // 기절 체크
-            const p1Stunned = buffSystem.isIncapacitated({ activeBuffs: match.player1Buffs });
-            const p2Stunned = buffSystem.isIncapacitated({ activeBuffs: match.player2Buffs });
-            
             // Player 1 공격
-            const skill1 = skillBonus[p1Choice];
-            
-            if (p1Stunned) {
-                resultText += `💫 **${match.player1.user.nickname}**은(는) 기절 상태로 행동할 수 없습니다!\n\n`;
-            } else {
+            const skill1 = p1SkillBonus;
                 // 통합 데미지 계산 시스템 사용
-                const p1DamageResult = calculatePvPDamage(match.player1.user, match.player2.user, p1Choice);
+                const p1DamageResult = calculatePvPDamage(match.player1.user, match.player2.user, p1Choice, match);
                 
                 if (p1DamageResult.isDodged) {
-                resultText += `🌀 **${match.player2.user.nickname}**이(가) ${match.player1.user.nickname}의 ${skill1.name}를 회피!\n\n`;
-            } else if (p1DamageResult.damage > 0) {
-                p1Damage = p1DamageResult.damage;
-                
-                // 크리티컬 표시
-                if (p1DamageResult.isCritical) {
-                    p1Effects.push('🎆 크리티컬!');
-                }
-                
-                // 데미지 적용
-                match.player2HP = Math.max(0, match.player2HP - p1Damage);
+                    match.lastP1Hit = false; // 강공 실패 기록
+                    resultText += `🌀 **${match.player2.user.nickname}**이(가) ${match.player1.user.nickname}의 ${skill1.name}를 회피!\n\n`;
+                    
+                    // 회피 스킬 사용 시 반격
+                    if (p2Choice === 'low') {
+                        const level = match.player2.user.level || 1;
+                        const counterMultiplier = 1.3 + (level * 0.005); // 1.3 → 1.8배
+                        const counterDamage = Math.floor(p2Stats.attack * 0.5 * counterMultiplier * roundAmplifier);
+                        match.player1HP = Math.max(0, match.player1HP - counterDamage);
+                        resultText += `💨 **회피 반격!** ${match.player2.user.nickname}이(가) ${counterDamage} 데미지로 반격!\n\n`;
+                    }
+                    
+                    // 도적 회피 반격 체크
+                    const dodgeCounter = calculateThiefDodgeCounter(match.player1.user, match.player2.user);
+                    if (dodgeCounter.hasCounter) {
+                        const amplifiedCounterDamage = Math.floor(dodgeCounter.counterDamage * roundAmplifier);
+                        match.player1HP = Math.max(0, match.player1HP - amplifiedCounterDamage);
+                        resultText += `🗡️ **도적 반격!** ${match.player2.user.nickname}이(가) ${amplifiedCounterDamage} 데미지로 추가 반격!\n\n`;
+                    }
+                } else if (p1DamageResult.damage > 0) {
+                    match.lastP1Hit = true; // 강공 성공 기록
+                    p1Damage = p1DamageResult.damage;
+                    
+                    // 크리티컬 표시
+                    if (p1DamageResult.isCritical) {
+                        p1Effects.push('🎆 크리티컬!');
+                    }
+                    
+                    // 궁수 2연타 체크
+                    if (p1DamageResult.hasDoubleHit) {
+                        p1Effects.push('🏹 2연타!');
+                        p1Damage = p1DamageResult.totalDamage;
+                    }
+                    
+                    // 도적 추가 공격 체크
+                    if (p1DamageResult.hasExtraAttack) {
+                        p1Effects.push('🗡️ 그림자 공격!');
+                        p1Damage = p1DamageResult.totalDamage;
+                    }
+                    
+                    // 라운드별 데미지 증가 (라운드당 10%씩 누적 증가)
+                    if (match.round >= 2) {
+                        const roundMultiplier = 1 + ((match.round - 1) * 0.10);
+                        p1Damage = Math.floor(p1Damage * roundMultiplier);
+                        if (match.round >= 5) {
+                            p1Effects.push(`🔥 전투 격화! x${roundMultiplier.toFixed(2)}`);
+                        }
+                    }
+                    
+                    // 수호자 보호막 적용
+                    const shieldReduction = calculateDefenderShield(match.player2.user);
+                    const baseReduction = calculateDefenderDamageReduction(match.player2.user);
+                    const totalReduction = shieldReduction + baseReduction;
+                    
+                    if (totalReduction > 0) {
+                        const reducedDamage = Math.floor(p1Damage * (1 - totalReduction));
+                        const absorbed = p1Damage - reducedDamage;
+                        p1Damage = reducedDamage;
+                        p2Effects.push(`🛡️ 보호막 흡수 -${absorbed}`);
+                    }
+                    
+                    // 전사 불굴의 의지 체크
+                    const warriorReduction = applyWarriorDamageReduction(p1Damage, match.player2.user);
+                    if (warriorReduction.reduced) {
+                        p1Damage = warriorReduction.damage;
+                        p2Effects.push(`⚔️ 불굴의 의지! -${warriorReduction.reductionAmount}`);
+                    }
+                    
+                    // 최종 데미지 적용
+                    match.player2HP = Math.max(0, match.player2HP - p1Damage);
+                    
+                    // 수호자 반격 체크
+                    const counterAttack = calculateDefenderCounterAttack(p1Damage, match.player2.user);
+                    if (counterAttack.hasCounter && match.player2HP > 0) {
+                        match.player1HP = Math.max(0, match.player1HP - counterAttack.counterDamage);
+                        p2Effects.push(`🛡️ 반격! ${counterAttack.counterDamage} 데미지`);
+                    }
                 
                 // 흡혈 처리 (HP가 0이 아닐 때만)
                 if (p1Stats.lifesteal > 0 && match.player1HP > 0) {
@@ -519,29 +638,90 @@ class PVPSystem {
             } else {
                 resultText += `❌ **${match.player1.user.nickname}**의 ${skill1.name}이 빗나갔습니다!\n\n`;
             }
-            } // Player 1 기절 체크 닫기
 
             // Player 2 공격
-            const skill2 = skillBonus[p2Choice];
-            
-            if (p2Stunned) {
-                resultText += `💫 **${match.player2.user.nickname}**은(는) 기절 상태로 행동할 수 없습니다!`;
-            } else {
+            const skill2 = p2SkillBonus;
                 // 통합 데미지 계산 시스템 사용
-                const p2DamageResult = calculatePvPDamage(match.player2.user, match.player1.user, p2Choice);
+                const p2DamageResult = calculatePvPDamage(match.player2.user, match.player1.user, p2Choice, match);
                 
                 if (p2DamageResult.isDodged) {
-                resultText += `🌀 **${match.player1.user.nickname}**이(가) ${match.player2.user.nickname}의 ${skill2.name}를 회피!\n\n`;
-            } else if (p2DamageResult.damage > 0) {
-                p2Damage = p2DamageResult.damage;
-                
-                // 크리티컬 표시
-                if (p2DamageResult.isCritical) {
-                    p2Effects.push('🎆 크리티컬!');
-                }
-                
-                // 데미지 적용
-                match.player1HP = Math.max(0, match.player1HP - p2Damage);
+                    match.lastP2Hit = false; // 강공 실패 기록
+                    resultText += `🌀 **${match.player1.user.nickname}**이(가) ${match.player2.user.nickname}의 ${skill2.name}를 회피!\n\n`;
+                    
+                    // 회피 스킬 사용 시 반격
+                    if (p1Choice === 'low') {
+                        const level = match.player1.user.level || 1;
+                        const counterMultiplier = 1.3 + (level * 0.005); // 1.3 → 1.8배
+                        const counterDamage = Math.floor(p1Stats.attack * 0.5 * counterMultiplier * roundAmplifier);
+                        match.player2HP = Math.max(0, match.player2HP - counterDamage);
+                        resultText += `💨 **회피 반격!** ${match.player1.user.nickname}이(가) ${counterDamage} 데미지로 반격!\n\n`;
+                    }
+                    
+                    // 도적 회피 반격 체크
+                    const dodgeCounter = calculateThiefDodgeCounter(match.player2.user, match.player1.user);
+                    if (dodgeCounter.hasCounter) {
+                        const amplifiedCounterDamage = Math.floor(dodgeCounter.counterDamage * roundAmplifier);
+                        match.player2HP = Math.max(0, match.player2HP - amplifiedCounterDamage);
+                        resultText += `🗡️ **도적 반격!** ${match.player1.user.nickname}이(가) ${amplifiedCounterDamage} 데미지로 추가 반격!\n\n`;
+                    }
+                } else if (p2DamageResult.damage > 0) {
+                    match.lastP2Hit = true; // 강공 성공 기록
+                    p2Damage = p2DamageResult.damage;
+                    
+                    // 크리티컬 표시
+                    if (p2DamageResult.isCritical) {
+                        p2Effects.push('🎆 크리티컬!');
+                    }
+                    
+                    // 궁수 2연타 체크
+                    if (p2DamageResult.hasDoubleHit) {
+                        p2Effects.push('🏹 2연타!');
+                        p2Damage = p2DamageResult.totalDamage;
+                    }
+                    
+                    // 도적 추가 공격 체크
+                    if (p2DamageResult.hasExtraAttack) {
+                        p2Effects.push('🗡️ 그림자 공격!');
+                        p2Damage = p2DamageResult.totalDamage;
+                    }
+                    
+                    // 라운드별 데미지 증가 (라운드당 10%씩 누적 증가)
+                    if (match.round >= 2) {
+                        const roundMultiplier = 1 + ((match.round - 1) * 0.10);
+                        p2Damage = Math.floor(p2Damage * roundMultiplier);
+                        if (match.round >= 5) {
+                            p2Effects.push(`🔥 전투 격화! x${roundMultiplier.toFixed(2)}`);
+                        }
+                    }
+                    
+                    // 수호자 보호막 적용
+                    const shieldReduction = calculateDefenderShield(match.player1.user);
+                    const baseReduction = calculateDefenderDamageReduction(match.player1.user);
+                    const totalReduction = shieldReduction + baseReduction;
+                    
+                    if (totalReduction > 0) {
+                        const reducedDamage = Math.floor(p2Damage * (1 - totalReduction));
+                        const absorbed = p2Damage - reducedDamage;
+                        p2Damage = reducedDamage;
+                        p1Effects.push(`🛡️ 보호막 흡수 -${absorbed}`);
+                    }
+                    
+                    // 전사 불굴의 의지 체크
+                    const warriorReduction = applyWarriorDamageReduction(p2Damage, match.player1.user);
+                    if (warriorReduction.reduced) {
+                        p2Damage = warriorReduction.damage;
+                        p1Effects.push(`⚔️ 불굴의 의지! -${warriorReduction.reductionAmount}`);
+                    }
+                    
+                    // 최종 데미지 적용
+                    match.player1HP = Math.max(0, match.player1HP - p2Damage);
+                    
+                    // 수호자 반격 체크
+                    const counterAttack = calculateDefenderCounterAttack(p2Damage, match.player1.user);
+                    if (counterAttack.hasCounter && match.player1HP > 0) {
+                        match.player2HP = Math.max(0, match.player2HP - counterAttack.counterDamage);
+                        p1Effects.push(`🛡️ 반격! ${counterAttack.counterDamage} 데미지`);
+                    }
                 
                 // 흡혈 처리 (HP가 0이 아닐 때만)
                 if (p2Stats.lifesteal > 0 && match.player2HP > 0) {
@@ -578,7 +758,6 @@ class PVPSystem {
             } else {
                 resultText += `❌ **${match.player2.user.nickname}**의 ${skill2.name}이 빗나갔습니다!`;
             }
-            } // Player 2 기절 체크 닫기
         }
 
         // HP 바 생성
@@ -616,28 +795,21 @@ class PVPSystem {
             )
             .setTimestamp();
 
-        // 기절 면역 감소
-        if (match.player1StunImmunity > 0) {
-            match.player1StunImmunity--;
-            if (match.player1StunImmunity === 0) {
-                resultEmbed.addFields({
-                    name: '🔓 상태 변화',
-                    value: `${match.player1.user.nickname}의 기절 면역이 해제되었습니다!`,
-                    inline: false
-                });
-            }
-        }
-        if (match.player2StunImmunity > 0) {
-            match.player2StunImmunity--;
-            if (match.player2StunImmunity === 0) {
-                resultEmbed.addFields({
-                    name: '🔓 상태 변화',
-                    value: `${match.player2.user.nickname}의 기절 면역이 해제되었습니다!`,
-                    inline: false
-                });
-            }
-        }
 
+        // 버프 지속시간 감소
+        if (match.player1Buffs) {
+            match.player1Buffs = match.player1Buffs.filter(buff => {
+                buff.duration--;
+                return buff.duration > 0;
+            });
+        }
+        if (match.player2Buffs) {
+            match.player2Buffs = match.player2Buffs.filter(buff => {
+                buff.duration--;
+                return buff.duration > 0;
+            });
+        }
+        
         // 라운드 제한 체크
         if (match.round >= match.maxRounds) {
             await channel.send({ embeds: [resultEmbed] });
@@ -788,8 +960,8 @@ class PVPSystem {
         const expectedWin = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
         const ratingChange = Math.round(K * (1 - expectedWin));
 
-        // 랜덤 골드 보상 계산 (승자만)
-        const winnerGoldReward = Math.floor(Math.random() * (100000 - 100 + 1)) + 100; // 100 ~ 100,000
+        // 랜덤 골드 보상 계산 (승자만) - 10배 증가
+        const winnerGoldReward = Math.floor(Math.random() * (1000000 - 1000 + 1)) + 1000; // 1,000 ~ 1,000,000
         const loserGoldPenalty = 0; // 패자 골드 차감 제거
         
         // 패자의 실제 차감 가능 금액 계산 (미리 계산)
@@ -1467,9 +1639,6 @@ class PVPSystem {
             // 버프/디버프 시스템
             player1Buffs: [],
             player2Buffs: [],
-            // 기절 면역 시스템
-            player1StunImmunity: 0, // 기절 면역 턴 수
-            player2StunImmunity: 0,
             // 회복 제한 시스템
             player1HealCount: 0, // 회복 사용 횟수
             player2HealCount: 0,
@@ -1566,10 +1735,10 @@ class PVPSystem {
                 },
                 {
                     name: '⚡ 전투 시스템',
-                    value: '🎯 **펜들럼 배틀** - 상대의 공격을 예측하고 반격하세요!\n\n' +
-                           '• ⭐ **별똥베기**: 강력하지만 명중률 낮음\n' +
-                           '• 🍄 **슈가스팅**: 균형 잡힌 공격\n' +
-                           '• 💥 **버섯팡**: 약하지만 정확한 공격',
+                    value: '🎯 **전략적 3스킬 배틀** - 상대의 선택을 예측하라!\n\n' +
+                           '• 🗡️ **강공**: 높은 피해(70~80% 명중) - 성공시 공격력↑, 실패시 방어력↓\n' +
+                           '• ⚖️ **균형**: 안정적 공격(100% 명중) - 방어 무시 + 다음턴 방어↑\n' +
+                           '• 💨 **회피**: 약한 공격(100% 명중) - 다음턴 회피 준비 + 반격',
                     inline: false
                 },
                 {
@@ -1638,9 +1807,14 @@ class PVPSystem {
             return `${bar} ${current}/${max} (${percentage}%)`;
         };
 
-        // 전투력 표시
-        const createPowerDisplay = (stats) => {
-            return `⚔️ 공격력: ${stats.attack} | 🛡️ 방어력: ${stats.defense} | ✨ 전투력: ${stats.combatPower}`;
+        // 전투력 표시 (법사는 마력으로 표시)
+        const createPowerDisplay = (stats, playerUser) => {
+            const emblemLower = playerUser.emblem?.toLowerCase() || '';
+            const isMage = emblemLower.includes('마법사') || emblemLower.includes('현자') || 
+                          emblemLower.includes('메이지') || emblemLower.includes('술사');
+            
+            const attackLabel = isMage ? '🔮 마력' : '⚔️ 공격력';
+            return `${attackLabel}: ${stats.attack} | 🛡️ 방어력: ${stats.defense} | ✨ 전투력: ${stats.combatPower}`;
         };
 
         // 버프 표시 생성
@@ -1655,8 +1829,8 @@ class PVPSystem {
             .setDescription(`🔥 **전투가 치열해지고 있습니다!** 🔥\n\n🎯 적의 공격을 예측하고 반격하세요!`)
             .addFields(
                 {
-                    name: `👤 ${p1Name} [레벨 ${p1Stats.level}]${match.player1StunImmunity > 0 ? ' 🛡️' : ''}`,
-                    value: `${createHPBar(match.player1HP, p1Stats.maxHp)}\n${createPowerDisplay(p1Stats)}${createBuffDisplay(match.player1Buffs)}${match.player1StunImmunity > 0 ? `\n🛡️ 기절 면역 (${match.player1StunImmunity}턴)` : ''}`,
+                    name: `👤 ${p1Name} [레벨 ${p1Stats.level}]`,
+                    value: `${createHPBar(match.player1HP, p1Stats.maxHp)}\n${createPowerDisplay(p1Stats, match.player1.user)}${createBuffDisplay(match.player1Buffs)}`,
                     inline: false
                 },
                 {
@@ -1665,8 +1839,8 @@ class PVPSystem {
                     inline: false
                 },
                 {
-                    name: `👤 ${p2Name} [레벨 ${p2Stats.level}]${match.player2StunImmunity > 0 ? ' 🛡️' : ''}`,
-                    value: `${createHPBar(match.player2HP, p2Stats.maxHp)}\n${createPowerDisplay(p2Stats)}${createBuffDisplay(match.player2Buffs)}${match.player2StunImmunity > 0 ? `\n🛡️ 기절 면역 (${match.player2StunImmunity}턴)` : ''}`,
+                    name: `👤 ${p2Name} [레벨 ${p2Stats.level}]`,
+                    value: `${createHPBar(match.player2HP, p2Stats.maxHp)}\n${createPowerDisplay(p2Stats, match.player2.user)}${createBuffDisplay(match.player2Buffs)}`,
                     inline: false
                 }
             )
@@ -1677,19 +1851,19 @@ class PVPSystem {
             .addComponents(
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_high`)
-                    .setLabel('⭐ 별똥베기')
-                    .setEmoji('⬆️')
-                    .setStyle(ButtonStyle.Primary),
+                    .setLabel('🗡️ 강공')
+                    .setEmoji('⚔️')
+                    .setStyle(ButtonStyle.Danger),
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_middle`)
-                    .setLabel('🍄 슈가스팅')
-                    .setEmoji('➡️')
-                    .setStyle(ButtonStyle.Success),
+                    .setLabel('⚖️ 균형')
+                    .setEmoji('🛡️')
+                    .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
                     .setCustomId(`pvp_pendulum_${match.matchId}_low`)
-                    .setLabel('💥 버섯팡')
-                    .setEmoji('⬇️')
-                    .setStyle(ButtonStyle.Danger)
+                    .setLabel('💨 회피')
+                    .setEmoji('🌀')
+                    .setStyle(ButtonStyle.Secondary)
             );
 
         await channel.send({
@@ -1756,14 +1930,21 @@ class PVPSystem {
             // 무기
             const weapon = this.getEquippedItem(user, 'weapon');
             if (weapon) {
-                equipmentStats.weaponDamage = weapon.attack || 0;
-                equipmentStats.str += weapon.strength || 0;
-                equipmentStats.dex += weapon.agility || 0;
+                // 무기 스탯 확인 (stats 객체 내부에 있을 수 있음)
+                const weaponStats = weapon.stats || weapon;
+                equipmentStats.weaponDamage = weaponStats.attack || weapon.attack || 0;
+                equipmentStats.str += weaponStats.strength || weapon.strength || 0;
+                equipmentStats.dex += weaponStats.agility || weapon.agility || 0;
+                equipmentStats.int += weaponStats.intelligence || weapon.intelligence || 0;
                 
                 // 강화 보너스
-                if (weapon.enhancement && weapon.enhancement > 0) {
-                    equipmentStats.weaponDamage += weapon.enhancement * 5;
+                const enhanceLevel = weapon.enhancement || weapon.enhanceLevel || 0;
+                if (enhanceLevel > 0) {
+                    equipmentStats.weaponDamage += enhanceLevel * 3; // 5 -> 3으로 하향
                 }
+                
+                // 무기 데미지가 비정상적으로 높은 경우 제한
+                equipmentStats.weaponDamage = Math.min(equipmentStats.weaponDamage, 5000);
             }
             
             // 방어구들
@@ -1771,16 +1952,18 @@ class PVPSystem {
             for (const type of armorTypes) {
                 const item = this.getEquippedItem(user, type);
                 if (item) {
-                    equipmentStats.def += item.defense || 0;
-                    equipmentStats.hp += item.vitality || 0;
-                    equipmentStats.str += item.strength || 0;
-                    equipmentStats.dex += item.agility || 0;
-                    equipmentStats.int += item.intelligence || 0;
-                    equipmentStats.luk += item.luck || 0;
+                    const itemStats = item.stats || item;
+                    equipmentStats.def += itemStats.defense || item.defense || 0;
+                    equipmentStats.hp += itemStats.vitality || item.vitality || 0;
+                    equipmentStats.str += itemStats.strength || item.strength || 0;
+                    equipmentStats.dex += itemStats.agility || item.agility || 0;
+                    equipmentStats.int += itemStats.intelligence || item.intelligence || 0;
+                    equipmentStats.luk += itemStats.luck || item.luck || 0;
                     
                     // 강화 보너스
-                    if (item.enhancement && item.enhancement > 0) {
-                        equipmentStats.def += item.enhancement * 3;
+                    const enhanceLevel = item.enhancement || item.enhanceLevel || 0;
+                    if (enhanceLevel > 0) {
+                        equipmentStats.def += enhanceLevel * 2; // 3 -> 2로 하향
                     }
                 }
             }
@@ -1788,10 +1971,27 @@ class PVPSystem {
             // 악세서리
             const accessory = this.getEquippedItem(user, 'accessory');
             if (accessory) {
-                equipmentStats.str += accessory.strength || 0;
-                equipmentStats.dex += accessory.agility || 0;
-                equipmentStats.int += accessory.intelligence || 0;
-                equipmentStats.luk += accessory.luck || 0;
+                const accStats = accessory.stats || accessory;
+                equipmentStats.str += accStats.strength || accessory.strength || 0;
+                equipmentStats.dex += accStats.agility || accessory.agility || 0;
+                equipmentStats.int += accStats.intelligence || accessory.intelligence || 0;
+                equipmentStats.luk += accStats.luck || accessory.luck || 0;
+            }
+        }
+        
+        // 장신구 효과 추가
+        if (user.equippedAccessories) {
+            for (const slot of Object.keys(user.equippedAccessories)) {
+                const acc = user.equippedAccessories[slot];
+                if (acc && acc.stats) {
+                    const stats = acc.stats instanceof Map ? Object.fromEntries(acc.stats) : acc.stats;
+                    equipmentStats.str += stats.strength || 0;
+                    equipmentStats.dex += stats.agility || 0;
+                    equipmentStats.int += stats.intelligence || 0;
+                    equipmentStats.luk += stats.luck || 0;
+                    equipmentStats.def += stats.defense || 0;
+                    equipmentStats.hp += stats.vitality || 0;
+                }
             }
         }
 
@@ -1820,21 +2020,49 @@ class PVPSystem {
         const totalDef = baseStats.def + equipmentStats.def;
         const totalDex = baseStats.dex + equipmentStats.dex;
         const totalLuk = baseStats.luk + equipmentStats.luk;
+        const totalInt = baseStats.int + equipmentStats.int;
         
-        // 전투력 기반 보정 계수 (1000 전투력 = 1.0배)
-        const powerMultiplier = Math.max(0.5, Math.min(3.0, totalCombatPower / 1000));
+        // 전투력 기반 보정 계수 (5000 전투력 = 1.0배, 최대 1.5배)
+        const powerMultiplier = Math.max(0.8, Math.min(1.5, totalCombatPower / 5000));
+        
+        // 직업 확인 (법사는 지능 기반 공격력)
+        const emblemLower = user.emblem?.toLowerCase() || '';
+        const isMage = emblemLower.includes('마법사') || emblemLower.includes('현자') || 
+                       emblemLower.includes('메이지') || emblemLower.includes('술사');
+        
+        // 디버그 로그 추가
+        if (user.emblem?.includes('전사')) {
+            console.log('[PVP Debug] 전사 공격력 계산:', {
+                userId: user.discordId,
+                totalStr,
+                weaponDamage: equipmentStats.weaponDamage,
+                totalEnhancement,
+                emblemBonus,
+                energyBonus,
+                fitnessAttack: fitnessBonus.attack,
+                powerMultiplier,
+                combatPower: totalCombatPower,
+                rawAttack: (totalStr * 2 + equipmentStats.weaponDamage) * (1 + totalEnhancement * 0.02),
+                finalFormula: `((${totalStr} * 2 + ${equipmentStats.weaponDamage}) * ${1 + totalEnhancement * 0.02} + ${emblemBonus * 3} + ${energyBonus * 0.3} + ${fitnessBonus.attack}) * ${powerMultiplier}`
+            });
+        }
         
         const totalStats = {
-            attack: Math.floor(
-                ((totalStr * 3 + equipmentStats.weaponDamage * 2) * (1 + totalEnhancement * 0.03) + 
-                emblemBonus * 5 + energyBonus * 0.5 + fitnessBonus.attack) * powerMultiplier
-            ),
+            attack: Math.floor(Math.min(20000,  // 최대 공격력 20000으로 제한
+                isMage ? 
+                // 법사: 지능 기반 공격력
+                ((totalInt * 2 + equipmentStats.weaponDamage) * (1 + totalEnhancement * 0.02) + 
+                emblemBonus * 3 + energyBonus * 0.3 + fitnessBonus.attack) * powerMultiplier :
+                // 다른 직업: 힘 기반 공격력
+                ((totalStr * 2 + equipmentStats.weaponDamage) * (1 + totalEnhancement * 0.02) + 
+                emblemBonus * 3 + energyBonus * 0.3 + fitnessBonus.attack) * powerMultiplier
+            )),
             defense: Math.floor(
-                (totalDef * 2 + emblemBonus * 3 + fitnessBonus.defense) * powerMultiplier
+                (totalDef * 1.5 + emblemBonus * 2 + fitnessBonus.defense) * powerMultiplier
             ),
             maxHp: Math.floor(
-                ((baseStats.hp + equipmentStats.hp) * 20 + level * 50 + 
-                emblemBonus * 20 + fitnessBonus.hp) * powerMultiplier
+                ((baseStats.hp + equipmentStats.hp) * 15 + level * 40 + 
+                emblemBonus * 15 + fitnessBonus.hp) * powerMultiplier
             ),
             critRate: Math.min(0.6, 0.05 + (totalLuk * 0.002)),
             critDamage: 1.5 + (totalLuk * 0.01),
@@ -1974,134 +2202,68 @@ class PVPSystem {
     
     // 스킬에 따른 버프 적용
     applySkillBuffs(attacker, defender, skill, isPlayer1, match) {
+        const level = attacker.level || 1;
+        const buffKey = isPlayer1 ? 'player1Buffs' : 'player2Buffs';
+        
         // 스킬별 특수 효과
         const skillEffects = {
-            'high': () => {
-                // 별똥베기 - 높은 데미지, 낮은 확률로 스턴
-                if (Math.random() < 0.15) {
-                    // 기절 면역 체크
-                    const targetHasImmunity = isPlayer1 ? match.player2StunImmunity > 0 : match.player1StunImmunity > 0;
-                    if (targetHasImmunity) {
-                        return `🛡️ 기절 면역 상태!`;
-                    }
-                    
-                    // 직접 버프 객체를 생성하여 추가
-                    const stunBuff = {
-                        id: Date.now() + Math.random(),
-                        type: 'STUN',
-                        value: 1,
+            'high': (hit) => {
+                // 강공 - 성공/실패에 따른 버프/디버프
+                if (hit) {
+                    // 성공 시 다음 턴 공격력 증가
+                    const attackBuff = 0.05 + (level * 0.001); // 5% → 15%
+                    if (!match[buffKey]) match[buffKey] = [];
+                    match[buffKey].push({
+                        type: 'attackBoost',
+                        value: attackBuff,
                         duration: 1,
-                        remainingTurns: 1,
-                        source: attacker.nickname,
-                        appliedAt: Date.now()
-                    };
-                    
-                    if (isPlayer1) {
-                        // 중복 체크
-                        const existingStun = match.player2Buffs.findIndex(b => b.type === 'STUN');
-                        if (existingStun !== -1) {
-                            match.player2Buffs[existingStun] = stunBuff;
-                        } else {
-                            match.player2Buffs.push(stunBuff);
-                        }
-                        // 기절 후 2라운드 면역
-                        match.player2StunImmunity = 2;
-                    } else {
-                        // 중복 체크
-                        const existingStun = match.player1Buffs.findIndex(b => b.type === 'STUN');
-                        if (existingStun !== -1) {
-                            match.player1Buffs[existingStun] = stunBuff;
-                        } else {
-                            match.player1Buffs.push(stunBuff);
-                        }
-                        // 기절 후 2라운드 면역
-                        match.player1StunImmunity = 2;
-                    }
-                    return `💫 기절 효과 발동!`;
+                        name: '강공 성공'
+                    });
+                    return `⚔️ 공격력 +${(attackBuff * 100).toFixed(0)}%`;
+                } else {
+                    // 실패 시 다음 턴 받는 피해 증가
+                    const defensePenalty = 0.05 + (level * 0.001); // 5% → 15%
+                    if (!match[buffKey]) match[buffKey] = [];
+                    match[buffKey].push({
+                        type: 'defenseReduction',
+                        value: defensePenalty,
+                        duration: 1,
+                        name: '강공 실패'
+                    });
+                    return `🛡️ 방어력 -${(defensePenalty * 100).toFixed(0)}%`;
                 }
             },
-            'middle': () => {
-                // 슈가스팅 - 중간 데미지, 방어력 감소
-                if (Math.random() < 0.3) {
-                    // 디버프 저항 계산
-                    const targetStats = isPlayer1 ? defender : attacker;
-                    const resistance = (targetStats.vitality || 10) / 200; // 최대 20% 저항
-                    
-                    if (Math.random() >= resistance) {
-                        const defenseDown = {
-                            id: Date.now() + Math.random(),
-                            type: 'DEFENSE_DOWN',
-                            value: -Math.floor(20 * (1 - resistance * 0.5)),
-                            duration: 2,
-                            remainingTurns: 2,
-                            source: attacker.nickname,
-                            appliedAt: Date.now()
-                        };
-                        
-                        if (isPlayer1) {
-                            // 중복 체크
-                            const existingDebuff = match.player2Buffs.findIndex(b => b.type === 'DEFENSE_DOWN');
-                            if (existingDebuff !== -1) {
-                                match.player2Buffs[existingDebuff] = defenseDown;
-                            } else {
-                                match.player2Buffs.push(defenseDown);
-                            }
-                        } else {
-                            // 중복 체크
-                            const existingDebuff = match.player1Buffs.findIndex(b => b.type === 'DEFENSE_DOWN');
-                            if (existingDebuff !== -1) {
-                                match.player1Buffs[existingDebuff] = defenseDown;
-                            } else {
-                                match.player1Buffs.push(defenseDown);
-                            }
-                        }
-                        return `🔻 방어력 감소!`;
-                    }
-                }
+            'middle': (hit) => {
+                // 균형 - 다음 턴 방어력 증가
+                const defenseBoost = 0.05 + (level * 0.001); // 5% → 15%
+                if (!match[buffKey]) match[buffKey] = [];
+                match[buffKey].push({
+                    type: 'defenseBoost',
+                    value: defenseBoost,
+                    duration: 1,
+                    name: '균형 방어'
+                });
+                return `🛡️ 방어력 +${(defenseBoost * 100).toFixed(0)}%`;
             },
-            'low': () => {
-                // 버섯팡 - 낮은 데미지, 독 효과
-                if (Math.random() < 0.4) {
-                    const poisonDamage = Math.floor(attacker.attack * 0.15);
-                    const poisonBuff = {
-                        id: Date.now() + Math.random(),
-                        type: 'POISON',
-                        value: poisonDamage,
-                        duration: 2,
-                        remainingTurns: 2,
-                        source: attacker.nickname,
-                        appliedAt: Date.now()
-                    };
-                    
-                    if (isPlayer1) {
-                        // 중복 체크 - 더 강한 독으로 교체
-                        const existingPoison = match.player2Buffs.findIndex(b => b.type === 'POISON');
-                        if (existingPoison !== -1) {
-                            if (match.player2Buffs[existingPoison].value < poisonDamage) {
-                                match.player2Buffs[existingPoison] = poisonBuff;
-                            }
-                        } else {
-                            match.player2Buffs.push(poisonBuff);
-                        }
-                    } else {
-                        // 중복 체크 - 더 강한 독으로 교체
-                        const existingPoison = match.player1Buffs.findIndex(b => b.type === 'POISON');
-                        if (existingPoison !== -1) {
-                            if (match.player1Buffs[existingPoison].value < poisonDamage) {
-                                match.player1Buffs[existingPoison] = poisonBuff;
-                            }
-                        } else {
-                            match.player1Buffs.push(poisonBuff);
-                        }
-                    }
-                    return `☠️ 독 효과 발동!`;
-                }
+            'low': (hit) => {
+                // 회피 - 다음 턴 회피율 증가
+                const dodgeBoost = 0.15 + (level * 0.0025); // 15% → 40%
+                if (!match[buffKey]) match[buffKey] = [];
+                match[buffKey].push({
+                    type: 'dodgeBoost',
+                    value: dodgeBoost,
+                    duration: 1,
+                    name: '회피 준비'
+                });
+                return `💨 회피율 +${(dodgeBoost * 100).toFixed(0)}%`;
             }
         };
         
         const effect = skillEffects[skill];
         if (effect) {
-            return effect();
+            // Player 1 공격의 경우 p1DamageResult가 있는지 확인
+            const hit = isPlayer1 ? (match.lastP1Hit !== false) : (match.lastP2Hit !== false);
+            return effect(hit);
         }
         return null;
     }

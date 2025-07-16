@@ -1,7 +1,7 @@
 // 🎣 낚시 시스템 구현
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const User = require('../models/User');
-const { FISHING_SYSTEM, fishingState } = require('../data/fishingSystem');
+const { FISHING_SYSTEM, fishingState } = require('../data/fishingSystemNew');
 
 class FishingManager {
     constructor() {
@@ -223,6 +223,35 @@ class FishingManager {
                 date: new Date()
             };
         }
+        
+        // 랭킹 통계 업데이트
+        if (!user.rankingStats) {
+            user.rankingStats = {};
+        }
+        if (!user.rankingStats.fishing) {
+            user.rankingStats.fishing = {
+                totalCaught: 0,
+                bestCatch: {
+                    name: null,
+                    size: 0
+                },
+                lastUpdated: null
+            };
+        }
+        
+        // 총 낚은 수 업데이트
+        user.rankingStats.fishing.totalCaught = user.fishing.stats.totalCaught;
+        
+        // 최고 기록 업데이트
+        if (size > (user.rankingStats.fishing.bestCatch.size || 0)) {
+            user.rankingStats.fishing.bestCatch = {
+                name: caughtFish.name,
+                size: size
+            };
+        }
+        
+        // 마지막 업데이트 시간
+        user.rankingStats.fishing.lastUpdated = new Date();
         
         await user.save();
         

@@ -2,6 +2,7 @@ const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, StringSelect
 const User = require('../../models/User');
 const { formatNumber, isAdmin } = require('../common/utils');
 const { createItem, rarityEmojis } = require('../../data/items');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../../utils/levelCapHelper');
 
 class AdminBulkRewardSystem {
     constructor() {
@@ -20,7 +21,7 @@ class AdminBulkRewardSystem {
 
         const embed = new EmbedBuilder()
             .setColor('#00bfff')
-            .setTitle('👥 전체 유저 보상 지급')
+            .setTitle('👥 전체 보상 시스템')
             .setDescription('모든 유저 또는 조건에 맞는 유저들에게 보상을 지급합니다.')
             .addFields(
                 { name: '🌐 전체 지급', value: '모든 등록된 유저', inline: true },
@@ -50,7 +51,7 @@ class AdminBulkRewardSystem {
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
                     .setCustomId('admin_reward_menu')
-                    .setLabel('🔙 보상 메뉴')
+                    .setLabel('🔙 통합 보상 메뉴')
                     .setStyle(ButtonStyle.Secondary)
             );
 
@@ -319,6 +320,61 @@ class AdminBulkRewardSystem {
         });
     }
 
+    // 아이템 선택
+    async showItemSelect(interaction) {
+        const modal = new ModalBuilder()
+            .setCustomId('admin_bulk_item_modal')
+            .setTitle('🎁 아이템 지급 설정');
+
+        const itemIdInput = new TextInputBuilder()
+            .setCustomId('item_id')
+            .setLabel('아이템 ID')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('예: stat_reset_scroll')
+            .setRequired(true);
+
+        const quantityInput = new TextInputBuilder()
+            .setCustomId('item_quantity')
+            .setLabel('수량')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('예: 1')
+            .setRequired(true)
+            .setValue('1');
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(itemIdInput),
+            new ActionRowBuilder().addComponents(quantityInput)
+        );
+
+        await interaction.showModal(modal);
+    }
+
+    // 스탯 포인트 선택
+    async showStatPointSelect(interaction) {
+        const pointSelect = new StringSelectMenuBuilder()
+            .setCustomId('admin_bulk_statpoint_amount')
+            .setPlaceholder('💎 지급할 스탯 포인트를 선택하세요')
+            .addOptions([
+                { label: '5 포인트', value: '5' },
+                { label: '10 포인트', value: '10' },
+                { label: '20 포인트', value: '20' },
+                { label: '50 포인트', value: '50' },
+                { label: '100 포인트', value: '100' },
+                { label: '200 포인트', value: '200' }
+            ]);
+
+        const embed = interaction.message.embeds[0];
+        embed.data.fields[1].value = '💎 스탯 포인트';
+
+        await interaction.update({
+            embeds: [embed],
+            components: [
+                new ActionRowBuilder().addComponents(pointSelect),
+                interaction.message.components[1]
+            ]
+        });
+    }
+
     // 복합 보상 모달
     async showMixedRewardModal(interaction) {
         const modal = new ModalBuilder()
@@ -487,11 +543,11 @@ class AdminBulkRewardSystem {
                     new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId('admin_bulk_menu')
-                            .setLabel('🔙 전체 지급 메뉴')
+                            .setLabel('🔙 전체 보상 메뉴')
                             .setStyle(ButtonStyle.Primary),
                         new ButtonBuilder()
                             .setCustomId('admin_reward_menu')
-                            .setLabel('📋 보상 메뉴')
+                            .setLabel('🏠 통합 보상 메뉴')
                             .setStyle(ButtonStyle.Secondary)
                     )
                 ]
@@ -529,7 +585,10 @@ class AdminBulkRewardSystem {
 
         // 경험치 지급
         if (rewardData.exp) {
-            user.exp += rewardData.exp;
+            // 레벨 100 체크 후 경험치 추가
+            if (user.level < MAX_LEVEL) {
+                user.exp += rewardData.exp;
+            }
             
             // 레벨업 체크
             while (user.exp >= user.level * 100) {
@@ -637,6 +696,14 @@ class AdminBulkRewardSystem {
                 embed.data.fields[2].value = `${type} 티켓 +${amount}`;
             }
             
+            components[1].components[0].data.disabled = false;
+            await interaction.update({ embeds: [embed], components: components });
+        }
+        
+        // 스탯 포인트 수량 선택
+        else if (customId === 'admin_bulk_statpoint_amount') {
+            bulk.rewardData.statPoints = parseInt(interaction.values[0]);
+            embed.data.fields[2].value = `${bulk.rewardData.statPoints} 포인트`;
             components[1].components[0].data.disabled = false;
             await interaction.update({ embeds: [embed], components: components });
         }

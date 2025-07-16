@@ -102,6 +102,58 @@ const MINE_SYSTEM = {
             rewardMultiplier: 10,
             specialDrops: ['legendary_ore', 'mythic_crystal'],
             entryFee: 100000  // 50000 → 100000 (보상 200000~500000G 예상)
+        },
+        dragon: {
+            id: 'dragon',
+            name: '용의 둥지',
+            emoji: '🐉',
+            description: '고대 용들이 보물을 숨겨둔 비밀 광산',
+            requiredLevel: 120,
+            openSchedule: {
+                type: 'scheduled',
+                times: [12, 20], // 정오와 저녁 8시
+                duration: 45,
+                message: '용의 시간 (12시, 20시)'
+            },
+            difficulty: 7,
+            rewardMultiplier: 15,
+            specialDrops: ['dragon_scale', 'dragon_heart', 'ancient_treasure'],
+            entryFee: 250000  // 보상 500000~1500000G 예상
+        },
+        celestial: {
+            id: 'celestial',
+            name: '천상의 광산',
+            emoji: '🌌',
+            description: '하늘에 떠있는 신비로운 광산',
+            requiredLevel: 180,
+            openSchedule: {
+                type: 'random',
+                minInterval: 240, // 최소 4시간
+                maxInterval: 480, // 최대 8시간
+                duration: 20,
+                message: '별자리가 일치할 때'
+            },
+            difficulty: 8,
+            rewardMultiplier: 25,
+            specialDrops: ['celestial_gem', 'star_fragment', 'divine_ore'],
+            entryFee: 500000  // 보상 1000000~3000000G 예상
+        },
+        abyssal: {
+            id: 'abyssal',
+            name: '심연의 균열',
+            emoji: '🌀',
+            description: '차원의 틈새에 숨겨진 금지된 광산',
+            requiredLevel: 250,
+            openSchedule: {
+                type: 'event',
+                eventTrigger: 'dimensional_rift',
+                duration: 15,
+                message: '차원의 균열 발생시'
+            },
+            difficulty: 9,
+            rewardMultiplier: 40,
+            specialDrops: ['void_crystal', 'chaos_essence', 'dimensional_ore'],
+            entryFee: 1000000  // 보상 2000000~5000000G 예상
         }
     },
 
@@ -181,7 +233,17 @@ const MINE_SYSTEM = {
         void_stone: { name: '공허의 돌', emoji: '⚫', rarity: 'legendary' },
         darkness_essence: { name: '어둠의 정수', emoji: '🌑', rarity: 'mythic' },
         legendary_ore: { name: '전설의 광석', emoji: '✨', rarity: 'mythic' },
-        mythic_crystal: { name: '신화의 수정', emoji: '🌟', rarity: 'mythic' }
+        mythic_crystal: { name: '신화의 수정', emoji: '🌟', rarity: 'mythic' },
+        // 고레벨 광산 특수 보상
+        dragon_scale: { name: '용의 비늘', emoji: '🐲', rarity: 'mythic' },
+        dragon_heart: { name: '용의 심장', emoji: '❤️‍🔥', rarity: 'mythic' },
+        ancient_treasure: { name: '고대의 보물', emoji: '💎', rarity: 'mythic' },
+        celestial_gem: { name: '천상의 보석', emoji: '💫', rarity: 'mythic' },
+        star_fragment: { name: '별의 조각', emoji: '⭐', rarity: 'mythic' },
+        divine_ore: { name: '신성한 광석', emoji: '✨', rarity: 'mythic' },
+        void_crystal: { name: '공허의 수정', emoji: '🔮', rarity: 'mythic' },
+        chaos_essence: { name: '혼돈의 정수', emoji: '🌀', rarity: 'mythic' },
+        dimensional_ore: { name: '차원의 광석', emoji: '🌌', rarity: 'mythic' }
     }
 };
 
@@ -419,6 +481,11 @@ class MineManager {
         const mineState = this.openMines.get(mineId);
         if (!mineState) return;
 
+        // visitors가 Set이 아닌 경우 Set으로 초기화
+        if (!mineState.visitors || !(mineState.visitors instanceof Set)) {
+            mineState.visitors = new Set();
+        }
+
         // 초보자 광산 일일 입장 기록
         if (mineId === 'beginner') {
             const today = new Date().toDateString();
@@ -486,7 +553,86 @@ class MineManager {
 // 싱글톤 매니저
 const mineManager = new MineManager();
 
+// 상태 저장용
+const fs = require('fs');
+const path = require('path');
+
+// 광산 상태 저장
+function saveMineState() {
+    const stateFile = path.join(__dirname, 'mineState.json');
+    
+    // openMines를 저장 가능한 형태로 변환
+    const openMinesArray = Array.from(mineManager.openMines.entries()).map(([mineId, mineState]) => {
+        return [mineId, {
+            ...mineState,
+            visitors: mineState.visitors ? Array.from(mineState.visitors) : []
+        }];
+    });
+    
+    const state = {
+        openMines: openMinesArray,
+        lastRandomOpen: Array.from(mineManager.lastRandomOpen.entries()),
+        dailyEntries: Array.from(mineManager.dailyEntries.entries()),
+        savedAt: Date.now()
+    };
+    
+    try {
+        fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+    } catch (error) {
+        console.error('[MineSystem] 광산 상태 저장 실패:', error);
+    }
+}
+
+// 광산 상태 불러오기
+function loadMineState() {
+    const stateFile = path.join(__dirname, 'mineState.json');
+    
+    try {
+        if (fs.existsSync(stateFile)) {
+            const data = fs.readFileSync(stateFile, 'utf8');
+            const state = JSON.parse(data);
+            
+            // 상태 복원
+            mineManager.openMines = new Map(state.openMines || []);
+            mineManager.lastRandomOpen = new Map(state.lastRandomOpen || []);
+            mineManager.dailyEntries = new Map(state.dailyEntries || []);
+            
+            // visitors를 Set으로 복원
+            for (const [mineId, mineState] of mineManager.openMines.entries()) {
+                // visitors가 배열로 저장되었을 경우 Set으로 변환
+                if (mineState.visitors && Array.isArray(mineState.visitors)) {
+                    mineState.visitors = new Set(mineState.visitors);
+                } else if (!mineState.visitors || !(mineState.visitors instanceof Set)) {
+                    mineState.visitors = new Set();
+                }
+            }
+            
+            // 만료된 광산 정리
+            const now = Date.now();
+            for (const [mineId, mineState] of mineManager.openMines.entries()) {
+                if (mineState.closesAt <= now) {
+                    mineManager.openMines.delete(mineId);
+                }
+            }
+            
+            console.log('[MineSystem] 광산 상태 복원 완료');
+        }
+    } catch (error) {
+        console.error('[MineSystem] 광산 상태 불러오기 실패:', error);
+    }
+}
+
+// 초기화 시 상태 불러오기
+loadMineState();
+
+// 상태 저장 (5분마다)
+setInterval(() => {
+    saveMineState();
+}, 5 * 60 * 1000);
+
 module.exports = {
     MINE_SYSTEM,
-    mineManager
+    mineManager,
+    saveMineState,
+    loadMineState
 };

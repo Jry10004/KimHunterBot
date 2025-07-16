@@ -31,7 +31,10 @@ module.exports = {
             });
         }
 
-        await interaction.deferReply({ flags: 64 });
+        // defer 전에 이미 응답했는지 확인
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply({ flags: 64 });
+        }
 
         const scope = interaction.options.getString('범위') || 'guild';
         const clearFirst = interaction.options.getBoolean('초기화') || false;
@@ -50,14 +53,111 @@ module.exports = {
             const clientId = interaction.client.user.id;
             const guildId = interaction.guild.id;
 
+            // 보스소환 명령어 디버깅
+            const bossCommand = productionCommands.find(cmd => cmd.name === '보스소환');
+            console.log('보스소환 명령어 데이터:', JSON.stringify(bossCommand, null, 2));
+            
             // 슬래시 빌더로 변환
             const commands = productionCommands.map(cmd => {
                 const builder = new SlashCommandBuilder()
                     .setName(cmd.name)
                     .setDescription(cmd.description);
                 
-                // 옵션 처리 로직...
-                return builder.toJSON();
+                // 옵션 처리
+                if (cmd.options) {
+                    if (cmd.name === '보스소환') {
+                        console.log('보스소환 옵션 처리 시작:', cmd.options);
+                    }
+                    cmd.options.forEach(option => {
+                        if (option.type === 1) { // SUB_COMMAND
+                            builder.addSubcommand(sub => {
+                                sub.setName(option.name).setDescription(option.description);
+                                if (option.options) {
+                                    option.options.forEach(subOpt => {
+                                        if (subOpt.type === 3) { // STRING
+                                            sub.addStringOption(opt => {
+                                                opt.setName(subOpt.name)
+                                                   .setDescription(subOpt.description)
+                                                   .setRequired(subOpt.required || false);
+                                                if (subOpt.choices) {
+                                                    subOpt.choices.forEach(choice => {
+                                                        opt.addChoices(choice);
+                                                    });
+                                                }
+                                                return opt;
+                                            });
+                                        } else if (subOpt.type === 4) { // INTEGER
+                                            sub.addIntegerOption(opt => {
+                                                opt.setName(subOpt.name)
+                                                   .setDescription(subOpt.description)
+                                                   .setRequired(subOpt.required || false);
+                                                if (subOpt.min_value !== undefined) opt.setMinValue(subOpt.min_value);
+                                                if (subOpt.max_value !== undefined) opt.setMaxValue(subOpt.max_value);
+                                                return opt;
+                                            });
+                                        } else if (subOpt.type === 6) { // USER
+                                            sub.addUserOption(opt => opt
+                                                .setName(subOpt.name)
+                                                .setDescription(subOpt.description)
+                                                .setRequired(subOpt.required || false)
+                                            );
+                                        }
+                                    });
+                                }
+                                return sub;
+                            });
+                        } else if (option.type === 3) { // STRING
+                            builder.addStringOption(opt => {
+                                opt.setName(option.name)
+                                   .setDescription(option.description)
+                                   .setRequired(option.required || false);
+                                if (option.choices) {
+                                    option.choices.forEach(choice => {
+                                        opt.addChoices(choice);
+                                    });
+                                }
+                                return opt;
+                            });
+                        } else if (option.type === 4) { // INTEGER
+                            builder.addIntegerOption(opt => {
+                                opt.setName(option.name)
+                                   .setDescription(option.description)
+                                   .setRequired(option.required || false);
+                                if (option.min_value !== undefined) opt.setMinValue(option.min_value);
+                                if (option.max_value !== undefined) opt.setMaxValue(option.max_value);
+                                return opt;
+                            });
+                        } else if (option.type === 5) { // BOOLEAN
+                            builder.addBooleanOption(opt => opt
+                                .setName(option.name)
+                                .setDescription(option.description)
+                                .setRequired(option.required || false)
+                            );
+                        } else if (option.type === 6) { // USER
+                            builder.addUserOption(opt => opt
+                                .setName(option.name)
+                                .setDescription(option.description)
+                                .setRequired(option.required || false)
+                            );
+                        } else if (option.type === 7) { // CHANNEL
+                            builder.addChannelOption(opt => {
+                                opt.setName(option.name)
+                                   .setDescription(option.description)
+                                   .setRequired(option.required || false);
+                                if (option.channel_types) {
+                                    opt.addChannelTypes(...option.channel_types);
+                                }
+                                return opt;
+                            });
+                        }
+                    });
+                }
+                
+                const jsonCommand = builder.toJSON();
+                if (cmd.name === '보스소환') {
+                    console.log('보스소환 최종 명령어 JSON:', JSON.stringify(jsonCommand, null, 2));
+                }
+                return jsonCommand;
             });
 
             let result;

@@ -151,6 +151,9 @@ function createMainMenu(user, isAdmin = false) {
 
 // 메인 인터랙션 핸들러
 async function handleMainInteraction(interaction) {
+    // 상호작용 추적 로깅
+    console.log(`[InteractionHandler] START - Type: ${interaction.type}, Command: ${interaction.commandName || 'N/A'}, CustomId: ${interaction.customId || 'N/A'}, User: ${interaction.user.id}, Deferred: ${interaction.deferred}, Replied: ${interaction.replied}`);
+    
     try {
         // 상호작용 만료 타임아웃 체크 (3초)
         const startTime = Date.now();
@@ -166,17 +169,59 @@ async function handleMainInteraction(interaction) {
             try {
                 // 상호작용 타입에 따라 defer 방식 결정
                 if (interaction.isCommand?.() || interaction.isModalSubmit?.()) {
-                    await interaction.deferReply({ flags: 64 });
+                    // 자체 defer 처리하는 명령어들
+                    const selfDeferCommands = ['게임', '엠블럼관리'];
+                    
+                    // 모달을 표시하는 명령어들 (defer하면 안됨)
+                    const modalCommands = ['회원가입'];
+                    
+                    if (selfDeferCommands.includes(interaction.commandName)) {
+                        console.log(`[InteractionHandler] Skipping defer for ${interaction.commandName} command (self-defer)`);
+                    } 
+                    // 모달을 표시하는 명령어들은 defer하지 않음
+                    else if (modalCommands.includes(interaction.commandName)) {
+                        console.log(`[InteractionHandler] Skipping defer for ${interaction.commandName} command (modal)`);
+                    }
+                    // 공지작성의 새공지 서브커맨드는 Modal을 표시하므로 defer하지 않음
+                    else if (interaction.commandName === '공지작성' && interaction.options?.getSubcommand?.() === '새공지') {
+                        console.log(`[InteractionHandler] Skipping defer for 공지작성 새공지 subcommand (modal)`);
+                    }
+                    // 모달 제출은 defer하지 않음
+                    else if (interaction.isModalSubmit?.()) {
+                        console.log(`[InteractionHandler] Skipping defer for modal submit: ${interaction.customId}`);
+                    }
+                    else {
+                        console.log(`[InteractionHandler] Deferring command/modal - Command: ${interaction.commandName || 'N/A'}`);
+                        await interaction.deferReply({ flags: 64 });
+                        console.log(`[InteractionHandler] Successfully deferred - Command: ${interaction.commandName || 'N/A'}`);
+                    }
                 } else if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
-                    await interaction.deferUpdate();
+                    // 모달을 표시하는 버튼들은 defer하지 않음
+                    const modalButtons = [
+                        'admin_emblem_give', 'admin_emblem_set_level', 'admin_emblem_reset',
+                        'admin_money_adjust', 'admin_reset_user', 'admin_announcement',
+                        'stat_add_custom', 'admin_user_level', 'admin_user_gold', 
+                        'admin_give_item', 'admin_user_stats', 'start_registration'
+                    ];
+                    
+                    if (modalButtons.includes(interaction.customId) || interaction.customId.startsWith('verify_email_')) {
+                        console.log(`[InteractionHandler] Skipping defer for modal button: ${interaction.customId}`);
+                    } else {
+                        console.log(`[InteractionHandler] Deferring button/select - CustomId: ${interaction.customId || 'N/A'}`);
+                        await interaction.deferUpdate();
+                        console.log(`[InteractionHandler] Successfully deferred update - CustomId: ${interaction.customId || 'N/A'}`);
+                    }
                 }
             } catch (deferError) {
+                console.log(`[InteractionHandler] Defer error:`, deferError.code, deferError.message);
                 if (deferError.code === 10062) {
                     console.log('⚠️ 상호작용 타임아웃:', interaction.id);
                     return;
                 }
                 // 다른 defer 오류는 계속 진행
             }
+        } else {
+            console.log(`[InteractionHandler] Skip defer - Already deferred: ${interaction.deferred}, Already replied: ${interaction.replied}, Timeout: ${timeoutCheck()}`);
         }
         // 매크로 감지 시스템
         const userId = interaction.user.id;
@@ -261,7 +306,7 @@ async function handleMainInteraction(interaction) {
         if (interaction.isCommand()) {
             const { commandName } = interaction;
             
-            // 메인 메뉴 커맨드 - game.js 파일 사용
+            // 메인 메뉴 커맨드 - game.js 파일 사용 (자체 defer 처리)
             if (commandName === '게임') {
                 const gameCommand = require('./commands/game/game');
                 return await gameCommand.execute(interaction);
@@ -271,6 +316,13 @@ async function handleMainInteraction(interaction) {
             else if (commandName === '탈퇴') {
                 const unregisterCommand = require('./commands/utility/unregister');
                 return await unregisterCommand.execute(interaction);
+            }
+            
+            // 엠블럼관리 명령어
+            else if (commandName === '엠블럼관리') {
+                console.log(`[InteractionHandler] Processing 엠블럼관리 command - Deferred: ${interaction.deferred}, Replied: ${interaction.replied}`);
+                const emblemAdminCommand = require('./commands/admin/emblemAdmin');
+                return await emblemAdminCommand.execute(interaction);
             }
             
             // 댕댕봇소환 명령어
@@ -416,15 +468,6 @@ async function handleMainInteraction(interaction) {
                     if (subcommand === '엠블럼상점새로고침') {
                         const emblemShopRefreshCommand = require('./commands/admin/emblemShopRefresh');
                         return await emblemShopRefreshCommand.execute(interaction);
-                    } else if (subcommand === '엠블럼초기화') {
-                        const emblemResetCommand = require('./commands/admin/emblemReset');
-                        return await emblemResetCommand.execute(interaction);
-                    } else if (subcommand === '엠블럼지급') {
-                        const emblemGiveCommand = require('./commands/admin/emblemGive');
-                        return await emblemGiveCommand.execute(interaction);
-                    } else if (subcommand === '엠블럼현황') {
-                        const emblemStatusCommand = require('./commands/admin/emblemStatus');
-                        return await emblemStatusCommand.execute(interaction);
                     }
                 } else {
                     // 서브커맨드가 없을 때 관리자 패널 표시
@@ -507,39 +550,48 @@ async function handleMainInteraction(interaction) {
             
             // 공지작성 명령어 (관리자 전용)
             else if (commandName === '공지작성') {
-                // 관리자 권한 확인
+                const subcommand = interaction.options.getSubcommand();
+                
+                // 새공지 서브커맨드는 Modal을 표시해야 하므로 권한 체크만 하고 바로 Modal 표시
+                if (subcommand === '새공지') {
+                    // 관리자 권한 확인
+                    if (!interaction.member.permissions.has('Administrator')) {
+                        // 새공지는 defer하지 않았으므로 reply 사용
+                        return await interaction.reply({ 
+                            content: '❌ 이 명령어는 관리자만 사용할 수 있습니다.', 
+                            flags: 64 
+                        });
+                    }
+                    
+                    const template = interaction.options.getString('템플릿');
+                    const { createAnnouncementModal } = require('./handlers/admin/createAnnouncementModal');
+                    const modal = createAnnouncementModal(template);
+                    return await interaction.showModal(modal);
+                }
+                
+                // 다른 서브커맨드들은 이미 defer되었으므로 editReply 사용
                 if (!interaction.member.permissions.has('Administrator')) {
-                    return await interaction.reply({ 
-                        content: '❌ 이 명령어는 관리자만 사용할 수 있습니다.', 
-                        flags: 64 
+                    return await interaction.editReply({ 
+                        content: '❌ 이 명령어는 관리자만 사용할 수 있습니다.'
                     });
                 }
                 
-                const subcommand = interaction.options.getSubcommand();
                 const noticeSystem = require('./systems/noticeSystem');
                 
                 switch (subcommand) {
-                    case '새공지':
-                        const template = interaction.options.getString('템플릿');
-                        const { createAnnouncementModal } = require('./handlers/admin/createAnnouncementModal');
-                        const modal = createAnnouncementModal(template);
-                        await interaction.showModal(modal);
-                        break;
                         
                     case '미리보기':
                         const previewId = interaction.options.getString('공지id');
                         const previewNotice = noticeSystem.getNotice(previewId);
                         
                         if (!previewNotice) {
-                            return await interaction.reply({ 
-                                content: '❌ 해당 ID의 공지를 찾을 수 없습니다.', 
-                                flags: 64 
+                            return await interaction.editReply({ 
+                                content: '❌ 해당 ID의 공지를 찾을 수 없습니다.'
                             });
                         }
                         
-                        await interaction.reply({ 
-                            embeds: [previewNotice.embed], 
-                            flags: 64 
+                        await interaction.editReply({ 
+                            embeds: [previewNotice.embed]
                         });
                         break;
                         
@@ -551,9 +603,8 @@ async function handleMainInteraction(interaction) {
                         const sendNotice = noticeSystem.getNotice(sendId);
                         
                         if (!sendNotice) {
-                            return await interaction.reply({ 
-                                content: '❌ 해당 ID의 공지를 찾을 수 없습니다.', 
-                                flags: 64 
+                            return await interaction.editReply({ 
+                                content: '❌ 해당 ID의 공지를 찾을 수 없습니다.'
                             });
                         }
                         
@@ -567,15 +618,13 @@ async function handleMainInteraction(interaction) {
                                 embeds: [sendNotice.embed] 
                             });
                             
-                            await interaction.reply({ 
-                                content: `✅ 공지를 ${channel.name} 채널에 발송했습니다.`, 
-                                flags: 64 
+                            await interaction.editReply({ 
+                                content: `✅ 공지를 ${channel.name} 채널에 발송했습니다.`
                             });
                         } catch (error) {
                             console.error('공지 발송 오류:', error);
-                            await interaction.reply({ 
-                                content: '❌ 공지 발송 중 오류가 발생했습니다.', 
-                                flags: 64 
+                            await interaction.editReply({ 
+                                content: '❌ 공지 발송 중 오류가 발생했습니다.'
                             });
                         }
                         break;
@@ -584,9 +633,8 @@ async function handleMainInteraction(interaction) {
                         const notices = noticeSystem.getAllNotices();
                         
                         if (notices.length === 0) {
-                            return await interaction.reply({ 
-                                content: '📋 저장된 공지가 없습니다.', 
-                                flags: 64 
+                            return await interaction.editReply({ 
+                                content: '📋 저장된 공지가 없습니다.'
                             });
                         }
                         
@@ -598,7 +646,7 @@ async function handleMainInteraction(interaction) {
                             ).join('\n'))
                             .setFooter({ text: `총 ${notices.length}개의 공지` });
                             
-                        await interaction.reply({ embeds: [listEmbed], flags: 64 });
+                        await interaction.editReply({ embeds: [listEmbed] });
                         break;
                         
                     case '삭제':
@@ -606,14 +654,12 @@ async function handleMainInteraction(interaction) {
                         const deleted = noticeSystem.deleteNotice(deleteId);
                         
                         if (deleted) {
-                            await interaction.reply({ 
-                                content: '✅ 공지가 삭제되었습니다.', 
-                                flags: 64 
+                            await interaction.editReply({ 
+                                content: '✅ 공지가 삭제되었습니다.'
                             });
                         } else {
-                            await interaction.reply({ 
-                                content: '❌ 해당 ID의 공지를 찾을 수 없습니다.', 
-                                flags: 64 
+                            await interaction.editReply({ 
+                                content: '❌ 해당 ID의 공지를 찾을 수 없습니다.'
                             });
                         }
                         break;
@@ -715,6 +761,12 @@ async function handleMainInteraction(interaction) {
                 interaction.customId = 'fishing_cast';
                 return await handleFishingInteraction(interaction, user);
             }
+            
+            // 재료 제작 명령어 (비활성화)
+            // else if (commandName === '재료제작') {
+            //     const { showCraftingMenu } = require('./systems/materialCraftingSystem');
+            //     return await showCraftingMenu(interaction, interaction.user.id);
+            // }
             
             // 경제 관련 명령어들
             else if (commandName === '주식') {
@@ -887,6 +939,11 @@ async function handleMainInteraction(interaction) {
                 return await commandRegisterCommand.execute(interaction);
             }
             
+            else if (commandName === '명령어초기화') {
+                const clearCommandsCommand = require('./commands/admin/clearCommands');
+                return await clearCommandsCommand.execute(interaction);
+            }
+            
             // 엠블럼 명령어
             else if (commandName === '엠블럼') {
                 await interaction.deferReply({ flags: 64 });
@@ -922,55 +979,6 @@ async function handleMainInteraction(interaction) {
             else if (commandName === '청소') {
                 const cleanCommand = require('./commands/admin/clean');
                 return await cleanCommand.execute(interaction);
-            }
-            
-            // 돈지급 명령어 (관리자 전용)
-            else if (commandName === '돈지급') {
-                // 관리자 확인
-                if (!['424480594542592009', '295980447849250817', '532128778175619084', '592659577384730645'].includes(interaction.user.id)) {
-                    return await interaction.reply({ 
-                        content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
-                        flags: 64 
-                    });
-                }
-                
-                await interaction.deferReply({ flags: 64 });
-                
-                const targetUser = interaction.options.getUser('유저');
-                const amount = interaction.options.getInteger('금액');
-                
-                if (!targetUser) {
-                    return await interaction.editReply({
-                        content: '❌ 대상 유저를 찾을 수 없습니다.'
-                    });
-                }
-                
-                const user = await getUser(targetUser.id);
-                if (!user || !user.registered) {
-                    return await interaction.editReply({
-                        content: '❌ 해당 유저는 회원가입을 하지 않았습니다.'
-                    });
-                }
-                
-                // 골드 지급
-                user.gold += amount;
-                await user.save();
-                
-                const embed = new EmbedBuilder()
-                    .setColor('#00ff00')
-                    .setTitle('💰 골드 지급 완료')
-                    .setDescription(`${targetUser}님에게 ${amount.toLocaleString()}G를 지급했습니다.`)
-                    .addFields(
-                        { name: '지급 전 골드', value: `${(user.gold - amount).toLocaleString()}G`, inline: true },
-                        { name: '지급액', value: `${amount.toLocaleString()}G`, inline: true },
-                        { name: '지급 후 골드', value: `${user.gold.toLocaleString()}G`, inline: true }
-                    )
-                    .setFooter({ text: `관리자: ${interaction.user.tag}` })
-                    .setTimestamp();
-                
-                return await interaction.editReply({
-                    embeds: [embed]
-                });
             }
             
             // 매크로감지 명령어 (관리자 전용)
@@ -1085,6 +1093,17 @@ async function handleMainInteraction(interaction) {
                 return await handleInteraction(interaction);
             }
             
+            else if (commandName === '보스소환') {
+                delete require.cache[require.resolve('./commands/admin/bossSpawn')];
+                const bossSpawnCommand = require('./commands/admin/bossSpawn');
+                return await bossSpawnCommand.execute(interaction);
+            }
+            
+            else if (commandName === '보스디버그') {
+                const bossDebugCommand = require('./commands/admin/bossDebug');
+                return await bossDebugCommand.execute(interaction);
+            }
+            
             else if (commandName === '주식복구') {
                 return await handleInteraction(interaction);
             }
@@ -1115,8 +1134,18 @@ async function handleMainInteraction(interaction) {
         else if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
             // 회원가입 버튼 처리
             if (interaction.isButton() && interaction.customId === 'start_registration') {
-                const registerCommand = require('./commands/utility/register');
-                return await registerCommand.execute(interaction);
+                try {
+                    console.log('[회원가입] 버튼 클릭됨');
+                    const registerCommand = require('./commands/utility/register');
+                    console.log('[회원가입] register 모듈 로드 완료');
+                    return await registerCommand.execute(interaction);
+                } catch (error) {
+                    console.error('[회원가입] 오류 발생:', error);
+                    return await interaction.reply({
+                        content: '❌ 회원가입 처리 중 오류가 발생했습니다. 관리자에게 문의해주세요.',
+                        flags: 64
+                    });
+                }
             }
             
             // 회원가입 관련 처리
@@ -1185,8 +1214,17 @@ async function handleMainInteraction(interaction) {
                     });
                 }
             } else if (interaction.isButton() && interaction.customId.startsWith('verify_email_')) {
-                const registerCommand = require('./commands/utility/register');
-                return await registerCommand.handleVerification(interaction);
+                try {
+                    console.log('[회원가입] 인증 버튼 클릭됨:', interaction.customId);
+                    const registerCommand = require('./commands/utility/register');
+                    return await registerCommand.handleVerification(interaction);
+                } catch (error) {
+                    console.error('[회원가입] 인증 처리 오류:', error);
+                    return await interaction.reply({
+                        content: '❌ 인증 처리 중 오류가 발생했습니다. 관리자에게 문의해주세요.',
+                        flags: 64
+                    });
+                }
             }
             // 공지 재작성 버튼 처리
             else if (interaction.isButton() && interaction.customId.startsWith('announcement_resubmit_')) {
@@ -1228,7 +1266,7 @@ async function handleMainInteraction(interaction) {
                 }
             }
             // main_menu 처리 (StringSelectMenu일 때)
-            if (interaction.customId === 'main_menu' && interaction.isStringSelectMenu()) {
+            else if (interaction.customId === 'main_menu' && interaction.isStringSelectMenu()) {
                 const selectedValue = interaction.values[0];
                 
                 // 선택된 값에 따라 적절한 customId로 변환하여 핸들러로 전달
@@ -1297,10 +1335,13 @@ async function handleMainInteraction(interaction) {
                         interaction.customId = 'enhance';
                         break;
                     default:
-                        return await interaction.reply({ 
-                            content: '❌ 올바른 메뉴를 선택해주세요.', 
-                            flags: 64 
-                        });
+                        if (!interaction.replied && !interaction.deferred) {
+                            return await interaction.reply({ 
+                                content: '❌ 올바른 메뉴를 선택해주세요.', 
+                                flags: 64 
+                            });
+                        }
+                        return;
                 }
                 
                 // 핸들러로 전달
@@ -1328,15 +1369,17 @@ async function handleMainInteraction(interaction) {
                      interaction.customId.startsWith('explore_') || 
                      interaction.customId.startsWith('company_') || 
                      interaction.customId.startsWith('pickaxe_') || 
-                     interaction.customId.startsWith('ranking_')) {
+                     (interaction.customId.startsWith('ranking_') && 
+                      (interaction.customId.includes('earnings') || 
+                       interaction.customId.includes('found') || 
+                       interaction.customId.includes('mythic'))) ||
+                     interaction.customId.startsWith('mine_')) {
                 const { handleArtifactInteraction } = require('./handlers/economy/artifactExploration');
                 return await handleArtifactInteraction(interaction);
             }
             
             // main_menu 버튼 처리
             else if (interaction.customId === 'main_menu' && interaction.isButton()) {
-                await interaction.deferUpdate();
-                
                 const user = await getUser(interaction.user.id);
                 if (!user || !user.registered) {
                     return await interaction.editReply({ 
@@ -1374,24 +1417,21 @@ async function handleMainInteraction(interaction) {
                 const { handlePrelaunchInteraction } = require('./systems/prelaunchEnhance');
                 return await handlePrelaunchInteraction(interaction);
             }
-            // 월드 보스 버튼 처리
-            else if (interaction.customId === 'world_boss_join') {
-                const worldBossSystem = require('./systems/worldBossSystem');
-                return await worldBossSystem.joinBossRaid(interaction);
-            }
-            else if (interaction.customId === 'world_boss_leave') {
-                const worldBossSystem = require('./systems/worldBossSystem');
-                return await worldBossSystem.leaveBossRaid(interaction);
-            }
-            else if (interaction.customId === 'world_boss_start') {
-                const { handleWorldBossStart } = require('./systems/worldBossSystem');
-                return await handleWorldBossStart(interaction);
-            }
+            // 월드 보스 버튼은 handlers/index.js에서 처리하므로 여기서는 제거
             // 댕댕봇 구출 버튼 처리
             else if (interaction.customId && (interaction.customId === 'dogbot_attack' || interaction.customId === 'dogbot_ranking' || interaction.customId === 'dogbot_status')) {
                 console.log(`[인터랙션] 댕댕봇 구출 버튼 처리: ${interaction.customId}`);
                 const { handleDogBotRescueInteraction } = require('./handlers/dogBotRescueHandler');
                 return await handleDogBotRescueInteraction(interaction);
+            }
+            // optimize_equipment와 equip_category는 여기서 직접 처리
+            else if (interaction.customId === 'optimize_equipment') {
+                const { handleCharacterInteraction } = require('./handlers/character');
+                return await handleCharacterInteraction(interaction);
+            }
+            else if (interaction.customId === 'equip_category') {
+                const { handleCharacterInteraction } = require('./handlers/character');
+                return await handleCharacterInteraction(interaction);
             }
             // 나머지 인터랙션은 핸들러로 전달
             else {

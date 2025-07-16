@@ -511,10 +511,6 @@ async function showPortfolio(interaction) {
                 .setLabel('🏢 섹터별 보기')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
-                .setCustomId('stock_rankings')
-                .setLabel('🏆 순위')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
                 .setCustomId('stock_market')
                 .setLabel('🔙 주식 시장')
                 .setStyle(ButtonStyle.Secondary),
@@ -875,10 +871,6 @@ async function showStockList(interaction, sector = null) {
             new ButtonBuilder()
                 .setCustomId('stock_sectors')
                 .setLabel('🏢 섹터별 보기')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('stock_rankings')
-                .setLabel('🏆 순위')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('stock_portfolio')
@@ -1773,10 +1765,6 @@ async function showSectorList(interaction, selectedSector = null) {
                 .setCustomId('stock_list')
                 .setLabel('📊 전체 종목')
                 .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('stock_rankings')
-                .setLabel('🏆 순위')
-                .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('stock_market')
                 .setLabel('🔙 뒤로')

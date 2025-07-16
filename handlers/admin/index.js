@@ -1,3 +1,4 @@
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { showMaintenanceMenu, startMaintenance, endMaintenance, showDetailedStatus } = require('./maintenanceMenu');
 const adminRewardSystem = require('./adminRewardSystem');
 const adminRewardSelectSystem = require('./adminRewardSelectSystem');
@@ -12,8 +13,7 @@ const {
     showItemModal, 
     showAnnouncementModal, 
     showSystemStatus, 
-    confirmUserReset, 
-    showEmblemAdminMenu 
+    confirmUserReset
 } = require('./adminSystem');
 
 const {
@@ -57,7 +57,6 @@ async function handleAdminInteraction(interaction) {
         }
         
         // 모달 표시
-        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
         const modal = new ModalBuilder()
             .setCustomId(`maintenance_start_modal_${selectedFeature}`)
             .setTitle('점검 시작');
@@ -120,6 +119,14 @@ async function handleAdminInteraction(interaction) {
     // 통합 보상 시스템 (선택식)
     else if (customId === 'admin_reward_menu') {
         return await adminRewardSelectSystem.showRewardMenu(interaction);
+    }
+    // 선택 보상 모드
+    else if (customId === 'admin_reward_select_mode') {
+        return await adminRewardSelectSystem.showSelectRewardMenu(interaction);
+    }
+    // 전체 보상 모드
+    else if (customId === 'admin_reward_bulk_mode') {
+        return await adminBulkRewardSystem.showBulkRewardMenu(interaction);
     }
     
     // 선택식 보상 시스템
@@ -216,6 +223,9 @@ async function handleAdminInteraction(interaction) {
     else if (customId === 'admin_bulk_confirm') {
         return await adminBulkRewardSystem.processBulkReward(interaction);
     }
+    else if (customId === 'admin_bulk_reward_type') {
+        return await adminBulkRewardSystem.handleRewardTypeSelect(interaction);
+    }
     else if (customId.startsWith('admin_bulk_') && customId.includes('_select')) {
         return await adminBulkRewardSystem.handleSelectMenu(interaction);
     }
@@ -260,16 +270,88 @@ async function handleAdminInteraction(interaction) {
     
     // 엠블럼 관리
     else if (customId === 'admin_emblem_menu') {
-        return await showEmblemAdminMenu(interaction);
+        console.log('[AdminHandler] Processing admin_emblem_menu');
+        
+        // 새로운 메시지로 엠블럼 관리 메뉴 표시
+        const embed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🏆 엠블럼 관리')
+            .setDescription('엠블럼 관련 관리 기능을 선택하세요.')
+            .addFields(
+                { name: '📊 기능 목록', value: '• 엠블럼 지급\n• 엠블럼 레벨 설정\n• 엠블럼 초기화', inline: false }
+            )
+            .setTimestamp();
+
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('admin_emblem_give')
+                    .setLabel('🎁 엠블럼 지급')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('admin_emblem_set_level')
+                    .setLabel('📊 레벨 설정')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('admin_emblem_reset')
+                    .setLabel('🔄 엠블럼 초기화')
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('admin_panel')
+                    .setLabel('🔙 돌아가기')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        try {
+            // defer 확인
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ flags: 64 });
+            }
+            
+            await interaction.editReply({
+                embeds: [embed],
+                components: [buttons]
+            });
+            console.log('[AdminHandler] showEmblemAdminMenu completed');
+            return;
+        } catch (error) {
+            console.error('[AdminHandler] Error showing emblem menu:', error);
+            // 에러 발생 시 새 메시지로 시도
+            try {
+                await interaction.channel.send({
+                    embeds: [embed],
+                    components: [buttons]
+                });
+            } catch (sendError) {
+                console.error('[AdminHandler] Error sending emblem menu:', sendError);
+            }
+            return;
+        }
     }
     
     // 엠블럼 지급
     else if (customId === 'admin_emblem_give') {
-        return await showEmblemGiveModal(interaction);
+        try {
+            return await showEmblemGiveModal(interaction);
+        } catch (error) {
+            console.error('[AdminHandler] Error showing emblem give modal:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ 모달을 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.',
+                    flags: 64
+                });
+            }
+        }
     }
     
     // 엠블럼 레벨 설정
     else if (customId === 'admin_emblem_set_level') {
+        // 이미 defer된 경우 처리 불가
+        if (interaction.deferred || interaction.replied) {
+            console.error('[AdminHandler] Cannot show level modal - interaction already deferred/replied');
+            return;
+        }
+        
         const modal = new ModalBuilder()
             .setCustomId('admin_emblem_level_modal')
             .setTitle('엠블럼 레벨 설정');
@@ -293,11 +375,32 @@ async function handleAdminInteraction(interaction) {
             new ActionRowBuilder().addComponents(levelInput)
         );
 
-        await interaction.showModal(modal);
+        try {
+            await interaction.showModal(modal);
+        } catch (error) {
+            console.error('[AdminHandler] Error showing emblem level modal:', error);
+            // 모달 표시 실패 시 메시지로 응답
+            if (!interaction.replied && !interaction.deferred) {
+                try {
+                    await interaction.reply({
+                        content: '❌ 모달을 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.',
+                        flags: 64
+                    });
+                } catch (replyError) {
+                    console.error('[AdminHandler] Error replying after modal fail:', replyError);
+                }
+            }
+        }
     }
     
     // 엠블럼 초기화
     else if (customId === 'admin_emblem_reset') {
+        // 이미 defer된 경우 처리 불가
+        if (interaction.deferred || interaction.replied) {
+            console.error('[AdminHandler] Cannot show reset modal - interaction already deferred/replied');
+            return;
+        }
+        
         const modal = new ModalBuilder()
             .setCustomId('admin_emblem_reset_modal')
             .setTitle('엠블럼 초기화');
@@ -313,7 +416,22 @@ async function handleAdminInteraction(interaction) {
             new ActionRowBuilder().addComponents(userIdInput)
         );
 
-        await interaction.showModal(modal);
+        try {
+            await interaction.showModal(modal);
+        } catch (error) {
+            console.error('[AdminHandler] Error showing emblem reset modal:', error);
+            // 모달 표시 실패 시 메시지로 응답
+            if (!interaction.replied && !interaction.deferred) {
+                try {
+                    await interaction.reply({
+                        content: '❌ 모달을 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.',
+                        flags: 64
+                    });
+                } catch (replyError) {
+                    console.error('[AdminHandler] Error replying after modal fail:', replyError);
+                }
+            }
+        }
     }
     
     // 새로운 관리자 기능들
@@ -550,17 +668,31 @@ async function handleEmblemLevelModal(interaction) {
     
     const targetUser = await User.findOne({ discordId: targetUserId });
     if (!targetUser) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저를 찾을 수 없습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+        }
     }
     
     if (!targetUser.emblem) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저는 엠블럼을 보유하고 있지 않습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저는 엠블럼을 보유하고 있지 않습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저는 엠블럼을 보유하고 있지 않습니다!', 
+                flags: 64 
+            });
+        }
     }
     
     targetUser.emblem.level = emblemLevel;
@@ -569,18 +701,25 @@ async function handleEmblemLevelModal(interaction) {
     const embed = new EmbedBuilder()
         .setColor('#00ff00')
         .setTitle('✅ 엠블럼 레벨 설정 완료')
-        .setDescription(`**${targetUser.username}**님의 엠블럼 레벨을 설정했습니다.`)
+        .setDescription(`**${targetUser.username || targetUserId}**님의 엠블럼 레벨을 설정했습니다.`)
         .addFields(
-            { name: '🏆 엠블럼', value: targetUser.emblem.name, inline: true },
-            { name: '📊 레벨', value: `Lv.${emblemLevel}`, inline: true }
+            { name: '🏆 엠블럼', value: targetUser.emblem.name || '이름 없음', inline: true },
+            { name: '📊 레벨', value: `Lv.${emblemLevel || 1}`, inline: true }
         )
         .setFooter({ text: `관리자: ${interaction.user.username}` })
         .setTimestamp();
     
-    return await interaction.reply({
-        embeds: [embed],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            flags: 64
+        });
+    }
 }
 
 // 엠블럼 초기화 처리
@@ -592,34 +731,45 @@ async function handleEmblemResetModal(interaction) {
     
     const targetUser = await User.findOne({ discordId: targetUserId });
     if (!targetUser) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저를 찾을 수 없습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+        }
     }
     
-    const previousEmblem = targetUser.emblem ? targetUser.emblem.name : '없음';
+    const previousEmblem = targetUser.emblem ? (targetUser.emblem.name || '이름 없음') : '없음';
     targetUser.emblem = null;
     await targetUser.save();
     
     const embed = new EmbedBuilder()
         .setColor('#ff0000')
         .setTitle('🔄 엠블럼 초기화 완료')
-        .setDescription(`**${targetUser.username}**님의 엠블럼이 초기화되었습니다.`)
+        .setDescription(`**${targetUser.username || targetUserId}**님의 엠블럼이 초기화되었습니다.`)
         .addFields(
-            { name: '이전 엠블럼', value: previousEmblem, inline: true }
+            { name: '이전 엠블럼', value: previousEmblem || '없음', inline: true }
         )
         .setFooter({ text: `관리자: ${interaction.user.username}` })
         .setTimestamp();
     
-    return await interaction.reply({
-        embeds: [embed],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            flags: 64
+        });
+    }
 }
-
-// 필요한 모듈 import
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
 
 module.exports = {
     handleAdminInteraction,

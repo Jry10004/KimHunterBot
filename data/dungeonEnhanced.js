@@ -63,8 +63,8 @@ const DUNGEON_EVENTS = {
         emoji: '🧙',
         description: '신비한 상인이 나타났습니다!',
         choices: [
-            { action: 'heal', label: 'HP 회복 (30%)', cost: 500 },
-            { action: 'buff', label: '일시적 강화', cost: 1000 },
+            { action: 'heal', label: 'HP 회복 (30%)', cost: 25000 },   // 500 -> 25000 (50x)
+            { action: 'buff', label: '일시적 강화', cost: 50000 },     // 1000 -> 50000 (50x)
             { action: 'skip', label: '무시하고 진행', cost: 0 }
         ]
     },
@@ -100,8 +100,8 @@ const DUNGEON_EVENTS = {
         emoji: '👺',
         description: '강력한 중간 보스가 길을 막고 있습니다!',
         rewards: {
-            gold: 1000,
-            exp: 500,
+            gold: 50000,   // 1000 -> 50000 (50x)
+            exp: 5000,     // 500 -> 5000 (10x)
             items: ['특수 장비 조각']
         }
     }
@@ -191,19 +191,19 @@ const DUNGEON_ITEMS = {
             name: 'HP 포션',
             emoji: '🧪',
             effect: { heal: 0.3 }, // 30% 회복
-            price: 100
+            price: 5000      // 100 -> 5000 (50x)
         },
         strengthPotion: {
             name: '힘의 물약',
             emoji: '💪',
             effect: { buff: 'berserk' },
-            price: 200
+            price: 10000     // 200 -> 10000 (50x)
         },
         smokeGrenade: {
             name: '연막탄',
             emoji: '💨',
             effect: { escape: true },
-            price: 150
+            price: 7500      // 150 -> 7500 (50x)
         }
     },
     equipment: {
@@ -227,17 +227,17 @@ const DUNGEON_ACHIEVEMENTS = {
     speedRunner: {
         name: '스피드러너',
         description: '10층을 5분 내에 클리어',
-        reward: { title: '⚡ 질주하는', gold: 5000 }
+        reward: { title: '⚡ 질주하는', gold: 250000 }    // 5000 -> 250000 (50x)
     },
     noDamage: {
         name: '무상처',
         description: '데미지를 받지 않고 10층 클리어',
-        reward: { title: '🛡️ 철벽의', gold: 10000 }
+        reward: { title: '🛡️ 철벽의', gold: 500000 }     // 10000 -> 500000 (50x)
     },
     perfectClear: {
         name: '완벽한 정복',
         description: '모든 층을 클리어',
-        reward: { title: '👑 던전 정복자', gold: 50000 }
+        reward: { title: '👑 던전 정복자', gold: 2500000 } // 50000 -> 2500000 (50x)
     }
 };
 

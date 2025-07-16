@@ -74,36 +74,36 @@ const ENHANCE_SYSTEM = {
         30: 100000000
     },
     rates: {
-        1: { success: 95, fail: 5, destroy: 0 },
-        2: { success: 90, fail: 10, destroy: 0 },
-        3: { success: 85, fail: 15, destroy: 0 },
-        4: { success: 85, fail: 15, destroy: 0 },
-        5: { success: 80, fail: 20, destroy: 0 },
-        6: { success: 75, fail: 25, destroy: 0 },
-        7: { success: 70, fail: 30, destroy: 0 },
-        8: { success: 65, fail: 35, destroy: 0 },
-        9: { success: 60, fail: 40, destroy: 0 },
-        10: { success: 55, fail: 45, destroy: 0 },
-        11: { success: 50, fail: 50, destroy: 0 },
-        12: { success: 45, fail: 55, destroy: 0 },
-        13: { success: 40, fail: 60, destroy: 0 },
-        14: { success: 35, fail: 65, destroy: 0 },
-        15: { success: 30, fail: 67.9, destroy: 2.1 },
-        16: { success: 30, fail: 67.9, destroy: 2.1 },
-        17: { success: 30, fail: 67.9, destroy: 2.1 },
-        18: { success: 15, fail: 78.2, destroy: 6.8 },
-        19: { success: 15, fail: 78.2, destroy: 6.8 },
-        20: { success: 15, fail: 76.5, destroy: 8.5 },
-        21: { success: 30, fail: 59.5, destroy: 10.5 },
-        22: { success: 15, fail: 72.25, destroy: 12.75 },
-        23: { success: 15, fail: 68, destroy: 17 },
-        24: { success: 10, fail: 72, destroy: 18 },
-        25: { success: 10, fail: 72, destroy: 18 },
-        26: { success: 10, fail: 72, destroy: 18 },
-        27: { success: 7, fail: 74.4, destroy: 18.6 },
-        28: { success: 5, fail: 76, destroy: 19 },
-        29: { success: 3, fail: 77.6, destroy: 19.4 },
-        30: { success: 1, fail: 79.2, destroy: 19.8 }
+        1: { success: 100, fail: 0, destroy: 0 },   // 95 → 100
+        2: { success: 95, fail: 5, destroy: 0 },    // 90 → 95
+        3: { success: 90, fail: 10, destroy: 0 },   // 85 → 90
+        4: { success: 90, fail: 10, destroy: 0 },   // 85 → 90
+        5: { success: 85, fail: 15, destroy: 0 },   // 80 → 85
+        6: { success: 80, fail: 20, destroy: 0 },   // 75 → 80
+        7: { success: 75, fail: 25, destroy: 0 },   // 70 → 75
+        8: { success: 70, fail: 30, destroy: 0 },   // 65 → 70
+        9: { success: 65, fail: 35, destroy: 0 },   // 60 → 65
+        10: { success: 60, fail: 40, destroy: 0 },  // 55 → 60
+        11: { success: 53, fail: 47, destroy: 0 },  // 50 → 53
+        12: { success: 48, fail: 52, destroy: 0 },  // 45 → 48
+        13: { success: 43, fail: 57, destroy: 0 },  // 40 → 43
+        14: { success: 38, fail: 62, destroy: 0 },  // 35 → 38
+        15: { success: 33, fail: 64.9, destroy: 2.1 },  // 30 → 33
+        16: { success: 33, fail: 64.9, destroy: 2.1 },  // 30 → 33
+        17: { success: 33, fail: 64.9, destroy: 2.1 },  // 30 → 33
+        18: { success: 18, fail: 75.2, destroy: 6.8 },  // 15 → 18
+        19: { success: 18, fail: 75.2, destroy: 6.8 },  // 15 → 18
+        20: { success: 18, fail: 73.5, destroy: 8.5 },  // 15 → 18
+        21: { success: 32, fail: 57.5, destroy: 10.5 }, // 30 → 32
+        22: { success: 17, fail: 70.25, destroy: 12.75 }, // 15 → 17
+        23: { success: 17, fail: 66, destroy: 17 },    // 15 → 17
+        24: { success: 12, fail: 70, destroy: 18 },    // 10 → 12
+        25: { success: 12, fail: 70, destroy: 18 },    // 10 → 12
+        26: { success: 12, fail: 70, destroy: 18 },    // 10 → 12
+        27: { success: 9, fail: 72.4, destroy: 18.6 }, // 7 → 9
+        28: { success: 7, fail: 74, destroy: 19 },     // 5 → 7
+        29: { success: 5, fail: 75.6, destroy: 19.4 }, // 3 → 5
+        30: { success: 3, fail: 77.2, destroy: 19.8 }  // 1 → 3
     },
     // 계급별 스탯 증가율 (주 스탯 기준)
     statIncrease: {
@@ -181,7 +181,7 @@ const ENHANCE_SYSTEM = {
     protectionItems: {
         'protection_stone': {
             name: '보호석',
-            description: '실패 시 아이템이 파괴되지 않습니다',
+            description: '파괴 시 계급이 0으로 초기화되지 않습니다',
             cost: 50000
         },
         'blessing_stone': {
@@ -507,7 +507,7 @@ class EnhanceSystem {
                     .setDisabled(!this.hasProtectionStone(user)),
                 new ButtonBuilder()
                     .setCustomId(`enhance_blessing_${sessionId}`)
-                    .setLabel('✨ 축복석 사용')
+                    .setLabel('✨ 강화석 사용')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(!this.hasBlessingStone(user)),
                 new ButtonBuilder()
@@ -516,11 +516,19 @@ class EnhanceSystem {
                     .setStyle(ButtonStyle.Secondary)
             );
 
-        return await interaction.reply({
-            embeds: [embed],
-            components: [buttons],
-            flags: 64
-        });
+        // defer가 이미 되어있는지 확인
+        if (interaction.deferred || interaction.replied) {
+            return await interaction.editReply({
+                embeds: [embed],
+                components: [buttons]
+            });
+        } else {
+            return await interaction.reply({
+                embeds: [embed],
+                components: [buttons],
+                flags: 64
+            });
+        }
     }
 
     // 강화 실행
@@ -584,8 +592,33 @@ class EnhanceSystem {
             this.consumeProtectionStone(user);
         }
         if (session.useBlessing) {
+            // 사용할 축복석 찾기
+            const blessingStone = user.inventory.find(item => 
+                (item.id === 'blessing_stone' || item.id === 'enhancement_stone' || 
+                 item.id === 'basic_enhancement_stone' || item.id === 'advanced_enhancement_stone' || 
+                 item.id === 'perfect_enhancement_stone') && item.quantity > 0
+            );
+            
+            // 강화석 종류에 따른 성공률 증가
+            let successBonus = 10; // 기본값
+            if (blessingStone) {
+                switch(blessingStone.id) {
+                    case 'basic_enhancement_stone':
+                        successBonus = 5;
+                        break;
+                    case 'advanced_enhancement_stone':
+                        successBonus = 10;
+                        break;
+                    case 'perfect_enhancement_stone':
+                        successBonus = 20;
+                        break;
+                    default:
+                        successBonus = 10;
+                }
+            }
+            
             this.consumeBlessingStone(user);
-            session.successRate = Math.min(100, session.successRate + 10);
+            session.successRate = Math.min(100, session.successRate + successBonus);
         }
 
         // 강화 시도
@@ -790,36 +823,24 @@ class EnhanceSystem {
                         { name: '💰 사용 골드', value: `${formatNumber(session.cost)}G`, inline: true }
                     );
             } else {
-                // 아이템 파괴
-                const index = session.itemInventoryIndex !== undefined && session.itemInventoryIndex !== -1 
-                    ? session.itemInventoryIndex 
-                    : user.inventory.findIndex(i => 
-                        (i._id && i._id.toString() === session.itemId) || 
-                        (i.name === session.item.name)
-                    );
-                    
-                if (index > -1) {
-                    user.inventory.splice(index, 1);
-                }
+                // 아이템 파괴 - 0강으로 초기화
+                item.enhanceLevel = 0;
                 
-                // 파괴 시 아이템을 null로 설정
-                item = null;
-
                 // 라이프 시스템 뉴스 연동 - 파괴
                 const lifeSystem = require('../../systems/lifeSystemIntegration');
                 lifeSystem.reportEnhancement(user, session.item, currentLevel + 1, false);
 
                 resultEmbed = new EmbedBuilder()
                     .setColor('#8B0000')
-                    .setTitle('💥 아이템 파괴!')
-                    .setDescription(`${session.item.name}이(가) 완전히 파괴되었습니다...`)
+                    .setTitle('💥 계급 초기화!')
+                    .setDescription(`${session.item.name}의 계급이 완전히 초기화되었습니다...`)
                     .setImage(GAME_GIFS.enhancement.destroy)
                     .addFields(
-                        { name: '💔 결과', value: '아이템 소멸', inline: true },
-                        { name: '🎖️ 시도 계급', value: `${ENHANCE_SYSTEM.rankNames[currentLevel]} → ${ENHANCE_SYSTEM.rankNames[currentLevel + 1]}`, inline: true },
+                        { name: '💔 결과', value: `${ENHANCE_SYSTEM.rankNames[currentLevel]} → ${ENHANCE_SYSTEM.rankNames[0]}`, inline: true },
+                        { name: '🎖️ 현재 계급', value: ENHANCE_SYSTEM.rankNames[0], inline: true },
                         { name: '💰 사용 골드', value: `${formatNumber(session.cost)}G`, inline: true }
                     )
-                    .setFooter({ text: '높은 계급일수록 파괴 확률이 증가합니다!' });
+                    .setFooter({ text: '파괴 시 계급이 무계급으로 돌아갑니다!' });
             }
         }
 
@@ -861,7 +882,7 @@ class EnhanceSystem {
                         .setDisabled(!this.hasProtectionStone(user)),
                     new ButtonBuilder()
                         .setCustomId(`enhance_continue_blessing_${sessionId}`)
-                        .setLabel('✨ 축복석 사용하여 승급')
+                        .setLabel('✨ 강화석 사용하여 승급')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(!this.hasBlessingStone(user))
                 );
@@ -878,12 +899,19 @@ class EnhanceSystem {
                         .setStyle(ButtonStyle.Secondary)
                 );
             
-            return await interaction.update({
-                embeds: [resultEmbed],
-                components: [buttons, menuButtons]
-            });
-        } else if ((result === 'fail' || (result === 'destroy' && session.useProtection)) && item && item.enhanceLevel < ENHANCE_SYSTEM.maxLevel) {
-            // 실패했거나 보호석으로 보호된 경우 (아이템이 남아있고 만렙이 아닌 경우)
+            if (interaction.deferred) {
+                return await interaction.editReply({
+                    embeds: [resultEmbed],
+                    components: [buttons, menuButtons]
+                });
+            } else {
+                return await interaction.update({
+                    embeds: [resultEmbed],
+                    components: [buttons, menuButtons]
+                });
+            }
+        } else if ((result === 'fail' || result === 'destroy') && item && item.enhanceLevel < ENHANCE_SYSTEM.maxLevel) {
+            // 실패했거나 파괴된 경우 (아이템이 남아있고 만렙이 아닌 경우)
             session.item = item;  // 업데이트된 아이템 정보
             session.cost = ENHANCE_SYSTEM.costs[item.enhanceLevel + 1] || 100000000;  // 다음 강화 비용
             const nextRateData = ENHANCE_SYSTEM.rates[item.enhanceLevel + 1];
@@ -902,7 +930,7 @@ class EnhanceSystem {
                         .setDisabled(!this.hasProtectionStone(user)),
                     new ButtonBuilder()
                         .setCustomId(`enhance_continue_blessing_${sessionId}`)
-                        .setLabel('✨ 축복석 사용하여 승급')
+                        .setLabel('✨ 강화석 사용하여 승급')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(!this.hasBlessingStone(user))
                 );
@@ -919,10 +947,17 @@ class EnhanceSystem {
                         .setStyle(ButtonStyle.Secondary)
                 );
             
-            return await interaction.update({
-                embeds: [resultEmbed],
-                components: [buttons, menuButtons]
-            });
+            if (interaction.deferred) {
+                return await interaction.editReply({
+                    embeds: [resultEmbed],
+                    components: [buttons, menuButtons]
+                });
+            } else {
+                return await interaction.update({
+                    embeds: [resultEmbed],
+                    components: [buttons, menuButtons]
+                });
+            }
         } else {
             // 파괴되었거나 만렙인 경우
             this.sessions.delete(sessionId);
@@ -1013,21 +1048,23 @@ class EnhanceSystem {
     // 보호석 확인
     hasProtectionStone(user) {
         return user.inventory && user.inventory.some(item => 
-            item.id === 'protection_stone' && item.quantity > 0
+            (item.id === 'protection_stone' || item.id === 'protection_scroll') && item.quantity > 0
         );
     }
 
     // 축복석 확인
     hasBlessingStone(user) {
         return user.inventory && user.inventory.some(item => 
-            item.id === 'blessing_stone' && item.quantity > 0
+            (item.id === 'blessing_stone' || item.id === 'enhancement_stone' || 
+             item.id === 'basic_enhancement_stone' || item.id === 'advanced_enhancement_stone' || 
+             item.id === 'perfect_enhancement_stone') && item.quantity > 0
         );
     }
 
     // 보호석 사용
     consumeProtectionStone(user) {
         const stone = user.inventory.find(item => 
-            item.id === 'protection_stone' && item.quantity > 0
+            (item.id === 'protection_stone' || item.id === 'protection_scroll') && item.quantity > 0
         );
         if (stone) {
             stone.quantity--;
@@ -1041,7 +1078,9 @@ class EnhanceSystem {
     // 축복석 사용
     consumeBlessingStone(user) {
         const stone = user.inventory.find(item => 
-            item.id === 'blessing_stone' && item.quantity > 0
+            (item.id === 'blessing_stone' || item.id === 'enhancement_stone' || 
+             item.id === 'basic_enhancement_stone' || item.id === 'advanced_enhancement_stone' || 
+             item.id === 'perfect_enhancement_stone') && item.quantity > 0
         );
         if (stone) {
             stone.quantity--;
@@ -1130,7 +1169,7 @@ class EnhanceSystem {
             .addFields(
                 {
                     name: '🛡️ 보호석',
-                    value: '가격: 50,000G\n효과: 실패 시 아이템이 파괴되지 않음',
+                    value: '가격: 50,000G\n효과: 파괴 시 계급이 0으로 초기화되지 않음',
                     inline: true
                 },
                 {
@@ -1218,10 +1257,16 @@ async function handleEnhanceInteraction(interaction) {
         const sessionUserId = sessionParts[sessionParts.length - 1].split('-')[0];
         
         if (sessionUserId && sessionUserId !== interaction.user.id) {
-            return await interaction.reply({
-                content: '❌ 다른 사용자의 강화 세션입니다!',
-                flags: 64
-            });
+            if (interaction.deferred) {
+                return await interaction.editReply({
+                    content: '❌ 다른 사용자의 강화 세션입니다!'
+                });
+            } else {
+                return await interaction.reply({
+                    content: '❌ 다른 사용자의 강화 세션입니다!',
+                    flags: 64
+                });
+            }
         }
     }
 
@@ -1257,8 +1302,38 @@ async function handleEnhanceInteraction(interaction) {
         const session = enhanceSystem.sessions.get(sessionId);
         if (session) {
             session.useBlessing = !session.useBlessing;
+            
+            // 사용할 강화석 확인
+            const user = await getUser(interaction.user.id);
+            const stone = user.inventory?.find(item => 
+                (item.id === 'blessing_stone' || item.id === 'enhancement_stone' || 
+                 item.id === 'basic_enhancement_stone' || item.id === 'advanced_enhancement_stone' || 
+                 item.id === 'perfect_enhancement_stone') && item.quantity > 0
+            );
+            
+            let message = '강화석 사용을 취소했습니다.';
+            if (session.useBlessing && stone) {
+                let bonus = 10;
+                switch(stone.id) {
+                    case 'basic_enhancement_stone':
+                        bonus = 5;
+                        message = `✨ 기본 강화석을 사용합니다. (성공률 +${bonus}%)`;
+                        break;
+                    case 'advanced_enhancement_stone':
+                        bonus = 10;
+                        message = `✨ 고급 강화석을 사용합니다. (성공률 +${bonus}%)`;
+                        break;
+                    case 'perfect_enhancement_stone':
+                        bonus = 20;
+                        message = `✨ 완벽한 강화석을 사용합니다. (성공률 +${bonus}%)`;
+                        break;
+                    default:
+                        message = `✨ 강화석을 사용합니다. (성공률 +${bonus}%)`;
+                }
+            }
+            
             return await interaction.reply({
-                content: session.useBlessing ? '✨ 축복석을 사용합니다. (성공률 +10%)' : '축복석 사용을 취소했습니다.',
+                content: message,
                 flags: 64
             });
         }
@@ -1293,7 +1368,7 @@ async function handleEnhanceInteraction(interaction) {
                 name: '보호석',
                 type: 'consumable',
                 quantity: 1,
-                description: '강화 실패 시 아이템이 파괴되지 않습니다.'
+                description: '파괴 시 계급이 0으로 초기화되지 않습니다.'
             });
         }
         

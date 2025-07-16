@@ -10,13 +10,23 @@ module.exports = {
     async execute(interaction) {
         // 관리자 권한 확인
         if (!isAdmin(interaction.user.id)) {
-            return interaction.reply({ 
-                content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
-                ephemeral: true 
-            });
+            // 이미 defer되었는지 확인
+            if (interaction.deferred) {
+                return interaction.editReply({ 
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!'
+                });
+            } else {
+                return interaction.reply({ 
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!', 
+                    ephemeral: true 
+                });
+            }
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        // defer가 이미 되어있는지 확인하고, 안되어있으면 defer
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply({ ephemeral: true });
+        }
 
         try {
             const channel = interaction.channel;
@@ -52,7 +62,7 @@ module.exports = {
                     },
                     {
                         name: '🎮 게임 시작',
-                        value: '회원가입 완료 후 `/메뉴` 명령어로 게임을 시작하세요!',
+                        value: '회원가입 완료 후 `/게임` 명령어로 게임을 시작하세요!',
                         inline: false
                     },
                     {

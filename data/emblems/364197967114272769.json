@@ -1,0 +1,26 @@
+[
+  {
+    "emblemName": "마을사냥꾼",
+    "category": "archer",
+    "purchaseDate": "2025-07-14T22:52:42.019Z",
+    "price": 300000,
+    "level": 20,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "숲의 궁수",
+    "category": "archer",
+    "purchaseDate": "2025-07-14T22:53:02.089Z",
+    "price": 500000,
+    "level": 35,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "바람 사수",
+    "category": "archer",
+    "purchaseDate": "2025-07-14T22:53:21.066Z",
+    "price": 1500000,
+    "level": 50,
+    "enhanceLevel": 0
+  }
+]

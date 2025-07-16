@@ -23,14 +23,9 @@ async function handlePVPInteraction(interaction) {
     if (customId === 'pvp_create_room') {
         console.log('[PVP Handler] Creating PVP room');
         
-        // Defer the interaction first
-        if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferUpdate().catch(console.error);
-        }
-        
         const user = await getUser(interaction.user.id);
         if (!user || !user.registered) {
-            return await interaction.followUp({ 
+            return await interaction.reply({ 
                 content: '먼저 회원가입을 해주세요!', 
                 flags: 64 
             });

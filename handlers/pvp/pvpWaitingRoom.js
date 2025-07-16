@@ -336,9 +336,8 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
                     flags: 64 
                 });
             } else {
-                return interaction.reply({ 
-                    content: '❌ 이미 다른 대전방에 참가중입니다!', 
-                    flags: 64 
+                return interaction.editReply({ 
+                    content: '❌ 이미 다른 대전방에 참가중입니다!' 
                 });
             }
         }
@@ -383,9 +382,8 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
                 flags: 64 
             });
         } else {
-            return interaction.reply({ 
-                content: errorMessage, 
-                flags: 64 
+            return interaction.editReply({ 
+                content: errorMessage 
             });
         }
     }
@@ -398,23 +396,22 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
     console.log('[PVP Waiting Room] Sending waiting room message');
     try {
         let waitingMessage;
-        if (interaction.replied || interaction.deferred) {
-            console.log('[PVP Waiting Room] Using followUp for already responded interaction');
-            // 이미 응답된 경우 followUp 사용 (editReply는 원래 응답을 수정하므로 새 메시지에는 부적절)
-            waitingMessage = await interaction.followUp({
-                embeds: [room.createWaitingEmbed()],
-                components: [room.createWaitingButtons()],
-                fetchReply: true
-            });
-        } else {
-            console.log('[PVP Waiting Room] Using reply for new interaction');
-            // 응답하지 않은 경우 reply 사용
-            waitingMessage = await interaction.reply({
-                embeds: [room.createWaitingEmbed()],
-                components: [room.createWaitingButtons()],
-                fetchReply: true
-            });
+        
+        // 먼저 원래 메시지를 업데이트하여 버튼을 비활성화
+        if (!interaction.replied) {
+            await interaction.update({
+                embeds: interaction.message.embeds,
+                components: [] // 버튼 제거
+            }).catch(() => {});
         }
+        
+        // 새로운 공개 메시지로 대기실 생성
+        console.log('[PVP Waiting Room] Creating public waiting room message');
+        waitingMessage = await interaction.channel.send({
+            embeds: [room.createWaitingEmbed()],
+            components: [room.createWaitingButtons()]
+        });
+        
         room.waitingMessage = waitingMessage;
     } catch (error) {
         console.error('[PVP Waiting Room] Error sending message:', error);
@@ -429,9 +426,8 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
             if (!room.opponent) {
                 try {
                     await room.startOfflineMatch(pvpSystem);
-                    await interaction.followUp({
-                        content: '⏰ 대기 시간이 종료되어 오프라인 유저와 자동 매칭되었습니다!',
-                        flags: 64
+                    await interaction.channel.send({
+                        content: '⏰ 대기 시간이 종료되어 오프라인 유저와 자동 매칭되었습니다!'
                     });
                 } catch (error) {
                     console.error('자동 오프라인 매칭 오류:', error);
@@ -480,8 +476,8 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
         case 'join':
             if (!user) {
                 return interaction.reply({ 
-                    content: '❌ 먼저 회원가입을 해주세요!', 
-                    flags: 64 
+                    content: '❌ 먼저 회원가입을 해주세요!',
+                    flags: 64
                 });
             }
 
@@ -489,34 +485,34 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
             if (joinResult.success) {
                 await room.updateWaitingRoom();
                 return interaction.reply({ 
-                    content: '✅ ' + joinResult.message, 
-                    flags: 64 
+                    content: '✅ ' + joinResult.message,
+                    flags: 64
                 });
             } else {
                 return interaction.reply({ 
-                    content: '❌ ' + joinResult.message, 
-                    flags: 64 
+                    content: '❌ ' + joinResult.message,
+                    flags: 64
                 });
             }
 
         case 'start':
             if (userId !== room.host.id) {
                 return interaction.reply({ 
-                    content: '❌ 방장만 게임을 시작할 수 있습니다!', 
-                    flags: 64 
+                    content: '❌ 방장만 게임을 시작할 수 있습니다!',
+                    flags: 64
                 });
             }
 
             const startResult = await room.startGame(pvpSystem);
             if (startResult.success) {
                 return interaction.reply({ 
-                    content: '✅ 게임을 시작합니다!', 
-                    flags: 64 
+                    content: '✅ 게임을 시작합니다!',
+                    flags: 64
                 });
             } else {
                 return interaction.reply({ 
-                    content: '❌ ' + startResult.message, 
-                    flags: 64 
+                    content: '❌ ' + startResult.message,
+                    flags: 64
                 });
             }
 
@@ -551,7 +547,14 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
                 if (room.updateInterval) {
                     clearInterval(room.updateInterval);
                 }
-                // 메시지 삭제는 시도하지 않음 (이미 업데이트에서 처리)
+                // 대기실 메시지 삭제
+                if (room.waitingMessage) {
+                    try {
+                        await room.waitingMessage.delete();
+                    } catch (error) {
+                        console.error('대기실 메시지 삭제 오류:', error);
+                    }
+                }
                 return interaction.reply({ 
                     content: '✅ 대전방을 닫았습니다.', 
                     flags: 64 

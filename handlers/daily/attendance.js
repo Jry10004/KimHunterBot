@@ -5,11 +5,15 @@ const { applyDailyBonus } = require('../common/specialEffects');
 
 // 출석체크 메인 메뉴
 async function showAttendanceMenu(interaction) {
+    // interaction이 이미 처리되지 않았다면 defer
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+    
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
-        return await interaction.reply({ 
-            content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
-            flags: 64 
+        return await interaction.editReply({ 
+            content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
         });
     }
 
@@ -59,29 +63,38 @@ async function showAttendanceMenu(interaction) {
                 .setStyle(ButtonStyle.Primary)
                 .setDisabled(hasAttended),
             new ButtonBuilder()
-                .setCustomId('attendance_ranking')
-                .setLabel('🏆 출석 랭킹')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
                 .setCustomId('main_menu')
                 .setLabel('🏠 메인 메뉴')
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    return await interaction.reply({
-        embeds: [embed],
-        components: [buttons],
-        flags: 64
-    });
+    // interaction 상태에 따라 적절한 응답 방법 사용
+    if (interaction.deferred || interaction.replied) {
+        return await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            components: [buttons],
+            flags: 64
+        });
+    }
 }
 
 // 출석 보상 받기
 async function claimDailyReward(interaction) {
+    // interaction이 이미 처리되지 않았다면 defer
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+    
     const user = await getUser(interaction.user.id);
     const today = new Date().toDateString();
     
     if (user.lastDaily === today) {
-        return await interaction.reply({ 
+        return await interaction.editReply({ 
             content: '오늘은 이미 일일 보상을 받으셨습니다!', 
             flags: 64 
         });
@@ -174,11 +187,19 @@ async function claimDailyReward(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    return await interaction.reply({
-        embeds: [embed],
-        components: [buttons],
-        flags: 64
-    });
+    // interaction 상태에 따라 적절한 응답 방법 사용
+    if (interaction.deferred || interaction.replied) {
+        return await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            components: [buttons],
+            flags: 64
+        });
+    }
 }
 
 // 출석 랭킹

@@ -2,13 +2,26 @@
 const { handleMainInteraction } = require('../interactionHandler');
 const qaLogger = require('./qaLogger');
 const messageHandlers = require('./messageHandlers');
+const { startMonitoring, stopMonitoring } = require('./interactionMonitor');
 
 // 이벤트 등록 함수
 function registerDiscordEvents(client) {
+    // 기존 리스너 제거
+    client.removeAllListeners('interactionCreate');
+    client.removeAllListeners('messageCreate');
+    
     // 인터랙션 이벤트
     client.on('interactionCreate', async interaction => {
+        console.log(`[DiscordEvents] InteractionCreate - Type: ${interaction.type}, Command: ${interaction.commandName || 'N/A'}, CustomId: ${interaction.customId || 'N/A'}, User: ${interaction.user.id}`);
+        
         try {
+            // 상호작용 모니터링 시작
+            startMonitoring(interaction);
+            
             await handleMainInteraction(interaction);
+            
+            // 상호작용 모니터링 종료
+            stopMonitoring(interaction.id);
         } catch (error) {
             console.error('인터랙션 처리 오류:', error);
             

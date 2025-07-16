@@ -11,6 +11,7 @@ const { startWebServer, generateAuthToken } = require('./webServer');
 const { huntingAreas, DROP_ITEMS } = require('./data/huntingAreas');
 const STOCK_MARKET = require('./data/stockMarket');
 const RANDOM_EVENTS = require('./data/randomEvents');
+const { MINE_SYSTEM, mineManager, saveMineState } = require('./data/mineSystem');
 const shopItems = require('./data/shopItems');
 const MONSTER_BATTLE = require('./data/oddEvenGame');
 const MUSHROOM_GAME = require('./data/mushroomGame');
@@ -25,9 +26,10 @@ const Jimp = require('jimp');
 const spectatorBetting = require('./data/spectatorBetting');
 const { initializeAllEmblemShops, handleEmblemShopInteraction } = require('./systems/emblemShop');
 const { handleMainInteraction } = require('./interactionHandler');
-const { initializeAllEvents, loadPrelaunchData, savePrelaunchData } = require('./handlers/events');
+const { initializeAllEvents } = require('./handlers/events');
 const { setupErrorHandlers } = require('./systems/enhancedErrorHandler');
 const qaLogger = require('./systems/qaLogger');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely, enforceMaxLevel } = require('./utils/levelCapHelper');
 const { setupInteractionMonitor } = require('./systems/interactionMonitor');
 const antiMacro = require('./systems/antiMacro');
 
@@ -105,23 +107,9 @@ global.prelaunchEventEnded = false;
 
 console.log('🔍 서버 오픈 상태:', global.serverOpened ? '오픈됨' : '카운트다운 중');
 
-// 사전강화 데이터 로드 - loadPrelaunchData 함수 사용
-try {
-    const loadedData = loadPrelaunchData();
-    // loadPrelaunchData는 이제 eventData만 반환하므로 직접 할당
-    global.prelaunchEventData = loadedData || {};
-    console.log('📂 사전강화 데이터 로드 성공');
-    // 하연94 데이터 확인
-    if (global.prelaunchEventData['295980447849250817']) {
-        console.log('✅ 하연94 데이터 확인됨:', {
-            level: global.prelaunchEventData['295980447849250817'].currentLevel,
-            points: global.prelaunchEventData['295980447849250817'].points
-        });
-    }
-} catch (error) {
-    console.log('📂 사전강화 데이터 파일이 없거나 오류 발생, 새로 생성');
-    global.prelaunchEventData = {};
-}
+// 사전강화 이벤트 종료됨
+global.prelaunchEventData = {};
+global.prelaunchEventEnded = true;
 
 // 디버그: 로드된 데이터 확인
 console.log('📊 로드된 사전강화 데이터:');
@@ -2377,8 +2365,12 @@ function openMysteryBox(boxType, user) {
                 const amount = Array.isArray(reward.amount) ? 
                     Math.floor(Math.random() * (reward.amount[1] - reward.amount[0] + 1)) + reward.amount[0] :
                     reward.amount;
-                user.exp += amount;
-                rewardText = `${amount.toLocaleString()} EXP`;
+                if (user.level < MAX_LEVEL) {
+                    user.exp += amount;
+                    rewardText = `${amount.toLocaleString()} EXP`;
+                } else {
+                    rewardText = `만렙이므로 경험치를 받을 수 없습니다`;
+                }
             } else if (reward.item === '스탯 포인트') {
                 const amount = Array.isArray(reward.amount) ? 
                     Math.floor(Math.random() * (reward.amount[1] - reward.amount[0] + 1)) + reward.amount[0] :
@@ -2660,32 +2652,49 @@ function calculateUserStats(user) {
     let totalDefense = Math.floor(baseDefense);
 
     // 장비 스탯 합산
+    const equipmentStats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        luck: 0,
+        attack: 0,
+        defense: 0
+    };
+
     const equipmentTypes = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
     for (const type of equipmentTypes) {
         const slotIndex = user.equipment[type];
         if (slotIndex !== -1 && slotIndex != null) {
             const item = user.inventory.find(item => item.inventorySlot === slotIndex);
             if (item && item.stats) {
-                totalAttack += item.stats.attack || 0;
-                totalDefense += item.stats.defense || 0;
-
-                // 강화 보너스 적용
-                if (item.enhanceLevel > 0) {
-                    const enhanceBonus = calculateEnhancementBonus(item.enhanceLevel);
-                    totalAttack += Math.floor((item.stats.attack || 0) * enhanceBonus / 100);
-                    totalDefense += Math.floor((item.stats.defense || 0) * enhanceBonus / 100);
+                // 모든 스탯 합산
+                for (const [stat, value] of Object.entries(item.stats)) {
+                    if (equipmentStats.hasOwnProperty(stat)) {
+                        equipmentStats[stat] += value || 0;
+                        
+                        // 강화 보너스 적용
+                        if (item.enhanceLevel > 0) {
+                            const enhanceBonus = calculateEnhancementBonus(item.enhanceLevel);
+                            equipmentStats[stat] += Math.floor((value || 0) * enhanceBonus / 100);
+                        }
+                    }
                 }
 
-                // 랜덤 옵션 적용
+                // 랜덤 옵션 적용 (레거시 지원)
                 if (item.randomOptions) {
                     item.randomOptions.forEach(option => {
-                        if (option.type === 'attack') totalAttack += option.value;
-                        if (option.type === 'defense') totalDefense += option.value;
+                        if (option.type === 'attack') equipmentStats.attack += option.value;
+                        if (option.type === 'defense') equipmentStats.defense += option.value;
                     });
                 }
             }
         }
     }
+
+    // attack과 defense는 기존처럼 계산
+    totalAttack += equipmentStats.attack;
+    totalDefense += equipmentStats.defense;
 
     // PVP 강화 보너스
     if (user.pvp && user.pvp.attackEnhancement) {
@@ -2710,8 +2719,9 @@ function calculateUserStats(user) {
     user.attack = totalAttack;
     user.defense = totalDefense;
     user.health = baseHealth;
+    user.equipmentStats = equipmentStats; // 장비 스탯 저장
 
-    return { attack: totalAttack, defense: totalDefense, health: baseHealth };
+    return { attack: totalAttack, defense: totalDefense, health: baseHealth, equipmentStats: equipmentStats };
 }
 
 function unequipItem(user, equipmentType) {
@@ -4553,14 +4563,9 @@ client.once('ready', async () => {
             console.log('🌐 웹 서버가 테스트 환경에서는 비활성화됩니다.');
         }
 
-        // 사전강화 데이터 로드
-        global.prelaunchEventData = loadPrelaunchData();
-        console.log('📊 사전강화 데이터 로드 결과:', {
-            exists: !!global.prelaunchEventData,
-            hasEventData: !!(global.prelaunchEventData && global.prelaunchEventData.eventData),
-            userCount: global.prelaunchEventData && global.prelaunchEventData.eventData ? 
-                Object.keys(global.prelaunchEventData.eventData).length : 0
-        });
+        // 사전강화 이벤트 종료됨
+        global.prelaunchEventData = {};
+        global.prelaunchEventEnded = true;
 
         // 모든 이벤트 초기화
         initializeAllEvents(client);
@@ -4592,6 +4597,11 @@ client.once('ready', async () => {
         const pvpSystem = require('./systems/pvpSystem');
         pvpSystem.getInstance();
         console.log('🥊 PVP 시스템 활성화 (10분마다 채널 자동 정리)');
+        
+        // 낚시 시스템 초기화
+        const { fishingManager } = require('./systems/fishingSystemNew');
+        fishingManager.setClient(client);
+        console.log('🎣 낚시 시스템 활성화 (50종 물고기)');
         
         // 댕댕봇 이벤트 완전 제거 (더 이상 필요 없음)
 

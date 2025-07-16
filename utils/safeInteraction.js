@@ -85,6 +85,11 @@ async function safeInteractionHandler(interaction, handler, options = {}) {
  * @param {Object} handlers 핸들러 맵
  */
 function registerSafeHandlers(client, handlers) {
+    // 이벤트 리스너 비활성화 - discordEvents.js에서 처리
+    console.log('[SafeInteraction] registerSafeHandlers called but disabled');
+    return;
+    
+    /* 원본 코드 백업
     client.on('interactionCreate', async (interaction) => {
         // 명령어 타입별 처리
         if (interaction.isChatInputCommand()) {

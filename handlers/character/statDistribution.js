@@ -36,15 +36,7 @@ async function showStatDistribution(interaction) {
         await user.save();
     }
     
-    if (!user.statPoints || user.statPoints === 0) {
-        return await interaction.editReply({
-            content: '📊 사용 가능한 스탯 포인트가 없습니다!\n레벨업 시 스탯 포인트를 획득할 수 있습니다.',
-            embeds: [],
-            components: []
-        });
-    }
-
-    // 현재 스탯 정보
+    // 현재 스탯 정보 가져오기
     const currentStats = user.stats || {
         strength: 10,
         agility: 10,
@@ -52,11 +44,30 @@ async function showStatDistribution(interaction) {
         vitality: 10,
         luck: 10
     };
+    
+    // 분배된 스탯 포인트 계산
+    const distributedPoints = 
+        (currentStats.strength - 10) +
+        (currentStats.agility - 10) +
+        (currentStats.intelligence - 10) +
+        (currentStats.vitality - 10) +
+        (currentStats.luck - 10);
+    
+    // 스탯 포인트가 없고 분배된 포인트도 없으면 메뉴 표시 안 함
+    if ((!user.statPoints || user.statPoints === 0) && distributedPoints === 0) {
+        return await interaction.editReply({
+            content: '📊 사용 가능한 스탯 포인트가 없습니다!\n레벨업 시 스탯 포인트를 획득할 수 있습니다.',
+            embeds: [],
+            components: []
+        });
+    }
 
     const statEmbed = new EmbedBuilder()
         .setColor('#9b59b6')
         .setTitle(`📊 ${user.nickname || interaction.user.username}님의 스탯 분배`)
-        .setDescription(`사용 가능한 스탯 포인트: **${user.statPoints}점**\n\n각 스탯을 클릭하여 포인트를 분배하세요!`)
+        .setDescription(user.statPoints > 0 
+            ? `사용 가능한 스탯 포인트: **${user.statPoints}점**\n\n각 스탯을 클릭하여 포인트를 분배하세요!`
+            : `사용 가능한 스탯 포인트: **0점**\n\n스탯 초기화를 통해 분배된 포인트를 회수할 수 있습니다.`)
         .addFields(
             { 
                 name: '💪 힘 (STR)', 
@@ -87,28 +98,34 @@ async function showStatDistribution(interaction) {
         .setFooter({ text: '팁: 직업별 주스탯과 부스탯을 적절히 분배하면 더 강해집니다!' });
 
     // 스탯 버튼들
+    const hasStatPoints = user.statPoints > 0;
     const statButtons = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('stat_add_strength')
                 .setLabel('💪 힘 +1')
-                .setStyle(ButtonStyle.Primary),
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(!hasStatPoints),
             new ButtonBuilder()
                 .setCustomId('stat_add_agility')
                 .setLabel('🏃 민첩 +1')
-                .setStyle(ButtonStyle.Primary),
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(!hasStatPoints),
             new ButtonBuilder()
                 .setCustomId('stat_add_intelligence')
                 .setLabel('🧠 지능 +1')
-                .setStyle(ButtonStyle.Primary),
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(!hasStatPoints),
             new ButtonBuilder()
                 .setCustomId('stat_add_vitality')
                 .setLabel('❤️ 체력 +1')
-                .setStyle(ButtonStyle.Primary),
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(!hasStatPoints),
             new ButtonBuilder()
                 .setCustomId('stat_add_luck')
                 .setLabel('🍀 행운 +1')
                 .setStyle(ButtonStyle.Primary)
+                .setDisabled(!hasStatPoints)
         );
 
     // 추가 옵션 버튼들
@@ -117,12 +134,13 @@ async function showStatDistribution(interaction) {
             new ButtonBuilder()
                 .setCustomId('stat_add_custom')
                 .setLabel('🎯 커스텀 분배')
-                .setStyle(ButtonStyle.Success),
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(!hasStatPoints),
             new ButtonBuilder()
                 .setCustomId('stat_reset')
                 .setLabel('🔄 스탯 초기화')
                 .setStyle(ButtonStyle.Danger)
-                .setDisabled(false),
+                .setDisabled(distributedPoints === 0), // 분배된 포인트가 없으면 비활성화
             new ButtonBuilder()
                 .setCustomId('profile')
                 .setLabel('👤 프로필로 돌아가기')
@@ -216,10 +234,19 @@ async function addStatPoint(interaction, statName) {
 
 // 커스텀 스탯 분배 모달
 async function showCustomStatModal(interaction) {
+    console.log('[CustomStatModal] Called - Deferred:', interaction.deferred, 'Replied:', interaction.replied);
+    
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
         return await interaction.reply({ 
             content: '먼저 회원가입을 해주세요!',
+            flags: 64
+        });
+    }
+    
+    if (!user.statPoints || user.statPoints <= 0) {
+        return await interaction.reply({ 
+            content: '❌ 사용 가능한 스탯 포인트가 없습니다!',
             flags: 64
         });
     }
@@ -276,16 +303,47 @@ async function showCustomStatModal(interaction) {
         new ActionRowBuilder().addComponents(luckInput)
     );
 
-    await interaction.showModal(modal);
+    try {
+        console.log('[CustomStatModal] Attempting to show modal...');
+        await interaction.showModal(modal);
+        console.log('[CustomStatModal] Modal shown successfully!');
+    } catch (error) {
+        console.error('[CustomStatModal] Error showing modal:', error);
+        console.error('[CustomStatModal] Error code:', error.code);
+        console.error('[CustomStatModal] Error message:', error.message);
+        
+        // 에러 발생 시 팔로우업으로 응답
+        try {
+            await interaction.reply({ 
+                content: '❌ 모달을 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.',
+                flags: 64
+            });
+        } catch (replyError) {
+            console.error('[CustomStatModal] Reply error:', replyError);
+        }
+    }
 }
 
 // 커스텀 스탯 분배 처리
 async function handleCustomStatDistribution(interaction) {
+    // 먼저 defer 처리
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply({ flags: 64 });
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[CustomStat] Interaction expired');
+            return;
+        }
+        console.error('[CustomStat] Defer error:', error);
+        return;
+    }
+    
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
-        return await interaction.reply({ 
-            content: '먼저 회원가입을 해주세요!',
-            flags: 64
+        return await interaction.editReply({ 
+            content: '먼저 회원가입을 해주세요!'
         });
     }
 
@@ -300,23 +358,20 @@ async function handleCustomStatDistribution(interaction) {
 
     // 유효성 검사
     if (totalPoints > user.statPoints) {
-        return await interaction.reply({
-            content: `❌ 사용하려는 포인트(${totalPoints})가 보유 포인트(${user.statPoints})보다 많습니다!`,
-            flags: 64
+        return await interaction.editReply({
+            content: `❌ 사용하려는 포인트(${totalPoints})가 보유 포인트(${user.statPoints})보다 많습니다!`
         });
     }
 
     if (strength < 0 || agility < 0 || intelligence < 0 || vitality < 0 || luck < 0) {
-        return await interaction.reply({
-            content: '❌ 음수는 입력할 수 없습니다!',
-            flags: 64
+        return await interaction.editReply({
+            content: '❌ 음수는 입력할 수 없습니다!'
         });
     }
 
     if (totalPoints === 0) {
-        return await interaction.reply({
-            content: '❌ 최소 1포인트 이상 분배해야 합니다!',
-            flags: 64
+        return await interaction.editReply({
+            content: '❌ 최소 1포인트 이상 분배해야 합니다!'
         });
     }
 
@@ -340,11 +395,8 @@ async function handleCustomStatDistribution(interaction) {
     user.statPoints -= totalPoints;
 
     await user.save();
-
-    // 결과 표시를 위한 일시적인 응답
-    await interaction.deferReply({ flags: 64 });
     
-    // 결과 메시지
+    // 결과 메시지 (이미 defer되어 있으므로 editReply 사용)
     await interaction.editReply({
         content: `✅ 스탯 분배 완료!\n\n💪 힘 +${strength}\n🏃 민첩 +${agility}\n🧠 지능 +${intelligence}\n❤️ 체력 +${vitality}\n🍀 행운 +${luck}\n\n📊 남은 포인트: ${user.statPoints}점`
     });
@@ -541,7 +593,7 @@ async function executeStatReset(interaction) {
         });
     }
     
-    const resetCost = 10000000;
+    const resetCost = 10000000; // 1000만 골드
     if (user.gold < resetCost) {
         return await interaction.followUp({
             content: '❌ 골드가 부족합니다!',
@@ -580,8 +632,10 @@ async function executeStatReset(interaction) {
     // 엠블럼 강화 스탯 재적용
     if (user.emblem && user.emblemEnhancement) {
         const { EMBLEMS } = require('../../systems/emblemShop');
+        // 강화 레벨 제거한 기본 엠블럼 이름으로 검색
+        const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, '');
         const emblemType = Object.keys(EMBLEMS).find(type => 
-            EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+            EMBLEMS[type].emblems.some(e => e.name === baseEmblemName)
         );
         
         if (emblemType) {

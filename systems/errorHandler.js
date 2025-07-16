@@ -35,40 +35,7 @@ function setupErrorHandlers(client) {
         });
     });
 
-    // 상호작용 에러 자동 캐치
-    client.on('interactionCreate', async (interaction) => {
-        try {
-            // 기존 핸들러는 그대로 실행
-        } catch (error) {
-            console.error('🚨 상호작용 처리 중 에러:', error);
-            
-            // 에러 로깅
-            await qaLogger.logError('상호작용', error, {
-                type: interaction.type,
-                commandName: interaction.commandName || 'N/A',
-                customId: interaction.customId || 'N/A',
-                userId: interaction.user?.id,
-                channelId: interaction.channel?.id,
-                guildId: interaction.guild?.id
-            });
-
-            // 사용자에게 에러 알림
-            try {
-                const errorMessage = {
-                    content: '❌ 오류가 발생했습니다. `/버그발견` 명령어로 신고해주세요!',
-                    flags: 64
-                };
-
-                if (interaction.deferred || interaction.replied) {
-                    await interaction.editReply(errorMessage);
-                } else {
-                    await interaction.reply(errorMessage);
-                }
-            } catch (replyError) {
-                console.error('에러 응답 실패:', replyError);
-            }
-        }
-    });
+    // interactionCreate 이벤트는 discordEvents.js에서 처리하므로 여기서는 제거
 
     console.log('✅ 전역 에러 핸들러 설치 완료');
 }

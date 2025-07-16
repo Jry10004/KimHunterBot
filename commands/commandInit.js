@@ -12,13 +12,17 @@ module.exports = {
         // 개발자 확인
         const DEVELOPER_IDS = ['424480594542592009', '295980447849250817', '532128778175619084'];
         if (!DEVELOPER_IDS.includes(interaction.user.id)) {
-            return interaction.reply({ 
-                content: '❌ 이 명령어는 개발자만 사용할 수 있습니다!', 
-                ephemeral: true 
-            });
+            if (interaction.deferred) {
+                return interaction.editReply({ 
+                    content: '❌ 이 명령어는 개발자만 사용할 수 있습니다!'
+                });
+            } else {
+                return interaction.reply({ 
+                    content: '❌ 이 명령어는 개발자만 사용할 수 있습니다!', 
+                    ephemeral: true 
+                });
+            }
         }
-
-        await interaction.deferReply({ ephemeral: true });
 
         try {
             const token = process.env.BOT_TOKEN || process.env.DISCORD_TOKEN;

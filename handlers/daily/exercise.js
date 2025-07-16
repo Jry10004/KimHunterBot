@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const { getUser, formatNumber } = require('../common/utils');
 const EXERCISE_SYSTEM = require('../../data/exerciseSystem');
 const GAME_GIFS = require('../../data/gameGifs');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../../utils/levelCapHelper');
 
 // 피로도 업데이트
 function updateFatigue(user) {
@@ -188,10 +189,6 @@ async function showExerciseMenu(interaction) {
             .setLabel('📊 상세 스탯')
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId('exercise_ranking')
-            .setLabel('🏆 피트니스 랭킹')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
             .setCustomId('main_menu')
             .setLabel('🏠 메인 메뉴')
             .setStyle(ButtonStyle.Secondary)
@@ -329,7 +326,12 @@ async function executeExercise(interaction, exerciseId) {
     
     // 보상 지급
     user.gold += goldReward;
-    user.exp += expReward;
+    // 레벨 100 체크 후 경험치 추가
+    if (user.level < MAX_LEVEL) {
+        user.exp += expReward;
+    } else {
+        expReward = 0; // 만렙인 경우 경험치 획득량 0으로 표시
+    }
     user.fitness.exp += fitnessExpReward;
     user.fitness.totalExerciseTime += duration;
     
@@ -1084,7 +1086,12 @@ async function performExercise(interaction, exerciseType) {
     
     // 보상 지급
     user.gold += goldReward;
-    user.exp += expReward;
+    // 레벨 100 체크 후 경험치 추가
+    if (user.level < MAX_LEVEL) {
+        user.exp += expReward;
+    } else {
+        expReward = 0; // 만렙인 경우 경험치 획득량 0으로 표시
+    }
     user.fitness.exp += fitnessExpReward;
     user.fitness.totalExerciseTime += duration;
     

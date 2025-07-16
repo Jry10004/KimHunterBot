@@ -8,14 +8,28 @@ module.exports = {
         .setDescription('김헌터 게임에 회원가입합니다 (이메일 인증 필요)'),
     
     async execute(interaction) {
-        // 이미 가입한 유저인지 확인
-        const existingUser = await User.findOne({ discordId: interaction.user.id });
-        if (existingUser && existingUser.registered) {
-            return await interaction.reply({ 
-                content: '❌ 이미 회원가입이 완료되었습니다!', 
-                flags: 64 
-            });
-        }
+        try {
+            console.log('[회원가입] execute 시작 - 사용자:', interaction.user.tag);
+            console.log('[회원가입] interaction.deferred:', interaction.deferred, 'interaction.replied:', interaction.replied);
+            
+            // 이미 가입한 유저인지 확인
+            const existingUser = await User.findOne({ discordId: interaction.user.id });
+            if (existingUser && existingUser.registered) {
+                console.log('[회원가입] 이미 가입된 사용자:', interaction.user.tag);
+                // interactionHandler에서 이미 defer했으므로 editReply 사용
+                if (interaction.deferred) {
+                    return await interaction.editReply({ 
+                        content: '❌ 이미 회원가입이 완료되었습니다!'
+                    });
+                } else if (interaction.replied) {
+                    return; // 이미 응답한 경우 무시
+                } else {
+                    return await interaction.reply({ 
+                        content: '❌ 이미 회원가입이 완료되었습니다!', 
+                        flags: 64 
+                    });
+                }
+            }
         
         // 이메일 및 닉네임 입력 모달 표시
         const modal = new ModalBuilder()
@@ -45,7 +59,13 @@ module.exports = {
             new ActionRowBuilder().addComponents(nicknameInput)
         );
         
+        console.log('[회원가입] 모달 표시 시도');
         await interaction.showModal(modal);
+        console.log('[회원가입] 모달 표시 완료');
+        } catch (error) {
+            console.error('[회원가입] execute 오류:', error);
+            throw error;
+        }
     },
     
     // 모달 제출 처리

@@ -23,12 +23,23 @@ module.exports = {
         .setDescription('보유한 칭호를 확인합니다'),
     
     async execute(interaction) {
+        try {
+            // 먼저 defer 처리
+            await interaction.deferReply();
+        } catch (error) {
+            if (error.code === 10062) {
+                console.log('[MyTitles] Interaction expired');
+                return;
+            }
+            console.error('[MyTitles] Defer error:', error);
+            return;
+        }
+
         const user = await User.findOne({ discordId: interaction.user.id });
         
         if (!user || !user.registered) {
-            return await interaction.reply({
-                content: '❌ 먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.',
-                flags: 64
+            return await interaction.editReply({
+                content: '❌ 먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
             });
         }
 
@@ -65,7 +76,7 @@ module.exports = {
         });
 
         // 공개 임베드로 전송
-        await interaction.reply({
+        await interaction.editReply({
             embeds: [embed]
         });
     }

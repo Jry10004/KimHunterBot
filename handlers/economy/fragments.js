@@ -135,10 +135,6 @@ async function showFragmentMenu(interaction) {
                 .setLabel('🎁 교환소')
                 .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
-                .setCustomId('fragment_ranking')
-                .setLabel('🏆 랭킹')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
                 .setCustomId('main_menu')
                 .setLabel('🏠 메인 메뉴')
                 .setStyle(ButtonStyle.Secondary)

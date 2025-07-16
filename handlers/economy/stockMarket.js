@@ -62,10 +62,6 @@ async function showStockMenu(interaction) {
                 new ButtonBuilder()
                     .setCustomId('stock_portfolio')
                     .setLabel('💼 내 포트폴리오')
-                    .setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder()
-                    .setCustomId('stock_rankings')
-                    .setLabel('🏆 랭킹')
                     .setStyle(ButtonStyle.Secondary)
             ),
         new ActionRowBuilder()

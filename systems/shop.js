@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const GAME_GIFS = require('../data/gameGifs');
 const User = require('../models/User');
+const InventoryManager = require('../utils/inventoryManager');
+const ShopTransactionManager = require('../utils/shopTransactionManager');
 
 // 상점 메시지 ID 저장
 const permanentMessageIds = new Map();
@@ -249,9 +251,14 @@ function createShopEmbed(user) {
 
 // 진행도 바 생성
 function createProgressBar(current, max) {
+    // 유효성 검사
+    if (!max || max <= 0) return '░░░░░░░░░░ 0%';
+    if (current < 0) current = 0;
+    if (current > max) current = max;
+    
     const percentage = Math.floor((current / max) * 100);
-    const filled = Math.floor(percentage / 10);
-    const empty = 10 - filled;
+    const filled = Math.max(0, Math.floor(percentage / 10)); // 최소값 0 보장
+    const empty = Math.max(0, 10 - filled); // 최소값 0 보장
     
     return `${'█'.repeat(filled)}${'░'.repeat(empty)} ${percentage}%`;
 }
@@ -301,32 +308,92 @@ function generateItemWithPity(slot, slotData, user) {
     console.log(`- normal: ${(rates.normal * 100).toFixed(2)}%`);
     console.log(`- trash: ${(rates.trash * 100).toFixed(2)}%`);
     
-    // 커스텀 확률로 아이템 생성
-    const customGachaType = {
-        name: `Level ${level} Gacha`,
-        rates: rates
-    };
+    // 유저의 엠블럼 타입 가져오기 (강화 레벨 제거)
+    const userEmblemType = user.emblem ? user.emblem.replace(/\s*\+\d+$/, '') : null;
     
-    // randomItemGenerator의 데이터 구조에 맞게 설정
-    const originalRates = JSON.parse(JSON.stringify(randomItemGenerator.data.gachaRates));
-    randomItemGenerator.data.gachaRates['custom'] = customGachaType;
+    // 디버그: 엠블럼 확인
+    if (userEmblemType) {
+        console.log(`[generateItemWithPity] 유저 ${user.nickname}의 엠블럼: ${userEmblemType}`);
+    } else {
+        console.log(`[generateItemWithPity] 유저 ${user.nickname}의 엠블럼이 없음`);
+    }
     
-    // 부위별 아이템 생성
-    const item = randomItemGenerator.generateItemBySlot(slot, 'custom');
-    
-    // 생성된 아이템 정보 로그
-    console.log(`[generateItemWithPity] 생성된 아이템:`);
-    console.log(`- 이름: ${item.name}`);
-    console.log(`- 등급: ${item.rarity}`);
-    console.log(`- 점수: ${item.score}`);
-    console.log(`- 가격: ${item.price}`);
-    console.log(`- 판매가: ${item.sellPrice}`);
-    console.log(`-------------------`);
-    
-    // 원래 설정 복구
-    delete randomItemGenerator.data.gachaRates['custom'];
-    
-    return item;
+    try {
+        // 커스텀 확률로 아이템 생성
+        const customGachaType = {
+            name: `Level ${level} Gacha`,
+            rates: rates
+        };
+        
+        // randomItemGenerator의 데이터 구조에 맞게 설정
+        randomItemGenerator.data.gachaRates['custom'] = customGachaType;
+        
+        // 부위별 아이템 생성
+        const item = randomItemGenerator.generateItemBySlot(slot, 'custom', userEmblemType);
+        
+        // 원래 설정 복구
+        delete randomItemGenerator.data.gachaRates['custom'];
+        
+        // 필수 필드 추가
+        if (!item.setName) {
+            item.setName = '장비';  // 기본값 설정
+        }
+        if (!item.quantity) {
+            item.quantity = 1;
+        }
+        if (!item.appraisedAt) {
+            item.appraisedAt = new Date();
+        }
+        if (!item.foundAt) {
+            item.foundAt = new Date();
+        }
+        
+        // 생성된 아이템 정보 로그
+        console.log(`[generateItemWithPity] 생성된 아이템:`);
+        console.log(`- 이름: ${item.name}`);
+        console.log(`- 등급: ${item.rarity}`);
+        console.log(`- 점수: ${item.score}`);
+        console.log(`- 가격: ${item.price}`);
+        console.log(`- 판매가: ${item.sellPrice}`);
+        console.log(`-------------------`);
+        
+        return item;
+    } catch (error) {
+        console.error(`[generateItemWithPity] 아이템 생성 중 오류:`, error);
+        
+        // 오류 발생 시 원래 설정 복구
+        delete randomItemGenerator.data.gachaRates['custom'];
+        
+        // 기본 아이템 반환
+        const slotNames = {
+            weapon: '무기',
+            armor: '갑옷', 
+            helmet: '투구',
+            gloves: '장갑',
+            boots: '신발',
+            shield: '방패',
+            accessory: '장신구'
+        };
+        
+        return {
+            id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            name: `평범한 ${slotNames[slot] || '장비'}`,
+            type: slot,
+            rarity: 'normal',
+            color: '#95a5a6',
+            emoji: '⚪',
+            stats: { attack: 10, defense: 10 },
+            description: '평범하지만 쓸만한 아이템입니다.',
+            price: 1000,
+            sellPrice: 300,
+            enhanceLevel: 0,
+            score: 10,
+            setName: '장비',
+            quantity: 1,
+            appraisedAt: new Date(),
+            foundAt: new Date()
+        };
+    }
 }
 
 // 뽑기 애니메이션 프레임
@@ -474,6 +541,23 @@ async function handleShopInteraction(interaction, getUser, saveUser) {
         
         const user = await getUser(interaction.user.id);
         
+        // 상점으로 돌아갈 때도 해당 유저의 모든 뽑기 세션 정리
+        const userId = interaction.user.id;
+        const keysToRemove = [];
+        
+        for (const key of gachaInProgress) {
+            if (key.startsWith(userId)) {
+                keysToRemove.push(key);
+            }
+        }
+        
+        if (keysToRemove.length > 0) {
+            console.log(`[Shop Refresh] ${userId}의 이전 뽑기 세션 정리:`, keysToRemove);
+            for (const key of keysToRemove) {
+                gachaInProgress.delete(key);
+            }
+        }
+        
         if (!user || !user.registered) {
             await interaction.editReply({
                 content: '먼저 회원가입을 해주세요!',
@@ -500,6 +584,25 @@ async function handleShopInteraction(interaction, getUser, saveUser) {
         
         const selectedValue = interaction.values[0];
         const user = await getUser(interaction.user.id);
+        
+        // 상점 메뉴를 새로 열 때 해당 유저의 모든 뽑기 세션 정리
+        const userId = interaction.user.id;
+        const keysToRemove = [];
+        
+        // 해당 유저의 모든 뽑기 키 찾기
+        for (const key of gachaInProgress) {
+            if (key.startsWith(userId)) {
+                keysToRemove.push(key);
+            }
+        }
+        
+        // 찾은 키들 제거
+        if (keysToRemove.length > 0) {
+            console.log(`[Shop] ${userId}의 이전 뽑기 세션 정리:`, keysToRemove);
+            for (const key of keysToRemove) {
+                gachaInProgress.delete(key);
+            }
+        }
         
         if (!user || !user.registered) {
             await interaction.editReply({
@@ -621,7 +724,7 @@ async function handleShopInteraction(interaction, getUser, saveUser) {
     // 등급별 판매 확인
     if (interaction.customId.startsWith('confirm_grade_sell_')) {
         const grade = interaction.customId.replace('confirm_grade_sell_', '');
-        await sellSystem.executeGradeSell(interaction, interaction.user.id, grade);
+        await sellSystem.executeGradeSell(interaction, interaction.user.id, grade, true); // isConfirmed = true
         return;
     }
     
@@ -843,8 +946,8 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
         return;
     }
     
-    // 중복 클릭 방지 - 본인의 키만 사용
-    const gachaKey = `${targetUserId || interaction.user.id}_single`; // targetUserId가 있으면 그것을 사용
+    // 중복 클릭 방지 - 슬롯별로 구분
+    const gachaKey = `${targetUserId || interaction.user.id}_single_${selectedSlot}`;
     console.log(`[handleSingleGacha] 처리 시작 - 사용자: ${interaction.user.id}, 키: ${gachaKey}`);
     console.log(`[handleSingleGacha] 현재 진행중인 뽑기:`, Array.from(gachaInProgress));
     
@@ -866,13 +969,13 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
     // 처리 시작 표시
     gachaInProgress.add(gachaKey);
     
-    // 10초 후 자동 해제 (안전장치)
-    setTimeout(() => {
+    // 15초 후 자동 해제 (안전장치) - 느린 네트워크 대응
+    const cleanupTimeout = setTimeout(() => {
         if (gachaInProgress.has(gachaKey)) {
-            console.log(`[handleSingleGacha] 10초 경과 - 자동 해제: ${gachaKey}`);
+            console.log(`[handleSingleGacha] 15초 경과 - 자동 해제: ${gachaKey}`);
             gachaInProgress.delete(gachaKey);
         }
-    }, 10000);
+    }, 15000);
     
     try {
         // 안전한 defer 처리 및 버튼 즉시 비활성화
@@ -913,44 +1016,18 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
             }
         }
         
-        // selectedSlot은 이미 위에서 파싱됨
-        const user = await getUser(interaction.user.id);
+        // 트랜잭션 방식으로 처리
+        const result = await ShopTransactionManager.executeSingleGacha(
+            interaction.user.id,
+            selectedSlot,
+            generateItemWithPity
+        );
         
-        if (!user) {
-            throw new Error('사용자를 찾을 수 없습니다.');
+        if (!result.success) {
+            throw new Error(result.error || '아이템 뽑기에 실패했습니다.');
         }
         
-        const price = 10000;
-        
-        // shopLevels 초기화 확인
-        initializeUserShopLevels(user);
-        
-        if (!user.shopLevels[selectedSlot]) {
-            throw new Error(`상점 레벨 정보가 없습니다: ${selectedSlot}`);
-        }
-        
-        // 골드 확인
-        if (user.gold < price) {
-            throw new Error(`골드가 부족합니다! 현재: ${user.gold}G, 필요: ${price}G`);
-        }
-        
-        // 골드 차감
-        user.gold -= price;
-        
-        // 경험치 증가
-        user.shopLevels[selectedSlot].exp += 1;
-        user.shopLevels[selectedSlot].totalPulls += 1;
-        
-        // 레벨업 체크
-        let leveledUp = false;
-        const requiredExp = getRequiredExp(user.shopLevels[selectedSlot].level);
-        if (user.shopLevels[selectedSlot].exp >= requiredExp && user.shopLevels[selectedSlot].level < 20) {
-            user.shopLevels[selectedSlot].level++;
-            user.shopLevels[selectedSlot].exp -= requiredExp;  // 초과분은 유지
-            leveledUp = true;
-        }
-        
-        await saveUser(user);
+        const { user, item, leveledUp } = result;
         
         // 애니메이션
         const rollingEmbed = new EmbedBuilder()
@@ -966,44 +1043,12 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // 아이템 생성
-        const slotData = user.shopLevels[selectedSlot];
-        const item = generateItemWithPity(selectedSlot, slotData, user);
-        
-        // 바로 인벤토리에 저장
-        // 사용 가능한 슬롯 번호 찾기
-        const usedSlots = new Set(user.inventory.filter(item => item != null).map(item => item.inventorySlot).filter(s => s !== undefined));
-        let newSlot = 0;
-        while (usedSlots.has(newSlot)) {
-            newSlot++;
-        }
-        
-        const inventoryItem = {
-            id: item.id || `random_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-            name: item.name,
-            type: item.type || 'weapon',
-            rarity: item.rarity || 'normal',
-            color: item.color,
-            emoji: item.emoji,
-            stats: item.stats || {},
-            description: item.description,
-            price: item.price || 10000,
-            sellPrice: item.sellPrice || Math.floor((item.price || 10000) * 0.6),
-            enhanceLevel: item.enhanceLevel || 0,
-            score: item.score || 0,
-            setName: '장비',
-            quantity: 1,
-            appraisedAt: new Date(),
-            foundAt: new Date(),
-            inventorySlot: newSlot // 고유한 슬롯 번호 사용
-        };
-        user.inventory.push(inventoryItem);
-        await saveUser(user);
+        // 이미 트랜잭션에서 처리됨
         
         // 결과 표시 (기존 코드 활용)
         const resultEmbed = new EmbedBuilder()
             .setColor(item.color)
-            .setTitle(`${getRarityEmoji(item.rarity)} ${item.rarity.toUpperCase()} 아이템 획듍!`)
+            .setTitle(`${getRarityEmoji(item.rarity)} ${item.rarity.toUpperCase()} 아이템 획득!`)
             .setDescription(`**${item.name}**\n점수: ${item.score}점\n\n✅ 인벤토리에 자동 저장되었습니다!`)
             .addFields(
                 {
@@ -1026,7 +1071,7 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
         if (leveledUp) {
             resultEmbed.addFields({
                 name: '🎉 레벨업!',
-                value: `${SLOT_NAMES[selectedSlot]} 상점이 Lv.${slotData.level}로 상승했습니다!`,
+                value: `${SLOT_NAMES[selectedSlot]} 상점이 Lv.${user.shopLevels[selectedSlot].level}로 상승했습니다!`,
                 inline: false
             });
         }
@@ -1128,16 +1173,15 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
         return;
     }
     
-    // 중복 클릭 방지 - 본인의 키 + 슬롯 정보 포함
-    const gachaKey = `${targetUserId || interaction.user.id}_multi_${selectedSlot}_${Date.now()}`;
+    // 중복 클릭 방지 - 유저별 + 슬롯별로 유일한 키 사용
+    const gachaKey = `${targetUserId || interaction.user.id}_multi_${selectedSlot}`;
     
-    // 같은 유저의 진행중인 뽑기 확인
-    const userGachaKeys = Array.from(gachaInProgress).filter(key => 
-        key.startsWith(`${targetUserId || interaction.user.id}_multi_`)
-    );
+    // 동일한 뽑기가 진행 중인지 확인
+    console.log(`[handleMultiGacha] 처리 시작 - 사용자: ${interaction.user.id}, 키: ${gachaKey}`);
+    console.log(`[handleMultiGacha] 현재 진행중인 뽑기:`, Array.from(gachaInProgress));
     
-    if (userGachaKeys.length > 0) {
-        console.log('[handleMultiGacha] 이미 처리 중인 뽑기입니다:', userGachaKeys);
+    if (gachaInProgress.has(gachaKey)) {
+        console.log('[handleMultiGacha] 이미 처리 중인 뽑기입니다.');
         try {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({
@@ -1163,13 +1207,13 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
     // 처리 시작 표시
     gachaInProgress.add(gachaKey);
     
-    // 30초 후 자동 해제 (안전장치) - 네트워크가 느린 사용자를 위해 시간 연장
-    setTimeout(() => {
+    // 45초 후 자동 해제 (안전장치) - 10회 뽑기는 시간이 더 걸림
+    const cleanupTimeout = setTimeout(() => {
         if (gachaInProgress.has(gachaKey)) {
-            console.log(`[handleMultiGacha] 30초 경과 - 자동 해제: ${gachaKey}`);
+            console.log(`[handleMultiGacha] 45초 경과 - 자동 해제: ${gachaKey}`);
             gachaInProgress.delete(gachaKey);
         }
-    }, 30000);
+    }, 45000);
     
     try {
         // 안전한 defer 처리 및 버튼 즉시 비활성화
@@ -1240,39 +1284,18 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
                 return;
             }
         }
-    // selectedSlot은 이미 위에서 파싱됨
-    let user = await getUser(interaction.user.id);
-    const totalPrice = 90000; // 10% 할인
+    // 트랜잭션 방식으로 처리
+    const result = await ShopTransactionManager.executeMultiGacha(
+        interaction.user.id,
+        selectedSlot,
+        generateItemWithPity
+    );
     
-    // 골드 확인
-    if (user.gold < totalPrice) {
-        throw new Error(`골드가 부족합니다! 현재: ${user.gold}G, 필요: ${totalPrice}G`);
+    if (!result.success) {
+        throw new Error(result.error || '10회 뽑기에 실패했습니다.');
     }
     
-    // 골드 차감
-    const newGold = user.gold - totalPrice;
-    
-    // 경험치 증가 (10회분)
-    const newExp = user.shopLevels[selectedSlot].exp + 10;
-    const newTotalPulls = user.shopLevels[selectedSlot].totalPulls + 10;
-    
-    // 레벨업 체크
-    let levelUps = 0;
-    let currentLevel = user.shopLevels[selectedSlot].level;
-    let currentExp = newExp;
-    
-    while (currentExp >= getRequiredExp(currentLevel) && currentLevel < 20) {
-        const requiredExp = getRequiredExp(currentLevel);
-        currentLevel++;
-        currentExp -= requiredExp;  // 초과분은 유지
-        levelUps++;
-    }
-    
-    // 임시로 메모리에만 업데이트 (실제 저장은 나중에)
-    user.gold = newGold;
-    user.shopLevels[selectedSlot].exp = currentExp;
-    user.shopLevels[selectedSlot].level = currentLevel;
-    user.shopLevels[selectedSlot].totalPulls = newTotalPulls;
+    const { user, items, levelUps } = result;
     
     // 애니메이션
     const rollingEmbed = new EmbedBuilder()
@@ -1299,143 +1322,7 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
         // 실패해도 계속 진행
     }
     
-    // 10개 아이템 생성
-    const items = [];
-    
-    for (let i = 0; i < 10; i++) {
-        try {
-            const slotData = user.shopLevels[selectedSlot];
-            const item = generateItemWithPity(selectedSlot, slotData, user);
-            
-            // 아이템 유효성 검증
-            if (!item || !item.name || !item.type) {
-                console.error(`[handleMultiGacha] 생성된 아이템이 유효하지 않음:`, {
-                    index: i,
-                    item: item,
-                    slot: selectedSlot
-                });
-                throw new Error(`아이템 생성 실패 (인덱스: ${i})`);
-            }
-            
-            items.push(item);
-        } catch (itemError) {
-            console.error(`[handleMultiGacha] 아이템 생성 중 오류 (인덱스 ${i}):`, {
-                error: itemError.message,
-                slot: selectedSlot,
-                index: i
-            });
-            
-            // 아이템 생성 실패 시 기본 아이템으로 대체
-            const fallbackItem = {
-                id: `fallback_${Date.now()}_${i}`,
-                name: `기본 ${selectedSlot}`,
-                type: selectedSlot,
-                rarity: 'normal',
-                color: '#95a5a6',
-                emoji: '⚪',
-                stats: { attack: 10, defense: 10 },
-                description: '아이템 생성 중 오류가 발생하여 기본 아이템으로 대체되었습니다.',
-                price: 1000,
-                sellPrice: 300,
-                enhanceLevel: 0,
-                score: 10,
-                setName: '장비',
-                quantity: 1,
-                appraisedAt: new Date(),
-                foundAt: new Date(),
-                inventorySlot: i + 1000 // 충돌 방지를 위한 높은 번호
-            };
-            
-            items.push(fallbackItem);
-        }
-    }
-    
-    // 한 번에 저장하여 버전 충돌 최소화
-    try {
-        // MongoDB 트랜잭션 방식으로 안전하게 저장
-        const updateResult = await User.findOneAndUpdate(
-            { discordId: user.discordId },
-            {
-                $push: { 
-                    inventory: { 
-                        $each: items.map((item, index) => {
-                            // 사용 가능한 슬롯 번호 찾기
-                            let newSlot = 0;
-                            const existingSlots = new Set(user.inventory.map(i => i?.inventorySlot).filter(s => s !== undefined));
-                            while (existingSlots.has(newSlot)) {
-                                newSlot++;
-                            }
-                            existingSlots.add(newSlot);
-                            
-                            return {
-                                id: item.id || `random_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-                                name: item.name,
-                                type: item.type || 'weapon',
-                                rarity: item.rarity || 'normal',
-                                color: item.color,
-                                emoji: item.emoji,
-                                stats: item.stats || {},
-                                description: item.description,
-                                price: item.price || 10000,
-                                sellPrice: item.sellPrice || Math.floor((item.price || 10000) * 0.6),
-                                enhanceLevel: item.enhanceLevel || 0,
-                                score: item.score || 0,
-                                setName: '장비',
-                                quantity: 1,
-                                appraisedAt: new Date(),
-                                foundAt: new Date(),
-                                inventorySlot: newSlot
-                            };
-                        })
-                    }
-                },
-                $set: {
-                    gold: user.gold,
-                    'shopLevels': user.shopLevels
-                }
-            },
-            { 
-                new: true,
-                runValidators: true
-            }
-        );
-        
-        if (!updateResult) {
-            throw new Error('사용자 업데이트 실패');
-        }
-        
-        user = updateResult; // 참조 업데이트
-    } catch (error) {
-        console.error('[handleMultiGacha] 인벤토리 저장 실패:', {
-            error: error.message,
-            stack: error.stack,
-            userId: user.discordId,
-            inventoryLength: user.inventory.length,
-            itemsGenerated: items.length,
-            errorCode: error.code,
-            errorName: error.name
-        });
-        
-        // MongoDB 관련 에러 메시지 상세 출력
-        if (error.name === 'ValidationError') {
-            console.error('[handleMultiGacha] 유효성 검증 오류:', error.errors);
-        }
-        
-        // 저장 실패 시 진행 중 플래그 해제
-        gachaInProgress.delete(gachaKey);
-        
-        // 사용자에게 오류 알림
-        try {
-            await interaction.followUp({
-                content: `❌ 아이템 저장 중 오류가 발생했습니다.\n오류 내용: ${error.message}\n잠시 후 다시 시도해주세요.`,
-                flags: 64
-            });
-        } catch (e) {
-            console.error('[handleMultiGacha] 오류 메시지 전송 실패:', e.message);
-        }
-        
-        return; // 더 이상 진행하지 않음
-    }
+    // 이미 트랜잭션에서 처리됨
     
     await new Promise(resolve => setTimeout(resolve, 3000));
     
@@ -1494,8 +1381,8 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
             }
         } else if (i.customId.startsWith('retry_multi')) {
             try {
-                // 컬렉터를 먼저 정지하여 중복 이벤트 방지
-                collector.stop();
+                // 컬렉터를 먼저 정지하여 중복 이벤트 방지 (retry_initiated 이유로 종료)
+                collector.stop('retry_initiated');
                 
                 // defer 즉시 처리
                 if (!i.deferred && !i.replied) {
@@ -1591,14 +1478,18 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
     
     // 컬렉터 종료 시 버튼 비활성화
     collector.on('end', async (collected, reason) => {
-        // 처리 완료 표시
-        gachaInProgress.delete(gachaKey);
-        
-        // retry_initiated로 종료된 경우는 버튼을 비활성화하지 않음
+        // retry_initiated로 종료된 경우는 키를 제거하지 않음
         if (reason === 'retry_initiated') {
-            console.log('[collector.end] retry로 인한 종료 - 버튼 비활성화 건너뜀');
+            console.log('[collector.end] retry로 인한 종료 - 키 유지, 버튼 비활성화 건너뜀');
+            // retry 시에는 gachaInProgress 키를 유지하지 않고 즉시 제거
+            // 새로운 뽑기가 시작될 때 새로운 키로 등록되도록 함
+            gachaInProgress.delete(gachaKey);
             return;
         }
+        
+        // 다른 이유로 종료된 경우 처리 완료 표시
+        console.log(`[handleMultiGacha] 컬렉터 종료 - 사유: ${reason}, 키 제거: ${gachaKey}`);
+        gachaInProgress.delete(gachaKey);
         
         try {
             const disabledButtons = new ActionRowBuilder()
@@ -1644,6 +1535,9 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
         console.error('[handleMultiGacha] 처리 중 오류:', error);
         // 에러 발생 시에도 처리 완료 표시
         gachaInProgress.delete(gachaKey);
+        if (typeof cleanupTimeout !== 'undefined') {
+            clearTimeout(cleanupTimeout);
+        }
         
         try {
             // 에러 발생 시 버튼을 다시 활성화
@@ -1660,6 +1554,11 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
         } catch (replyError) {
             console.error('[handleMultiGacha] 응답 전송 실패:', replyError);
         }
+    } finally {
+        // 타임아웃 정리
+        if (typeof cleanupTimeout !== 'undefined') {
+            clearTimeout(cleanupTimeout);
+        }
     }
 }
 
@@ -1671,9 +1570,31 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
     
     // 아이템 이름 분석
     const nameParts = item.name.split(' ');
-    const prefix = nameParts[0] || '';
-    const adjective = nameParts[1] || '';
-    const itemName = nameParts.slice(2).join(' ') || '';
+    // nameRarities가 있으면 그것을 사용, 없으면 기본 파싱
+    let prefix, adjective, itemName;
+    
+    if (item.nameRarities) {
+        // nameRarities에서 정확한 이름 구성 가져오기
+        prefix = nameParts[0] || '';
+        adjective = nameParts[1] || '';
+        itemName = nameParts.slice(2).join(' ') || '';
+    } else {
+        // 기본 파싱
+        prefix = nameParts[0] || '';
+        adjective = nameParts[1] || '';
+        itemName = nameParts.slice(2).join(' ') || '';
+    }
+    
+    // 아이템 이름이 비어있는 경우 디버그
+    if (!itemName && nameParts.length >= 2) {
+        console.log('[showMultiGachaResultPage] 아이템 이름 파싱 문제:', {
+            fullName: item.name,
+            nameParts: nameParts,
+            prefix: prefix,
+            adjective: adjective,
+            itemName: itemName
+        });
+    }
     
     // 이미지와 동일한 형식의 결과 표시
     const resultEmbed = new EmbedBuilder()
@@ -1721,8 +1642,8 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
     let topStatsText = '';
     sortedStats.forEach(([key, value]) => {
         const statNames = {
-            attack: '힘',
-            defense: '방어',
+            attack: '공격력',
+            defense: '방어력',
             strength: '힘',
             agility: '민첩',
             intelligence: '지능',
@@ -1751,8 +1672,8 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
     const allStats = Object.entries(item.stats || {})
         .map(([key, value]) => {
             const statNames = {
-                attack: '힘',
-                defense: '방어',
+                attack: '공격력',
+                defense: '방어력',
                 strength: '힘',
                 agility: '민첩',
                 intelligence: '지능',
@@ -1779,7 +1700,7 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
         name: '🏪 상점 정보',
         value: `${SLOT_NAMES[selectedSlot]} 상점 Lv.${slotData.level}\n` +
                `${shopExpBar} ${Math.floor((slotData.exp / getRequiredExp(slotData.level)) * 100)}%\n` +
-               `경험치: ${slotData.exp}/${getRequiredExp(slotData.level)} | 총 뽑기: ${slotData.totalPulls}회`,
+               `총 뽑기: ${slotData.totalPulls}회`,
         inline: false
     });
     
@@ -2115,6 +2036,10 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
             new ButtonBuilder()
                 .setCustomId('sell_all_trash')
                 .setLabel('🟫 낮은등급일괄판매')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('sell_all_unique')
+                .setLabel('💎 유니크이하일괄판매')
                 .setStyle(ButtonStyle.Danger),
             new ButtonBuilder()
                 .setCustomId('shop_refresh')
@@ -2590,7 +2515,7 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
         }
 
         // 일괄 판매
-        else if (i.customId === 'sell_all_normal' || i.customId === 'sell_all_trash') {
+        else if (i.customId === 'sell_all_normal' || i.customId === 'sell_all_trash' || i.customId === 'sell_all_unique') {
             try {
                 // 안전한 defer 처리
                 if (!i.deferred && !i.replied) {
@@ -2605,8 +2530,13 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
                     }
                 }
                 
-                // trash와 normal 등급 모두 판매
-                const targetRarities = ['trash', 'normal'];
+                // 판매 대상 등급 설정
+                let targetRarities = [];
+                if (i.customId === 'sell_all_trash') {
+                    targetRarities = ['trash', 'normal'];
+                } else if (i.customId === 'sell_all_unique') {
+                    targetRarities = ['trash', 'normal', 'rare', 'epic', 'unique'];
+                }
                 let totalSellPrice = 0;
                 let soldCount = 0;
 

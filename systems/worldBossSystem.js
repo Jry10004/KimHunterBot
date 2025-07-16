@@ -3,19 +3,29 @@ const User = require('../models/User');
 const BOSS_SYSTEM = require('../data/bossSystem');
 const BOSS_FRAGMENTS = require('../data/bossFragments');
 const buffSystem = require('../handlers/common/buffSystem');
-const { calculateBossRaidDamage } = require('../handlers/common/damageCalculator');
+const { 
+    calculateBossRaidDamage,
+    applyWarriorDamageReduction,
+    calculateDefenderShield,
+    calculateDefenderDamageReduction,
+    calculateDefenderCounterAttack,
+    calculateThiefDodgeCounter
+} = require('../handlers/common/damageCalculator');
 const gameConfig = require('../config/gameConfig');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../utils/levelCapHelper');
+const path = require('path');
 
 class WorldBossSystem {
     constructor() {
         this.activeWorldBoss = null;
-        this.lastSpawnTime = 0;
+        this.lastSpawnTime = this.loadLastSpawnTime(); // 마지막 소환 시간 불러오기
         this.SPAWN_CHANNEL_ID = '1391112529828384870';
-        this.SPAWN_COOLDOWN = gameConfig.bossRaid.spawnInterval || 3 * 60 * 60 * 1000; // gameConfig에서 가져오기, 기본값 3시간
-        this.MAX_PARTICIPANTS = gameConfig.bossRaid.maxParticipants || 20; // gameConfig에서 가져오기, 기본값 20명
-        this.MIN_PARTICIPANTS = gameConfig.bossRaid.minParticipants || 2; // gameConfig에서 가져오기, 기본값 2명
-        this.AUTO_START_TIMER = null; // 자동 시작 타이머
-        this.READY_PARTICIPANTS = new Set(); // 준비 완료한 참가자 목록
+        this.SPAWN_COOLDOWN = gameConfig.bossRaid.spawnInterval || 2 * 60 * 60 * 1000; // 2시간으로 변경
+        this.MAX_PARTICIPANTS = gameConfig.bossRaid.maxParticipants || 20;
+        this.MIN_PARTICIPANTS = gameConfig.bossRaid.minParticipants || 2;
+        this.AUTO_START_TIMER = null;
+        this.READY_PARTICIPANTS = new Set();
+        this.STATE_FILE = path.join(__dirname, '..', 'data', 'bossState.json');
     }
 
     // 캐릭터의 실제 총 공격력 계산
@@ -97,7 +107,18 @@ class WorldBossSystem {
     // 보스 소환 가능 여부 체크
     canSpawnBoss() {
         const now = Date.now();
-        return !this.activeWorldBoss && (now - this.lastSpawnTime) >= this.SPAWN_COOLDOWN;
+        const timeSinceLastSpawn = now - this.lastSpawnTime;
+        const canSpawn = !this.activeWorldBoss && timeSinceLastSpawn >= this.SPAWN_COOLDOWN;
+        
+        console.log('[Boss Debug] canSpawnBoss check:', {
+            hasActiveBoss: !!this.activeWorldBoss,
+            lastSpawnTime: new Date(this.lastSpawnTime).toISOString(),
+            timeSinceLastSpawn: Math.floor(timeSinceLastSpawn / 1000 / 60) + ' minutes',
+            spawnCooldown: Math.floor(this.SPAWN_COOLDOWN / 1000 / 60) + ' minutes',
+            canSpawn: canSpawn
+        });
+        
+        return canSpawn;
     }
 
     // 랜덤 보스 소환
@@ -202,6 +223,7 @@ class WorldBossSystem {
 
             this.activeWorldBoss.messageId = message.id;
             this.lastSpawnTime = Date.now();
+        this.saveLastSpawnTime(); // 소환 시간 저장
 
             console.log(`[Boss] ${randomBoss.name} 소환됨!`);
             
@@ -239,10 +261,11 @@ class WorldBossSystem {
 
     // 대기열 나가기
     async leaveBossRaid(interaction) {
+        // interactionHandler에서 이미 deferUpdate를 했으므로 defer 스킵
+        
         if (!this.activeWorldBoss) {
-            return interaction.reply({
-                content: '❌ 현재 진행중인 보스가 없습니다!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 현재 진행중인 보스가 없습니다!'
             });
         }
 
@@ -251,9 +274,8 @@ class WorldBossSystem {
         // 참가자 목록에서 제거
         const participantIndex = this.activeWorldBoss.participants.findIndex(p => p.userId === userId);
         if (participantIndex === -1) {
-            return interaction.reply({
-                content: '❌ 레이드에 참가하지 않았습니다!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 레이드에 참가하지 않았습니다!'
             });
         }
 
@@ -272,9 +294,8 @@ class WorldBossSystem {
         // 임베드 업데이트
         await this.updateBossEmbed(interaction);
 
-        await interaction.reply({
-            content: `✅ **${interaction.user.username}**님이 보스 레이드 대기열에서 나갔습니다. (${this.activeWorldBoss.participants.length}/${this.MAX_PARTICIPANTS})`,
-            ephemeral: false
+        await interaction.editReply({
+            content: `✅ **${interaction.user.username}**님이 보스 레이드 대기열에서 나갔습니다. (${this.activeWorldBoss.participants.length}/${this.MAX_PARTICIPANTS})`
         });
     }
 
@@ -283,10 +304,11 @@ class WorldBossSystem {
         console.log('[Boss Debug] joinBossRaid - activeWorldBoss:', this.activeWorldBoss ? 'exists' : 'null');
         console.log('[Boss Debug] joinBossRaid - this instance:', this.constructor.name);
         
+        // interactionHandler에서 이미 deferUpdate를 했으므로 defer 스킵
+        
         if (!this.activeWorldBoss) {
-            return interaction.reply({
-                content: '❌ 현재 진행중인 보스가 없습니다!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 현재 진행중인 보스가 없습니다!'
             });
         }
 
@@ -294,34 +316,30 @@ class WorldBossSystem {
         
         // 이미 참가했는지 확인
         if (this.activeWorldBoss.participants.some(p => p.userId === userId)) {
-            return interaction.reply({
-                content: '❌ 이미 레이드에 참가하셨습니다!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 이미 레이드에 참가하셨습니다!'
             });
         }
 
         // 최대 인원 확인
         if (this.activeWorldBoss.participants.length >= this.MAX_PARTICIPANTS) {
-            return interaction.reply({
-                content: `❌ 레이드 참가 인원이 가득 찼습니다! (${this.MAX_PARTICIPANTS}/${this.MAX_PARTICIPANTS})`,
-                flags: 64
+            return interaction.editReply({
+                content: `❌ 레이드 참가 인원이 가득 찼습니다! (${this.MAX_PARTICIPANTS}/${this.MAX_PARTICIPANTS})`
             });
         }
 
         // 유저 정보 확인
         const user = await User.findOne({ discordId: userId });
         if (!user) {
-            return interaction.reply({
-                content: '❌ 먼저 회원가입을 해주세요!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 먼저 회원가입을 해주세요!'
             });
         }
 
         // 레벨 확인
         if (user.level < this.activeWorldBoss.boss.requiredLevel) {
-            return interaction.reply({
-                content: `❌ 레벨 ${this.activeWorldBoss.boss.requiredLevel} 이상이 되어야 참가할 수 있습니다!`,
-                flags: 64
+            return interaction.editReply({
+                content: `❌ 레벨 ${this.activeWorldBoss.boss.requiredLevel} 이상이 되어야 참가할 수 있습니다!`
             });
         }
 
@@ -361,9 +379,8 @@ class WorldBossSystem {
         // 임베드 업데이트
         await this.updateBossEmbed(interaction);
 
-        await interaction.reply({
-            content: `✅ **${interaction.user.username}**님이 보스 레이드에 참가했습니다! (${this.activeWorldBoss.participants.length}/${this.MAX_PARTICIPANTS})`,
-            ephemeral: false
+        await interaction.editReply({
+            content: `✅ **${interaction.user.username}**님이 보스 레이드에 참가했습니다! (${this.activeWorldBoss.participants.length}/${this.MAX_PARTICIPANTS})`
         });
 
         // 30초 동안 새 참가자가 없으면 1분 카운트다운 시작
@@ -422,10 +439,11 @@ class WorldBossSystem {
 
     // 준비 완료 처리
     async setPlayerReady(interaction) {
+        // interactionHandler에서 이미 deferUpdate를 했으므로 defer 스킵
+        
         if (!this.activeWorldBoss) {
-            return interaction.reply({
-                content: '❌ 현재 진행중인 보스가 없습니다!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 현재 진행중인 보스가 없습니다!'
             });
         }
 
@@ -434,26 +452,23 @@ class WorldBossSystem {
         // 참가자인지 확인
         const participant = this.activeWorldBoss.participants.find(p => p.userId === userId);
         if (!participant) {
-            return interaction.reply({
-                content: '❌ 레이드에 참가하지 않았습니다!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 레이드에 참가하지 않았습니다!'
             });
         }
 
         // 이미 준비 완료 상태인지 확인
         if (this.READY_PARTICIPANTS.has(userId)) {
-            return interaction.reply({
-                content: '❌ 이미 준비 완료 상태입니다!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ 이미 준비 완료 상태입니다!'
             });
         }
 
         // 준비 상태로 설정
         this.READY_PARTICIPANTS.add(userId);
 
-        await interaction.reply({
-            content: `✅ **${interaction.user.username}**님이 준비 완료했습니다! (${this.READY_PARTICIPANTS.size}/${this.activeWorldBoss.participants.length})`,
-            ephemeral: false
+        await interaction.editReply({
+            content: `✅ **${interaction.user.username}**님이 준비 완료했습니다! (${this.READY_PARTICIPANTS.size}/${this.activeWorldBoss.participants.length})`
         });
 
         // 모든 참가자가 준비 완료했는지 확인
@@ -599,7 +614,7 @@ class WorldBossSystem {
                     .setCustomId('world_boss_join')
                     .setLabel('⚔️ 보스 레이드 참가')
                     .setStyle(ButtonStyle.Danger)
-                    .setEmoji('🗿')
+                    .setEmoji('⚔️')
                     .setDisabled(this.activeWorldBoss.participants.length >= this.MAX_PARTICIPANTS),
                 new ButtonBuilder()
                     .setCustomId('world_boss_leave')
@@ -660,7 +675,7 @@ class WorldBossSystem {
                     inline: true
                 },
                 {
-                    name: '🎯 참가 조겄',
+                    name: '🎯 참가 조건',
                     value: `\`\`\`최소 레벨: ${boss.requiredLevel}\n최소 인원: ${this.MIN_PARTICIPANTS}명\n최대 인원: ${this.MAX_PARTICIPANTS}명\n선착순 모집\`\`\``,
                     inline: true
                 },
@@ -726,15 +741,31 @@ class WorldBossSystem {
                 ));
         }
 
-        await interaction.message.edit({
-            embeds: [updatedEmbed],
-            components: buttons
-        });
+        // 메시지 업데이트
+        try {
+            if (interaction.message) {
+                // 버튼 인터랙션에서 호출된 경우
+                await interaction.message.edit({
+                    embeds: [updatedEmbed],
+                    components: buttons
+                });
+            } else if (this.activeWorldBoss.messageId && this.activeWorldBoss.channelId) {
+                // 보스소환 명령어에서 호출된 경우
+                const channel = await interaction.client.channels.fetch(this.activeWorldBoss.channelId);
+                const message = await channel.messages.fetch(this.activeWorldBoss.messageId);
+                await message.edit({
+                    embeds: [updatedEmbed],
+                    components: buttons
+                });
+            }
+        } catch (error) {
+            console.error('[Boss] 임베드 업데이트 오류:', error);
+        }
     }
 
     // 보스 레이드 시작
     async startBossRaid(client) {
-        if (!this.activeWorldBoss || this.activeWorldBoss.participants.length === 0) {
+        if (!this.activeWorldBoss || !this.activeWorldBoss.participants || this.activeWorldBoss.participants.length === 0) {
             console.error('[Boss] No active boss or participants');
             return;
         }
@@ -780,8 +811,14 @@ class WorldBossSystem {
             return;
         }
 
-        await channel.send('⚔️ **보스 레이드가 시작됩니다!**');
+        // 메시지 중복 방지 - 아래 임베드에서 한번만 표시
 
+        // activeWorldBoss가 중간에 null이 되는 경우 체크
+        if (!this.activeWorldBoss || !this.activeWorldBoss.boss) {
+            console.error('[Boss] ActiveWorldBoss became null during raid start');
+            return;
+        }
+        
         // 전투 상황 임베드 초기 생성
         const boss = this.activeWorldBoss.boss;
         const battleEmbed = new EmbedBuilder()
@@ -831,7 +868,7 @@ class WorldBossSystem {
             }
         });
 
-        while (this.activeWorldBoss.currentHp > 0 && turn < 50 && !allDead) { // 최대 50턴
+        while (this.activeWorldBoss && this.activeWorldBoss.currentHp > 0 && turn < 50 && !allDead) { // 최대 50턴
             turn++;
             
             // 각 참가자의 공격
@@ -884,9 +921,26 @@ class WorldBossSystem {
                     battleLog.push(`✨ **${participant.username}**의 크리티컬 확률 증가!`);
                 }
 
-                const attackMessage = damageResult.isCritical 
+                // 직업별 특수 효과 처리
+                let attackMessage = damageResult.isCritical 
                     ? `⚔️ **${participant.username}**의 치명타! 💥 **${damage.toLocaleString()}** 데미지!`
                     : `⚔️ **${participant.username}**의 공격! 💥 ${damage.toLocaleString()} 데미지!`;
+                
+                // 궁수 2연타
+                if (damageResult.hasDoubleHit) {
+                    attackMessage += ` 🏹 2연타!`;
+                }
+                
+                // 도적 추가 공격
+                if (damageResult.hasExtraAttack) {
+                    attackMessage += ` 🗡️ 그림자 공격!`;
+                }
+                
+                // 마법사 원소 데미지
+                if (damageResult.elementalDamage > 0) {
+                    attackMessage += ` 🔥 원소 폭발 +${damageResult.elementalDamage}!`;
+                }
+                
                 battleLog.push(attackMessage);
 
                 if (this.activeWorldBoss.currentHp <= 0) {
@@ -906,12 +960,30 @@ class WorldBossSystem {
                     
                     if (attackType < 0.6) { // 60% - 단일 대상 공격
                         const target = aliveParticipants[Math.floor(Math.random() * aliveParticipants.length)];
-                        const rawDamage = Math.floor(boss.attack * (0.8 + Math.random() * 0.4));
+                        let rawDamage = Math.floor(boss.attack * (0.8 + Math.random() * 0.4));
                         
                         // 방어력 계산 (장비 포함 총 방어력)
                         const totalDefense = this.calculateTotalDefense(target.user);
                         const damageReduction = totalDefense / (totalDefense + 100); // 최대 50% 감소
-                        const bossDamage = Math.floor(rawDamage * (1 - damageReduction * 0.5));
+                        let bossDamage = Math.floor(rawDamage * (1 - damageReduction * 0.5));
+                        
+                        // 수호자 보호막 적용
+                        const shieldReduction = calculateDefenderShield(target.user);
+                        const baseReduction = calculateDefenderDamageReduction(target.user);
+                        const totalReduction = shieldReduction + baseReduction;
+                        
+                        if (totalReduction > 0) {
+                            const absorbed = Math.floor(bossDamage * totalReduction);
+                            bossDamage -= absorbed;
+                            battleLog.push(`🛡️ **${target.username}**의 보호막이 ${absorbed} 피해를 흡수!`);
+                        }
+                        
+                        // 전사 불굴의 의지 체크
+                        const warriorReduction = applyWarriorDamageReduction(bossDamage, target.user);
+                        if (warriorReduction.reduced) {
+                            bossDamage = warriorReduction.damage;
+                            battleLog.push(`⚔️ **${target.username}**의 불굴의 의지! 데미지 -${warriorReduction.reductionAmount}`);
+                        }
                         
                         target.currentHp -= bossDamage;
                         
@@ -922,6 +994,13 @@ class WorldBossSystem {
                             battleLog.push(`💀 ${boss.name}의 공격! **${target.username}**에게 ${bossDamage} 데미지! **사망!**`);
                         } else {
                             battleLog.push(`👹 ${boss.name}의 공격! **${target.username}**에게 ${bossDamage} 데미지! (HP: ${target.currentHp}/${target.maxHp})`);
+                            
+                            // 수호자 반격 체크
+                            const counterAttack = calculateDefenderCounterAttack(bossDamage, target.user);
+                            if (counterAttack.hasCounter && target.currentHp > 0) {
+                                this.activeWorldBoss.currentHp = Math.max(0, this.activeWorldBoss.currentHp - counterAttack.counterDamage);
+                                battleLog.push(`🛡️ **${target.username}**의 반격! ${counterAttack.counterDamage} 데미지!`);
+                            }
                         }
                     } else if (attackType < 0.85) { // 25% - 강력한 단일 공격
                         const target = aliveParticipants[Math.floor(Math.random() * aliveParticipants.length)];
@@ -1134,11 +1213,39 @@ class WorldBossSystem {
                 console.log(`[WorldBoss] ${user.nickname || user.discordId} - 특수 효과 적용 후 골드: ${goldReward}, 경험치: ${expReward}`);
                 
                 user.gold += goldReward;
-                user.exp += expReward;
+                // 만렙 체크 후 경험치 추가
+                let actualExpGained = 0;
+                if (user.level < MAX_LEVEL) {
+                    user.exp += expReward;
+                    actualExpGained = expReward;
+                } else {
+                    actualExpGained = 0; // 만렙인 경우 경험치 0
+                    expReward = 0; // 표시용으로도 0 설정
+                }
                 
                 // 레벨업 체크
                 const { checkAndProcessLevelUp } = require('../handlers/common/levelUp');
                 const levelUpResult = await checkAndProcessLevelUp(user);
+                
+                // 통합 랭킹 데이터 업데이트
+                if (!user.rankingStats) user.rankingStats = {};
+                if (!user.rankingStats.boss) {
+                    user.rankingStats.boss = {
+                        totalDamage: 0,
+                        totalKills: 0,
+                        maxDamage: 0,
+                        lastUpdated: null
+                    };
+                }
+                
+                // 보스 토벌 통계 업데이트
+                user.rankingStats.boss.totalDamage = (user.rankingStats.boss.totalDamage || 0) + (participant.damage || 0);
+                user.rankingStats.boss.totalKills = (user.rankingStats.boss.totalKills || 0) + 1;
+                user.rankingStats.boss.maxDamage = Math.max(
+                    user.rankingStats.boss.maxDamage || 0,
+                    participant.damage || 0
+                );
+                user.rankingStats.boss.lastUpdated = new Date();
                 
                 await user.save();
                 
@@ -1260,15 +1367,15 @@ class WorldBossSystem {
 
                 // 보상 상세
                 let rewardDetailText = '';
-                rewardDetailText += `${reward.tokens}\n`;
+                rewardDetailText += `💎 **엠블럼강화조각**: ${reward.tokens}\n`;
                 rewardDetailText += `💰 **골드**: +${formatNumber(reward.gold)}G`;
                 if (reward.goldBonus > 0) {
-                    rewardDetailText += ` (+${reward.goldBonus}% 보너스)`;
+                    rewardDetailText += ` (기본 ${formatNumber(Math.floor(reward.gold / (1 + reward.goldBonus/100)))}G + ${reward.goldBonus}% 보너스)`;
                 }
                 rewardDetailText += `\n`;
-                rewardDetailText += `⭐ **경험치**: +${reward.exp} EXP`;
+                rewardDetailText += `⭐ **경험치**: +${formatNumber(reward.exp)} EXP`;
                 if (reward.expBonus > 0) {
-                    rewardDetailText += ` (+${reward.expBonus}% 보너스)`;
+                    rewardDetailText += ` (기본 ${Math.floor(reward.exp / (1 + reward.expBonus/100))} + ${reward.expBonus}% 보너스)`;
                 }
                 
                 if (reward.title) {
@@ -1583,10 +1690,47 @@ class WorldBossSystem {
         }
     }
 
+    // 마지막 소환 시간 불러오기
+    loadLastSpawnTime() {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const stateFile = path.join(__dirname, '..', 'data', 'bossState.json');
+            
+            if (fs.existsSync(stateFile)) {
+                const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+                console.log('[Boss] 마지막 소환 시간 불러옴:', new Date(state.lastSpawnTime));
+                return state.lastSpawnTime || 0;
+            }
+        } catch (error) {
+            console.error('[Boss] 상태 파일 로드 오류:', error);
+        }
+        return 0;
+    }
+    
+    // 마지막 소환 시간 저장
+    saveLastSpawnTime() {
+        try {
+            const fs = require('fs');
+            const state = { lastSpawnTime: this.lastSpawnTime };
+            fs.writeFileSync(this.STATE_FILE, JSON.stringify(state, null, 2));
+            console.log('[Boss] 마지막 소환 시간 저장:', new Date(this.lastSpawnTime));
+        } catch (error) {
+            console.error('[Boss] 상태 파일 저장 오류:', error);
+        }
+    }
+    
     // 자동 소환 스케줄러
     startAutoSpawn(client) {
         // 시작 시 채널 정리
         this.cleanupOldBossMessages(client);
+        
+        // 다음 소환 시간 계산
+        const now = Date.now();
+        const timeSinceLastSpawn = now - this.lastSpawnTime;
+        const timeUntilNextSpawn = Math.max(0, this.SPAWN_COOLDOWN - timeSinceLastSpawn);
+        
+        console.log(`[Boss] 다음 보스 소환까지: ${Math.round(timeUntilNextSpawn / 60000)}분`);
         
         // 1분마다 체크
         setInterval(async () => {

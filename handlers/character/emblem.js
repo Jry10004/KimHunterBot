@@ -186,33 +186,42 @@ async function showEmblemEnhance(interaction) {
         });
     }
     
-    // 엠블럼 타입 찾기
+    // 엠블럼 타입 찾기 - 강화 레벨 제거
+    const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, ''); // "+숫자" 제거
     const emblemType = Object.keys(EMBLEMS).find(type => 
-        EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+        EMBLEMS[type].emblems.some(e => e.name === baseEmblemName)
     );
     
     const { createEmblemEnhanceEmbed, createEmblemEnhanceButtons } = require('../../systems/emblemEnhancement');
     
     const embed = createEmblemEnhanceEmbed(user, emblemType);
     const hasStones = user.items?.emblemEnhanceStone > 0;
-    const buttons = createEmblemEnhanceButtons(hasStones);
+    const buttons = createEmblemEnhanceButtons(hasStones, user);
     
-    // 뒤로가기 버튼 추가
-    const backButton = new ActionRowBuilder()
+    // 강화석 구매 및 뒤로가기 버튼
+    const shopAndBackButton = new ActionRowBuilder()
         .addComponents(
+            new ButtonBuilder()
+                .setCustomId('emblem_shop_stone')
+                .setLabel('💎 강화석 구매')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('🛒'),
             new ButtonBuilder()
                 .setCustomId('emblem')
                 .setLabel('◀️ 엠블럼으로 돌아가기')
                 .setStyle(ButtonStyle.Secondary)
         );
     
+    // 버튼 배열 처리 (createEmblemEnhanceButtons가 배열을 반환하는 경우)
+    const buttonRows = Array.isArray(buttons) ? buttons : [buttons];
+    
     return await interaction.editReply({
         embeds: [embed],
-        components: [buttons, backButton]
+        components: [...buttonRows, shopAndBackButton]
     });
 }
 
-// 엠블럼 강화 시도
+// 엠블럼 강화 시도 (실제 강화 처리 - tryEnhanceEmblem에서 호출됨)
 async function enhanceEmblem(interaction) {
     await interaction.deferUpdate().catch(() => {});
     
@@ -224,9 +233,10 @@ async function enhanceEmblem(interaction) {
         });
     }
     
-    // 엠블럼 타입 찾기
+    // 엠블럼 타입 찾기 - 강화 레벨 제거
+    const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, ''); // "+숫자" 제거
     const emblemType = Object.keys(EMBLEMS).find(type => 
-        EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+        EMBLEMS[type].emblems.some(e => e.name === baseEmblemName)
     );
     
     console.log(`[엠블럼 강화] 유저 엠블럼: ${user.emblem}, 찾은 타입: ${emblemType}`);
@@ -318,8 +328,10 @@ async function handleEmblemPurchase(interaction) {
     // 기존 엠블럼 확인
     let oldEmblemName = null;
     if (user.emblem) {
+        // 강화 레벨 제거하고 기본 이름으로 타입 확인
+        const currentBaseName = user.emblem.replace(/\s*\+\d+$/, ''); // "+숫자" 제거
         const currentType = Object.keys(EMBLEMS).find(type => 
-            EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+            EMBLEMS[type].emblems.some(e => e.name === currentBaseName)
         );
         
         if (currentType !== categoryKey) {
@@ -329,8 +341,10 @@ async function handleEmblemPurchase(interaction) {
             });
         }
         
-        // 순차 진화 확인
-        const currentIndex = category.emblems.findIndex(e => e.name === user.emblem);
+        // 순차 진화 확인 - 기본 이름으로 비교 (강화 레벨 제거)
+        // currentBaseName은 이미 위에서 선언됨
+        const currentIndex = category.emblems.findIndex(e => e.name === currentBaseName);
+        
         if (emblemIndex !== currentIndex + 1) {
             return await interaction.followUp({
                 content: '❌ 엠블럼은 순서대로 진화해야 합니다!',
@@ -349,7 +363,6 @@ async function handleEmblemPurchase(interaction) {
     
     // 골드 차감 및 엠블럼 적용
     user.gold -= emblem.price;
-    user.emblem = emblem.name;
     
     // 엠블럼 강화 데이터 초기화 (첫 구매시만, 업그레이드시는 유지)
     if (!user.emblemEnhancement) {
@@ -361,7 +374,13 @@ async function handleEmblemPurchase(interaction) {
             maxLevel: 0
         };
     }
-    // 강화 수치는 전승됨
+    
+    // 강화 레벨이 있으면 새 엠블럼에도 적용
+    if (user.emblemEnhancement.level > 0) {
+        user.emblem = `${emblem.name} +${user.emblemEnhancement.level}`;
+    } else {
+        user.emblem = emblem.name;
+    }
     
     // 유저 스탯에 엠블럼 강화 스탯 적용
     await applyEmblemStats(user, categoryKey);
@@ -524,11 +543,92 @@ async function saveEmblemData(userId, data) {
     }
 }
 
+// 주문서를 사용한 엠블럼 강화
+async function enhanceEmblemWithScroll(interaction, scrollType) {
+    await interaction.deferUpdate().catch(() => {});
+    
+    const user = await getUser(interaction.user.id);
+    if (!user || !user.registered || !user.emblem) {
+        return await interaction.followUp({ 
+            content: '❌ 오류가 발생했습니다.',
+            flags: 64
+        });
+    }
+    
+    // 주문서 확인
+    const scrollId = scrollType === 'blessing' ? 'emblem_blessing_scroll' : 'emblem_protection_scroll';
+    const scrollItem = user.inventory?.find(item => item.id === scrollId && (item.quantity || 0) > 0);
+    
+    if (!scrollItem) {
+        return await interaction.followUp({
+            content: `❌ ${scrollType === 'blessing' ? '축복 주문서' : '보호 주문서'}가 없습니다!`,
+            flags: 64
+        });
+    }
+    
+    // 강화석 확인
+    if (!user.items?.emblemEnhanceStone || user.items.emblemEnhanceStone < 1) {
+        return await interaction.followUp({
+            content: '❌ 엠블럼강화조각이 부족합니다!',
+            flags: 64
+        });
+    }
+    
+    // 엠블럼 타입 찾기
+    const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, '');
+    const emblemType = Object.keys(EMBLEMS).find(type => 
+        EMBLEMS[type].emblems.some(e => e.name === baseEmblemName)
+    );
+    
+    // 주문서 효과 적용하여 강화 시도
+    const { processEmblemEnhancementWithScroll } = require('../../systems/emblemEnhancement');
+    const result = await processEmblemEnhancementWithScroll(user, emblemType, scrollType);
+    
+    if (!result.success) {
+        return await interaction.followUp({
+            content: `❌ ${result.message}`,
+            flags: 64
+        });
+    }
+    
+    // 주문서 소모
+    if (scrollItem.quantity > 1) {
+        scrollItem.quantity--;
+    } else {
+        const itemIndex = user.inventory.findIndex(item => item.id === scrollId);
+        user.inventory.splice(itemIndex, 1);
+    }
+    
+    // 강화 결과 메시지
+    const resultEmbed = new EmbedBuilder()
+        .setColor(result.result === 'success' ? '#00ff00' : '#ffaa00')
+        .setTitle('🔨 엠블럼 강화 결과')
+        .setDescription(result.message)
+        .addFields(
+            { name: '🎲 결과', value: result.result === 'success' ? '성공' : '실패', inline: true },
+            { name: '💠 남은 강화석', value: `${user.items?.emblemEnhanceStone || 0}개`, inline: true },
+            { name: '📜 사용 주문서', value: scrollType === 'blessing' ? '✨ 축복 주문서' : '🛡️ 보호 주문서', inline: true }
+        );
+    
+    await interaction.followUp({
+        embeds: [resultEmbed],
+        flags: 64
+    });
+    
+    // 엠블럼 스탯 재적용
+    await applyEmblemStats(user, emblemType);
+    await user.save();
+    
+    // 강화 화면 업데이트
+    return await showEmblemEnhance(interaction);
+}
+
 module.exports = {
     showEmblem,
     showEmblemShop,
     showEmblemEnhance,
     enhanceEmblem,
+    enhanceEmblemWithScroll,
     handleEmblemPurchase,
     applyEmblemStats
 };

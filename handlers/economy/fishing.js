@@ -1,6 +1,6 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const User = require('../../models/User');
-const { fishingManager } = require('../../systems/fishingSystem');
+const { fishingManager } = require('../../systems/fishingSystemNew');
 const { FISHING_SYSTEM } = require('../../data/fishingSystem');
 
 async function handleFishingInteraction(interaction, user) {
@@ -11,8 +11,8 @@ async function handleFishingInteraction(interaction, user) {
     
     const customId = interaction.customId;
     
-    // 낚시 시작
-    if (customId === 'fishing_cast') {
+    // 낚시 메뉴
+    if (customId === 'fishing_menu' || customId === 'fishing_cast') {
         // 이미 reply된 상태인지 확인
         if (interaction.deferred || interaction.replied) {
             await interaction.editReply({ 
@@ -39,7 +39,7 @@ async function handleFishingInteraction(interaction, user) {
         }
         
         // 레벨 제한 확인
-        if (user.fishingData?.level < spot.requiredLevel) {
+        if ((user.fishing?.level || 1) < spot.requiredLevel) {
             await interaction.reply({ 
                 content: `❌ 이 낚시터는 레벨 ${spot.requiredLevel} 이상만 이용할 수 있습니다!`, 
                 flags: 64 

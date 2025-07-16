@@ -312,14 +312,18 @@ async function acceptAllDailyQuests(interaction) {
 
 // 일일활동 메뉴
 async function showDailyMenu(interaction) {
+    // interaction이 이미 처리되지 않았다면 defer
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate().catch(() => {});
+    }
+    
     const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
     const DailyMission = require('../../models/DailyMission');
     const user = await getUser(interaction.user.id);
     
     if (!user || !user.registered) {
-        return await interaction.reply({ 
-            content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
-            flags: 64 
+        return await interaction.editReply({ 
+            content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
         });
     }
     
@@ -414,11 +418,19 @@ async function showDailyMenu(interaction) {
                 .setEmoji('🏠')
         );
     
-    await interaction.reply({
-        embeds: [embed],
-        components: [buttons],
-        flags: 64
-    });
+    // interaction이 이미 deferred된 경우 editReply 사용
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    } else {
+        await interaction.reply({
+            embeds: [embed],
+            components: [buttons],
+            flags: 64
+        });
+    }
 }
 
 module.exports = {

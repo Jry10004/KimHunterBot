@@ -23,7 +23,8 @@
     "pre-commit": "lint-staged",
     "backup": "node scripts/createBackup.js",
     "db:seed": "node scripts/seedDatabase.js",
-    "db:migrate": "node scripts/runMigrations.js"
+    "db:migrate": "node scripts/runMigrations.js",
+    "convert:items": "node scripts/convertItemsToJobStats.js"
   },
   "keywords": [
     "discord",

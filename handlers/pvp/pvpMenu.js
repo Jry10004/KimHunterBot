@@ -64,10 +64,6 @@ async function showPVPMenu(interaction) {
                 .setLabel('💎 공격 강화')
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
-                .setCustomId('pvp_ranking')
-                .setLabel('🏆 PVP 랭킹')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
                 .setCustomId('pvp_info')
                 .setLabel('📖 PVP 정보')
                 .setStyle(ButtonStyle.Secondary)
@@ -119,26 +115,26 @@ async function showPVPEnhance(interaction) {
     }
 
     const enhanceLevels = user.pvpEnhancement;
-    const enhanceCost = 500; // 강화 비용
+    const enhanceCost = 5000; // 강화 비용 (곡괭이와 유사)
 
     const enhanceEmbed = new EmbedBuilder()
         .setColor('#ffd700')
-        .setTitle('💎 PVP 공격 강화')
-        .setDescription('각 위치의 공격력을 강화할 수 있습니다.\n강화 레벨당 공격력 +2% 증가')
+        .setTitle('💎 PVP 스킬 강화')
+        .setDescription('각 스킬의 효과를 강화할 수 있습니다.\n강화 효과는 스킬마다 다릅니다!')
         .addFields(
             {
-                name: '⬆️ 상단 공격',
-                value: `레벨: ${enhanceLevels.high}/10\n효과: +${enhanceLevels.high * 2}%`,
+                name: '🗡️ 강공 강화',
+                value: `레벨: ${enhanceLevels.high}/100\n효과: 데미지 +${(enhanceLevels.high * 0.4).toFixed(1)}%, 명중률 +${(enhanceLevels.high * 0.2).toFixed(1)}%`,
                 inline: true
             },
             {
-                name: '➡️ 중단 공격',
-                value: `레벨: ${enhanceLevels.middle}/10\n효과: +${enhanceLevels.middle * 2}%`,
+                name: '⚖️ 균형 강화',
+                value: `레벨: ${enhanceLevels.middle}/100\n효과: 방어 무시 +${(enhanceLevels.middle * 0.5).toFixed(1)}%, 방어력 +${(enhanceLevels.middle * 0.3).toFixed(1)}%`,
                 inline: true
             },
             {
-                name: '⬇️ 하단 공격',
-                value: `레벨: ${enhanceLevels.low}/10\n효과: +${enhanceLevels.low * 2}%`,
+                name: '💨 회피 강화',
+                value: `레벨: ${enhanceLevels.low}/100\n효과: 회피율 +${(enhanceLevels.low * 0.6).toFixed(1)}%, 반격 데미지 +${(enhanceLevels.low * 0.4).toFixed(1)}%`,
                 inline: true
             },
             {
@@ -153,19 +149,19 @@ async function showPVPEnhance(interaction) {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('pvp_enhance_high')
-                .setLabel('⬆️ 상단 강화')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(enhanceLevels.high >= 10 || user.gold < enhanceCost),
+                .setLabel('🗡️ 강공 강화')
+                .setStyle(ButtonStyle.Danger)
+                .setDisabled(enhanceLevels.high >= 100 || user.gold < enhanceCost),
             new ButtonBuilder()
                 .setCustomId('pvp_enhance_middle')
-                .setLabel('➡️ 중단 강화')
+                .setLabel('⚖️ 균형 강화')
                 .setStyle(ButtonStyle.Primary)
-                .setDisabled(enhanceLevels.middle >= 10 || user.gold < enhanceCost),
+                .setDisabled(enhanceLevels.middle >= 100 || user.gold < enhanceCost),
             new ButtonBuilder()
                 .setCustomId('pvp_enhance_low')
-                .setLabel('⬇️ 하단 강화')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(enhanceLevels.low >= 10 || user.gold < enhanceCost),
+                .setLabel('💨 회피 강화')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(enhanceLevels.low >= 100 || user.gold < enhanceCost),
             new ButtonBuilder()
                 .setCustomId('pvp_menu')
                 .setLabel('🔙 뒤로')
@@ -176,6 +172,18 @@ async function showPVPEnhance(interaction) {
         embeds: [enhanceEmbed],
         components: [enhanceButtons]
     });
+}
+
+// 강화 효과 텍스트 생성
+function getEnhanceEffect(position, level) {
+    switch(position) {
+        case 'high':
+            return `데미지 +${(level * 0.4).toFixed(1)}%, 명중률 +${(level * 0.2).toFixed(1)}%`;
+        case 'middle':
+            return `방어 무시 +${(level * 0.5).toFixed(1)}%, 방어력 +${(level * 0.3).toFixed(1)}%`;
+        case 'low':
+            return `회피율 +${(level * 0.6).toFixed(1)}%, 반격 데미지 +${(level * 0.4).toFixed(1)}%`;
+    }
 }
 
 // PVP 공격 강화 처리
@@ -215,7 +223,7 @@ async function processPVPEnhance(interaction, position) {
         user.pvpEnhancement = { high: 0, middle: 0, low: 0 };
     }
 
-    if (user.pvpEnhancement[position] >= 10) {
+    if (user.pvpEnhancement[position] >= 100) {
         await interaction.followUp({ 
             content: '⚠️ 이미 최대 레벨입니다!', 
             flags: 64 
@@ -228,10 +236,11 @@ async function processPVPEnhance(interaction, position) {
     user.pvpEnhancement[position]++;
     await user.save();
 
-    const positionName = position === 'high' ? '상단' : position === 'middle' ? '중단' : '하단';
+    const positionName = position === 'high' ? '🗡️ 강공' : position === 'middle' ? '⚖️ 균형' : '💨 회피';
     
     await interaction.followUp({ 
-        content: `✨ ${positionName} 공격 강화 성공! (레벨 ${user.pvpEnhancement[position]})`, 
+        content: `✨ ${positionName} 스킬 강화 성공! (레벨 ${user.pvpEnhancement[position]})`  + 
+                '\n' + getEnhanceEffect(position, user.pvpEnhancement[position]), 
         flags: 64 
     });
 

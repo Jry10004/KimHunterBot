@@ -175,7 +175,7 @@ const randomItemData = {
                 "막대기", "나뭇가지", "쇠막대", "돌멩이", "나무검", "둔기", "곤봉",
                 "몽둥이", "죽창", "삽", "곡괭이", "낫", "호미", "갈퀴", "빗자루",
                 "걸레", "행주", "수세미", "솔", "먼지털이", "천조각", "누더기", "헝겊",
-                "종이갑옷", "누더기옷", "작업복",
+                "종이갑옷", "누더기옷", "작업복", "막대", "단검", "철검",
                 // 방패류 - normal
                 "나무방패", "낡은방패", "녹슨방패", "구멍난방패", "깨진방패",
                 "금간방패", "흠집난방패", "싸구려방패", "초보자방패", "연습용방패",
@@ -506,15 +506,15 @@ const randomItemData = {
             dodge: { min: 1, max: 5 }           // 기존 1-3 → 1-5
         },
         trash: {
-            attack: { min: 1, max: 10 },        // 기존 1-5 → 1-10 (쓰레기도 가끔은 괜찮을 수 있음)
-            defense: { min: 1, max: 8 },        // 기존 1-5 → 1-8
-            strength: { min: 1, max: 5 },       // 기존 1-2 → 1-5
-            agility: { min: 1, max: 5 },        // 기존 1-2 → 1-5
-            intelligence: { min: 1, max: 5 },   // 기존 1-2 → 1-5
-            vitality: { min: 1, max: 5 },       // 기존 1-2 → 1-5
-            luck: { min: 0, max: 3 },           // 기존 0-1 → 0-3
-            hp: { min: 1, max: 15 },            // 기존 1-5 → 1-15
-            dodge: { min: 0, max: 2 }           // 기존 0-1 → 0-2
+            attack: { min: 1, max: 3 },         // 쓰레기는 진짜 쓰레기여야 함
+            defense: { min: 1, max: 3 },        
+            strength: { min: 1, max: 2 },       
+            agility: { min: 1, max: 2 },        
+            intelligence: { min: 1, max: 2 },   
+            vitality: { min: 1, max: 2 },       
+            luck: { min: 0, max: 1 },           // 운도 없음
+            hp: { min: 1, max: 5 },             
+            dodge: { min: 0, max: 1 }           // 회피도 거의 불가능
         }
     },
 
@@ -528,15 +528,9 @@ const randomItemData = {
         trash: { min: 1, max: 1 } // 망작은 무조건 1개
     },
 
-    // 부위별 옵션 타입
+    // 모든 부위 동일한 옵션 풀
     optionTypes: {
-        weapon: ["attack", "strength", "agility", "intelligence", "luck"],
-        armor: ["defense", "vitality", "hp", "dodge"],
-        helmet: ["defense", "intelligence", "hp", "dodge"],
-        gloves: ["attack", "strength", "agility", "luck"],
-        boots: ["defense", "agility", "dodge", "hp"],
-        shield: ["defense", "vitality", "hp", "dodge"],
-        accessory: ["luck", "intelligence", "vitality", "hp"]
+        universal: ["attack", "defense", "strength", "agility", "intelligence", "vitality", "luck", "hp", "dodge"]
     },
 
     // 희귀도별 색상

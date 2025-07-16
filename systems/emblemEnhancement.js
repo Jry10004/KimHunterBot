@@ -120,11 +120,11 @@ const FAIL_PENALTIES = {
     reset: 0.1         // 0.1% 확률로 0으로 초기화
 };
 
-// 직업별 강화 스탯 (레벨당)
+// 직업별 강화 스탯 (레벨당) - 밸런스 조정
 const EMBLEM_ENHANCE_STATS = {
     warrior: {
         name: '전사',
-        stats: { strength: 0.7, vitality: 0.4 }
+        stats: { strength: 0.5, vitality: 0.3 }  // 0.7 → 0.5, 0.4 → 0.3
     },
     archer: {
         name: '궁수',
@@ -132,11 +132,11 @@ const EMBLEM_ENHANCE_STATS = {
     },
     defender: {
         name: '수호자',
-        stats: { vitality: 0.6, strength: 0.2 }
+        stats: { vitality: 0.5, strength: 0.3 }  // 0.6 → 0.5, 0.2 → 0.3
     },
     wizard: {
         name: '마법사',
-        stats: { intelligence: 0.6, luck: 0.2 }
+        stats: { intelligence: 0.5, luck: 0.3 }  // 0.6 → 0.5, 0.2 → 0.3
     },
     rogue: {
         name: '도적',
@@ -172,6 +172,11 @@ function createEmblemEnhanceEmbed(user, emblemType) {
     const jobData = EMBLEM_ENHANCE_STATS[emblemType];
     const rates = EMBLEM_ENHANCE_RATES[enhanceData.level] || EMBLEM_ENHANCE_RATES[99];
     
+    // 보유 주문서 확인
+    const hasBlessingScroll = user.inventory?.some(item => 
+        item.id === 'emblem_blessing_scroll' && (item.quantity || 0) > 0
+    );
+    
     // 현재 추가 스탯 계산
     const currentStats = [];
     for (const [stat, value] of Object.entries(jobData.stats)) {
@@ -188,16 +193,19 @@ function createEmblemEnhanceEmbed(user, emblemType) {
         }
     }
     
+    // 기본 엠블럼 이름만 추출 (강화 레벨 제거)
+    const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, '');
+    
     const embed = new EmbedBuilder()
         .setColor(enhanceData.level >= 70 ? '#ff0000' : enhanceData.level >= 50 ? '#ff6b00' : enhanceData.level >= 30 ? '#ffd700' : '#00ff00')
         .setTitle('🔨 엠블럼 강화')
-        .setDescription(`${user.emblem} **+${enhanceData.level}**`)
+        .setDescription(`${baseEmblemName} **+${enhanceData.level}**`)
         .addFields(
             { 
                 name: '📊 강화 정보', 
                 value: [
                     `현재 레벨: **+${enhanceData.level}**`,
-                    `성공 확률: **${rates.success}%**`,
+                    `성공 확률: **${rates.success}%**${hasBlessingScroll ? ' (축복 시 ' + Math.min(100, rates.success * 2) + '%)' : ''}`,
                     `실패 확률: **${rates.fail + rates.destroy}%**`,
                     ``,
                     `실패 시:`,
@@ -286,11 +294,36 @@ async function processEmblemEnhancement(user, emblemType) {
     user.emblemEnhancement.level = newLevel;
     user.emblemEnhancement.maxLevel = Math.max(user.emblemEnhancement.maxLevel, newLevel);
     
+    // 엠블럼 이름 업데이트 (기본 이름 + 강화 레벨)
+    const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, ''); // 기존 강화 레벨 제거
+    if (newLevel > 0) {
+        user.emblem = `${baseEmblemName} +${newLevel}`;
+    } else {
+        user.emblem = baseEmblemName;
+    }
+    
     // 스탯 재계산
     const jobData = EMBLEM_ENHANCE_STATS[emblemType];
     user.emblemEnhancement.stats = {};
+    user.emblemEnhancement.appliedStats = {}; // appliedStats도 업데이트
+    
     for (const [stat, value] of Object.entries(jobData.stats)) {
-        user.emblemEnhancement.stats[stat] = Math.floor(value * newLevel);
+        let statValue = Math.floor(value * newLevel);
+        
+        // 10, 20, 30 등 특정 구간 보너스
+        if (newLevel >= 10) statValue += 5;
+        if (newLevel >= 20) statValue += 10;
+        if (newLevel >= 30) statValue += 15;
+        if (newLevel >= 40) statValue += 20;
+        if (newLevel >= 50) statValue += 30;
+        if (newLevel >= 60) statValue += 40;
+        if (newLevel >= 70) statValue += 50;
+        if (newLevel >= 80) statValue += 60;
+        if (newLevel >= 90) statValue += 70;
+        if (newLevel >= 100) statValue += 100;
+        
+        user.emblemEnhancement.stats[stat] = statValue;
+        user.emblemEnhancement.appliedStats[stat] = statValue; // appliedStats에도 동일하게 저장
     }
     
     // 레벨이 변경되었으므로 저장하지 않고 반환
@@ -306,23 +339,287 @@ async function processEmblemEnhancement(user, emblemType) {
 }
 
 // 강화 버튼 생성
-function createEmblemEnhanceButtons(hasStones) {
-    return new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('emblem_enhance_try')
-                .setLabel('🔨 강화하기')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(!hasStones),
-            new ButtonBuilder()
-                .setCustomId('emblem_enhance_info')
-                .setLabel('📊 강화 정보')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId('emblem_enhance_ranking')
-                .setLabel('🏆 강화 랭킹')
-                .setStyle(ButtonStyle.Secondary)
+function createEmblemEnhanceButtons(hasStones, user) {
+    // 기본적으로 user 파라미터가 없을 경우를 대비
+    if (!user) {
+        return new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('emblem_enhance_try')
+                    .setLabel('🔨 강화하기')
+                    .setStyle(ButtonStyle.Primary)
+                    .setDisabled(!hasStones),
+                new ButtonBuilder()
+                    .setCustomId('emblem_enhance_info')
+                    .setLabel('📊 강화 정보')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+    }
+    
+    // 주문서 확인
+    const hasBlessingScroll = user.inventory?.some(item => 
+        item.id === 'emblem_blessing_scroll' && (item.quantity || 0) > 0
+    );
+    const hasProtectionScroll = user.inventory?.some(item => 
+        item.id === 'emblem_protection_scroll' && (item.quantity || 0) > 0
+    );
+    
+    const buttons = [
+        new ButtonBuilder()
+            .setCustomId('emblem_enhance_try')
+            .setLabel('🔨 강화하기')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(!hasStones),
+        new ButtonBuilder()
+            .setCustomId('emblem_enhance_info')
+            .setLabel('📊 강화 정보')
+            .setStyle(ButtonStyle.Secondary)
+    ];
+    
+    // 주문서 버튼 추가
+    const scrollButtons = [];
+    if (hasBlessingScroll || hasProtectionScroll) {
+        if (hasBlessingScroll) {
+            scrollButtons.push(
+                new ButtonBuilder()
+                    .setCustomId('emblem_use_blessing')
+                    .setLabel('✨ 축복 주문서')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(!hasStones)
+            );
+        }
+        if (hasProtectionScroll) {
+            scrollButtons.push(
+                new ButtonBuilder()
+                    .setCustomId('emblem_use_protection')
+                    .setLabel('🛡️ 보호 주문서')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(!hasStones)
+            );
+        }
+        
+        // 버튼 배치 - 두 줄로 나누기
+        return [
+            new ActionRowBuilder().addComponents(buttons),
+            new ActionRowBuilder().addComponents(scrollButtons)
+        ];
+    }
+    
+    // 주문서가 없으면 기본 버튼만
+    return new ActionRowBuilder().addComponents(buttons);
+}
+
+// 주문서를 사용한 강화 시도 함수
+function attemptEmblemEnhanceWithScroll(currentLevel, scrollType) {
+    const rates = EMBLEM_ENHANCE_RATES[currentLevel] || EMBLEM_ENHANCE_RATES[99];
+    const random = Math.random() * 100;
+    
+    let successRate = rates.success;
+    
+    // 축복 주문서 효과: 성공률 2배 (최대 100%)
+    if (scrollType === 'blessing') {
+        successRate = Math.min(100, successRate * 2);
+    }
+    
+    if (random <= successRate) {
+        return 'success';
+    } else {
+        // 보호 주문서 효과: 실패 시 레벨 유지
+        if (scrollType === 'protection') {
+            return 'maintain';
+        }
+        
+        // 일반 실패 처리
+        const failRandom = Math.random() * 100;
+        if (failRandom <= FAIL_PENALTIES.reset) {
+            return 'reset';
+        } else if (failRandom <= FAIL_PENALTIES.nothing) {
+            return 'maintain';
+        } else {
+            return 'downgrade';
+        }
+    }
+}
+
+// 주문서를 사용한 강화 결과 처리
+async function processEmblemEnhancementWithScroll(user, emblemType, scrollType) {
+    if (!user.emblemEnhancement) {
+        user.emblemEnhancement = {
+            level: 0,
+            stats: {},
+            totalAttempts: 0,
+            totalStonesUsed: 0,
+            maxLevel: 0,
+            appliedStats: {}
+        };
+    }
+    
+    // 강화석 확인
+    if (!user.items?.emblemEnhanceStone || user.items.emblemEnhanceStone < 1) {
+        return { success: false, message: '엠블럼강화조각이 부족합니다!' };
+    }
+    
+    // 강화석 소모
+    user.items.emblemEnhanceStone -= 1;
+    user.emblemEnhancement.totalStonesUsed += 1;
+    user.emblemEnhancement.totalAttempts += 1;
+    
+    const currentLevel = user.emblemEnhancement.level;
+    const result = attemptEmblemEnhanceWithScroll(currentLevel, scrollType);
+    
+    let resultMessage = '';
+    let newLevel = currentLevel;
+    
+    switch (result) {
+        case 'success':
+            newLevel = currentLevel + 1;
+            resultMessage = `🎉 강화 성공! **+${currentLevel} → +${newLevel}**\n${scrollType === 'blessing' ? '✨ 축복 주문서의 효과로 성공률이 증가했습니다!' : ''}`;
+            break;
+        case 'downgrade':
+            newLevel = Math.max(0, currentLevel - 1);
+            resultMessage = `💔 강화 실패... **+${currentLevel} → +${newLevel}**`;
+            break;
+        case 'maintain':
+            resultMessage = `🛡️ 강화 실패! ${scrollType === 'protection' ? '보호 주문서의 효과로 레벨이 유지되었습니다!' : '하지만 레벨이 유지되었습니다!'} **+${currentLevel}**`;
+            break;
+        case 'reset':
+            newLevel = 0;
+            resultMessage = `💥 대실패! 강화 레벨이 초기화되었습니다! **+${currentLevel} → 0**`;
+            break;
+    }
+    
+    user.emblemEnhancement.level = newLevel;
+    user.emblemEnhancement.maxLevel = Math.max(user.emblemEnhancement.maxLevel, newLevel);
+    
+    // 엠블럼 이름 업데이트
+    const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, '');
+    if (newLevel > 0) {
+        user.emblem = `${baseEmblemName} +${newLevel}`;
+    } else {
+        user.emblem = baseEmblemName;
+    }
+    
+    // 스탯 재계산
+    const jobData = EMBLEM_ENHANCE_STATS[emblemType];
+    user.emblemEnhancement.stats = {};
+    user.emblemEnhancement.appliedStats = {}; // appliedStats도 업데이트
+    
+    for (const [stat, value] of Object.entries(jobData.stats)) {
+        let statValue = Math.floor(value * newLevel);
+        
+        // 특정 구간 보너스
+        if (newLevel >= 10) statValue += 5;
+        if (newLevel >= 20) statValue += 10;
+        if (newLevel >= 30) statValue += 15;
+        if (newLevel >= 40) statValue += 20;
+        if (newLevel >= 50) statValue += 30;
+        if (newLevel >= 60) statValue += 40;
+        if (newLevel >= 70) statValue += 50;
+        if (newLevel >= 80) statValue += 60;
+        if (newLevel >= 90) statValue += 70;
+        if (newLevel >= 100) statValue += 100;
+        
+        user.emblemEnhancement.stats[stat] = statValue;
+        user.emblemEnhancement.appliedStats[stat] = statValue; // appliedStats에도 동일하게 저장
+    }
+    
+    return {
+        success: true,
+        result: result,
+        message: resultMessage,
+        previousLevel: currentLevel,
+        newLevel: newLevel
+    };
+}
+
+// 엠블럼 강화 시도 함수
+async function tryEnhanceEmblem(interaction, count = 1) {
+    try {
+        await interaction.deferUpdate();
+        
+        const { getUser, saveUser } = require('../handlers/common/utils');
+        const user = await getUser(interaction.user.id);
+        
+        if (!user || !user.emblem) {
+            await interaction.followUp({
+                content: '❌ 엠블럼을 착용하고 있지 않습니다!',
+                flags: 64
+            });
+            return;
+        }
+        
+        if (!user.items?.emblemEnhanceStone || user.items.emblemEnhanceStone < count) {
+            await interaction.followUp({
+                content: `❌ 엠블럼 강화조각이 부족합니다! (필요: ${count}개)`,
+                flags: 64
+            });
+            return;
+        }
+        
+        let totalSuccess = 0;
+        let totalFail = 0;
+        let results = [];
+        
+        const actualCount = count === 'max' ? user.items.emblemEnhanceStone : count;
+        
+        // 엠블럼 타입 찾기
+        const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, '');
+        const emblemType = Object.keys(EMBLEM_ENHANCE_STATS).find(type => 
+            user.emblem.toLowerCase().includes(EMBLEM_ENHANCE_STATS[type].name)
         );
+        
+        if (!emblemType) {
+            await interaction.followUp({
+                content: '❌ 알 수 없는 엠블럼 타입입니다!',
+                flags: 64
+            });
+            return;
+        }
+        
+        for (let i = 0; i < actualCount; i++) {
+            const result = await processEmblemEnhancement(user, emblemType);
+            if (result.success) {
+                if (result.result === 'success') {
+                    totalSuccess++;
+                } else {
+                    totalFail++;
+                }
+            }
+            results.push(result);
+            
+            if (user.items.emblemEnhanceStone <= 0) break;
+        }
+        
+        await saveUser(user);
+        
+        // 결과 표시
+        const embed = createEmblemEnhanceEmbed(user);
+        const components = createEmblemEnhanceButtons(user);
+        
+        let resultMessage = '';
+        if (actualCount === 1) {
+            resultMessage = results[0].message;
+        } else {
+            resultMessage = `🎰 ${actualCount}회 강화 결과:\n✅ 성공: ${totalSuccess}회\n❌ 실패: ${totalFail}회\n최종 레벨: **+${user.emblemEnhancement.level}**`;
+        }
+        
+        await interaction.editReply({
+            embeds: [embed],
+            components: components
+        });
+        
+        await interaction.followUp({
+            content: resultMessage,
+            flags: 64
+        });
+        
+    } catch (error) {
+        console.error('엠블럼 강화 오류:', error);
+        await interaction.followUp({
+            content: '❌ 강화 중 오류가 발생했습니다.',
+            flags: 64
+        });
+    }
 }
 
 module.exports = {
@@ -332,5 +629,7 @@ module.exports = {
     attemptEmblemEnhance,
     createEmblemEnhanceEmbed,
     processEmblemEnhancement,
-    createEmblemEnhanceButtons
+    createEmblemEnhanceButtons,
+    processEmblemEnhancementWithScroll,
+    tryEnhanceEmblem
 };

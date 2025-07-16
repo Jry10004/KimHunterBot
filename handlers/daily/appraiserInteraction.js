@@ -8,7 +8,10 @@ const { getChartImageUrl, getAnimatedChartUrl } = require('../../data/chartServi
 
 // 감정사와의 대화 시작
 async function greetAppraiser(interaction) {
-    await interaction.deferUpdate();
+    // 이미 defer된 상태가 아니면 deferUpdate
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate();
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user) {
@@ -107,7 +110,10 @@ async function greetAppraiser(interaction) {
 
 // 시세 확인
 async function showMarketPrices(interaction) {
-    await interaction.deferUpdate();
+    // 이미 defer된 상태가 아니면 deferUpdate
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate();
+    }
     
     // 카테고리 선택 메뉴
     const categoryMenu = new StringSelectMenuBuilder()
@@ -224,7 +230,10 @@ async function showCategoryPrices(interaction, categoryId) {
 
 // 아이템 판매
 async function sellItems(interaction) {
-    await interaction.deferUpdate();
+    // 이미 defer된 상태가 아니면 deferUpdate
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate();
+    }
     
     const user = await getUser(interaction.user.id);
     const materials = user.inventory.filter(item => item.type === 'material');
@@ -311,7 +320,14 @@ async function executeSell(interaction, selectedIndices, sellAll = false) {
     await interaction.deferUpdate();
     
     const user = await getUser(interaction.user.id);
-    const materials = user.inventory.filter(item => item.type === 'material');
+    const materials = user.inventory.filter((item, index) => {
+        if (item && item.type === 'material') {
+            // 인덱스 저장
+            item._inventoryIndex = index;
+            return true;
+        }
+        return false;
+    });
     
     let itemsToSell = [];
     if (sellAll) {
@@ -330,16 +346,19 @@ async function executeSell(interaction, selectedIndices, sellAll = false) {
     
     let totalGold = 0;
     let sellDetails = [];
+    let itemsToRemove = [];
     
     // 각 아이템 판매
     itemsToSell.forEach(item => {
+        if (!item) return;
+        
         const currentPrice = getItemPrice(item.id) || item.price || 100;
         const quantity = item.quantity || 1;
         const itemTotal = currentPrice * quantity;
         totalGold += itemTotal;
         
         sellDetails.push({
-            name: item.name,
+            name: item.name || '알 수 없는 아이템',
             emoji: item.emoji || '📦',
             quantity,
             price: currentPrice,
@@ -355,12 +374,17 @@ async function executeSell(interaction, selectedIndices, sellAll = false) {
             }
         }
         
-        // 인벤토리에서 제거
-        const itemIndex = user.inventory.findIndex(i => i === item);
-        if (itemIndex !== -1) {
-            user.inventory.splice(itemIndex, 1);
+        // 제거할 아이템 인덱스 저장
+        if (item._inventoryIndex !== undefined) {
+            itemsToRemove.push(item._inventoryIndex);
         }
     });
+    
+    // 인벤토리에서 제거 (인덱스 역순으로 정렬하여 제거)
+    itemsToRemove.sort((a, b) => b - a);
+    for (const index of itemsToRemove) {
+        user.inventory.splice(index, 1);
+    }
     
     // 골드 지급
     user.gold += totalGold;
@@ -424,7 +448,10 @@ async function executeSell(interaction, selectedIndices, sellAll = false) {
 
 // 시세 차트 표시 (Alpha Vantage + TradingView 스타일)
 async function showPriceChart(interaction) {
-    await interaction.deferUpdate();
+    // 이미 defer된 상태가 아니면 deferUpdate
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate();
+    }
     
     const user = await getUser(interaction.user.id);
     

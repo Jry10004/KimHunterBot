@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const { getUser, formatNumber } = require('../common/utils');
 const { QUEST_SYSTEM } = require('../../data/questSystem');
 const MissionHelper = require('../../utils/missionHelper');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../../utils/levelCapHelper');
 
 // 퀘스트 메인 메뉴
 async function showQuestMenu(interaction) {
@@ -237,8 +238,14 @@ async function claimQuestRewards(interaction) {
         
         // 경험치 보상
         if (quest.rewards.exp) {
-            totalRewards.exp += quest.rewards.exp;
-            user.exp += quest.rewards.exp;
+            // 만렙 체크 후 경험치 추가
+            if (user.level < MAX_LEVEL) {
+                user.exp += quest.rewards.exp;
+                totalRewards.exp += quest.rewards.exp;
+            } else {
+                // 만렙인 경우 보상 표시를 0으로
+                totalRewards.exp += 0;
+            }
         }
         
         // 아이템 보상

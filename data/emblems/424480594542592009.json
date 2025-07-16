@@ -6,5 +6,13 @@
     "price": 300000,
     "level": 20,
     "enhanceLevel": 0
+  },
+  {
+    "emblemName": "떠돌이 도적",
+    "category": "rogue",
+    "purchaseDate": "2025-07-14T19:52:44.484Z",
+    "price": 300000,
+    "level": 20,
+    "enhanceLevel": 1
   }
 ]

@@ -8,10 +8,30 @@ const { handleEventInteraction } = require('./events');
 const { handleBossRaidInteraction } = require('./raid/bossRaid');
 const { handleDungeonInteraction } = require('./dungeon');
 const { handleEnhanceInteraction } = require('./enhance/enhanceSystem');
+const { handleRankingInteraction } = require('./ranking');
 const User = require('../models/User');
+
+// 처리 중인 인터랙션 추적 (전역으로 관리)
+const processingInteractions = new Map();
 
 // 메인 인터랙션 라우터
 async function handleInteraction(interaction) {
+    // 중복 방지를 위한 고유 키 생성
+    const uniqueKey = `${interaction.id}_${Date.now()}`;
+    
+    // 이미 처리 중인지 확인
+    if (processingInteractions.has(interaction.id)) {
+        console.log('[Handler Router] Already processing interaction:', interaction.customId);
+        return;
+    }
+    
+    // 처리 중 표시
+    processingInteractions.set(interaction.id, true);
+    
+    // 1초 후 자동 삭제
+    setTimeout(() => {
+        processingInteractions.delete(interaction.id);
+    }, 1000);
     if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit() && !interaction.isUserSelectMenu()) {
         return;
     }
@@ -134,7 +154,7 @@ async function handleInteraction(interaction) {
     
     // 캐릭터 관련 처리
     else if (customId.includes('profile') || customId.includes('inventory') || 
-        customId.includes('equipment') || customId.includes('emblem') ||
+        customId === 'equipment' || (customId.includes('emblem') && !customId.includes('admin_emblem')) ||
         customId.includes('stat_') || customId === 'stat_distribution' ||
         customId === 'equip_category' || customId === 'equip_slot_select' ||
         customId.startsWith('equip_item_') || customId === 'optimize_equipment' ||
@@ -143,7 +163,9 @@ async function handleInteraction(interaction) {
         customId === 'emblem_enhance_try' || customId === 'emblem_enhance_confirm' ||
         customId === 'emblem_enhance_info' || customId === 'emblem_enhance_ranking' ||
         customId.startsWith('buy_emblem_') || customId === 'emblem_shop_category' ||
-        customId === 'emblem_shop_refresh' || customId === 'emblem_shop_back') {
+        customId === 'emblem_shop_refresh' || customId === 'emblem_shop_back' ||
+        customId.startsWith('equipment_') || customId.startsWith('equip_page_') ||
+        customId.startsWith('unequip_')) {
         return await handleCharacterInteraction(interaction);
     }
     
@@ -248,6 +270,11 @@ async function handleInteraction(interaction) {
         return await handleBossRaidInteraction(interaction);
     }
     
+    // 랭킹 관련 처리
+    else if (customId === 'ranking' || customId === 'ranking_menu' || customId === 'ranking_category_select') {
+        return await handleRankingInteraction(interaction);
+    }
+    
     // 보스 상점 메뉴 처리
     else if (customId === 'boss_shop_menu' || customId === 'boss_accessory_shop') {
         const { handleBossShopInteraction } = require('./raid/bossShopMenu');
@@ -282,6 +309,11 @@ async function handleInteraction(interaction) {
         return await handleEnhanceInteraction(interaction);
     }
     
+    // 통합 랭킹 시스템 처리
+    else if (customId === 'ranking_menu' || customId === 'ranking_category_select') {
+        return await handleRankingInteraction(interaction);
+    }
+    
     // 일일 활동 관련 처리
     else if (customId.includes('attendance') || customId.includes('hunting') ||
              customId.includes('exercise') || customId.includes('quest') ||
@@ -300,7 +332,10 @@ async function handleInteraction(interaction) {
     
     // 관리자 관련 처리
     else if (customId.includes('admin')) {
-        return await handleAdminInteraction(interaction);
+        console.log('[Handlers/Index] Admin interaction detected:', customId);
+        const result = await handleAdminInteraction(interaction);
+        console.log('[Handlers/Index] Admin interaction completed');
+        return result;
     }
     
     // 이벤트 관련 처리
@@ -329,6 +364,54 @@ async function handleInteraction(interaction) {
         const user = await getUser(interaction.user.id);
         return await handleFishingInteraction(interaction, user);
     }
+    
+    // 재료 제작 관련 처리 (비활성화)
+    // else if (customId === 'material_crafting' || customId.includes('crafting_')) {
+    //     const { showCraftingMenu, showCategoryRecipes, craftItem, showMaterialInventory } = require('../systems/materialCraftingSystem');
+    //     
+    //     if (customId === 'material_crafting') {
+    //         return await showCraftingMenu(interaction, interaction.user.id);
+    //     }
+    //     else if (customId.startsWith('crafting_category_')) {
+    //         const category = interaction.values[0];
+    //         const userId = customId.split('_')[2];
+    //         return await showCategoryRecipes(interaction, category, userId);
+    //     }
+    //     else if (customId.startsWith('crafting_recipe_')) {
+    //         const parts = customId.split('_');
+    //         const userId = parts[2];
+    //         const category = parts[3];
+    //         const recipeName = interaction.values[0];
+    //         return await craftItem(interaction, category, recipeName, userId);
+    //     }
+    //     else if (customId.startsWith('crafting_inventory_')) {
+    //         const userId = customId.split('_')[2];
+    //         return await showMaterialInventory(interaction, userId);
+    //     }
+    // }
+    // 
+    // // 사냥 패스 관련 처리 (비활성화)
+    // else if (customId === 'hunting_pass' || customId.includes('pass_')) {
+    //     const { showHuntingPassMenu, claimPassReward } = require('../systems/huntingPassSystem');
+    //     
+    //     if (customId === 'hunting_pass') {
+    //         return await showHuntingPassMenu(interaction, interaction.user.id);
+    //     }
+    //     else if (customId.startsWith('pass_rewards_')) {
+    //         // 보상 목록 표시
+    //         return await showPassRewards(interaction, interaction.user.id);
+    //     }
+    //     else if (customId.startsWith('pass_claim_')) {
+    //         const parts = customId.split('_');
+    //         const level = parseInt(parts[2]);
+    //         const userId = parts[3];
+    //         return await claimPassReward(interaction, userId, level);
+    //     }
+    //     else if (customId.startsWith('pass_buy_premium_')) {
+    //         const userId = customId.split('_')[3];
+    //         return await buyPremiumPass(interaction, userId);
+    //     }
+    // }
     
     // 매크로 리셋 확인 버튼
     else if (customId === 'macro_reset_confirm' || customId === 'macro_reset_cancel') {
@@ -374,21 +457,21 @@ async function handleInteraction(interaction) {
         }
     }
     
-    // 사전강화 관련 처리
-    else if (customId.includes('prelaunch')) {
-        console.log('[Handler Router] Routing to prelaunch handler from handlers/index.js');
-        try {
-            const { handlePrelaunchInteraction } = require('../systems/prelaunchEnhance');
-            await handlePrelaunchInteraction(interaction);
-            return true;
-        } catch (error) {
-            console.error('[Handler Router] Prelaunch handler error:', error);
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: '❌ 처리 중 오류가 발생했습니다.\n문제가 계속되면 `/버그발견` 명령어로 신고해주세요!', flags: 64 });
-            }
-            return false;
-        }
-    }
+    // 사전강화 관련 처리 - 이벤트 종료로 비활성화
+    // else if (customId.includes('prelaunch')) {
+    //     console.log('[Handler Router] Routing to prelaunch handler from handlers/index.js');
+    //     try {
+    //         const { handlePrelaunchInteraction } = require('../systems/prelaunchEnhance');
+    //         await handlePrelaunchInteraction(interaction);
+    //         return true;
+    //     } catch (error) {
+    //         console.error('[Handler Router] Prelaunch handler error:', error);
+    //         if (!interaction.replied && !interaction.deferred) {
+    //             await interaction.reply({ content: '❌ 처리 중 오류가 발생했습니다.\n문제가 계속되면 `/버그발견` 명령어로 신고해주세요!', flags: 64 });
+    //         }
+    //         return false;
+    //     }
+    // }
     
     // 드롭다운 메뉴 처리
     else if (interaction.isStringSelectMenu()) {
@@ -470,7 +553,7 @@ async function handleSelectMenu(interaction) {
             interaction.customId = value;
             return await handleCharacterInteraction(interaction);
         }
-        else if (value === 'minigame') {
+        else if (value === 'minigame' || value === 'minigame_menu') {
             const { handleMinigameInteraction } = require('./minigames/index');
             return await handleMinigameInteraction(interaction);
         }
@@ -493,8 +576,15 @@ async function handleSelectMenu(interaction) {
             return await handleEconomyInteraction(interaction);
         }
         else if (value === 'daily' || value === 'hunting' || 
-                 value === 'work' || value === 'quest') {
+                 value === 'work' || value === 'quest' || value === 'market_prices') {
             return await handleDailyInteraction(interaction);
+        }
+        else if (value === 'fishing') {
+            const { handleFishingInteraction } = require('./economy/fishing');
+            const { getUser } = require('./common/utils');
+            const user = await getUser(interaction.user.id);
+            interaction.customId = 'fishing_menu';
+            return await handleFishingInteraction(interaction, user);
         }
         else if (value === 'admin_panel' && isAdmin(interaction.user.id)) {
             return await handleAdminInteraction(interaction);
@@ -512,13 +602,8 @@ async function handleSelectMenu(interaction) {
             return await handleEnhanceInteraction(interaction);
         }
         else if (value === 'ranking') {
-            // 랭킹 기능은 아직 핸들러가 없으므로 임시 메시지
-            await interaction.deferUpdate();
-            return await interaction.editReply({
-                content: '🏅 랭킹 시스템은 준비 중입니다!',
-                embeds: [],
-                components: []
-            });
+            // 통합 랭킹 시스템
+            return await handleRankingInteraction(interaction);
         }
     }
     

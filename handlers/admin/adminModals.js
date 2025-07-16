@@ -7,10 +7,17 @@ const MissionHelper = require('../../utils/missionHelper');
 // 레벨/경험치 설정 처리
 async function handleLevelModal(interaction) {
     if (!isAdmin(interaction.user.id)) {
-        return await interaction.reply({ 
-            content: '❌ 관리자만 사용할 수 있습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     const targetUserId = interaction.fields.getTextInputValue('target_user_id');
@@ -26,10 +33,17 @@ async function handleLevelModal(interaction) {
 
     const targetUser = await User.findOne({ discordId: targetUserId });
     if (!targetUser) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저를 찾을 수 없습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     // 레벨 설정
@@ -48,19 +62,33 @@ async function handleLevelModal(interaction) {
         .setFooter({ text: `관리자: ${interaction.user.username}` })
         .setTimestamp();
 
-    return await interaction.reply({
-        embeds: [embed],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            flags: 64
+        });
+    }
 }
 
 // 골드 지급 처리
 async function handleGoldModal(interaction) {
     if (!isAdmin(interaction.user.id)) {
-        return await interaction.reply({ 
-            content: '❌ 관리자만 사용할 수 있습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     const targetUserId = interaction.fields.getTextInputValue('target_user_id');
@@ -76,10 +104,17 @@ async function handleGoldModal(interaction) {
 
     const targetUser = await User.findOne({ discordId: targetUserId });
     if (!targetUser) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저를 찾을 수 없습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     // 골드 지급
@@ -104,19 +139,33 @@ async function handleGoldModal(interaction) {
         .setFooter({ text: `관리자: ${interaction.user.username}` })
         .setTimestamp();
 
-    return await interaction.reply({
-        embeds: [embed],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            flags: 64
+        });
+    }
 }
 
 // 아이템 지급 처리
 async function handleItemModal(interaction) {
     if (!isAdmin(interaction.user.id)) {
-        return await interaction.reply({ 
-            content: '❌ 관리자만 사용할 수 있습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     const targetUserId = interaction.fields.getTextInputValue('target_user_id');
@@ -132,10 +181,17 @@ async function handleItemModal(interaction) {
 
     const targetUser = await User.findOne({ discordId: targetUserId });
     if (!targetUser) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저를 찾을 수 없습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     // 아이템 지급
@@ -159,19 +215,33 @@ async function handleItemModal(interaction) {
         .setFooter({ text: `관리자: ${interaction.user.username}` })
         .setTimestamp();
 
-    return await interaction.reply({
-        embeds: [embed],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            flags: 64
+        });
+    }
 }
 
 // 공지 발송 처리
 async function handleAnnouncementModal(interaction) {
     if (!isAdmin(interaction.user.id)) {
-        return await interaction.reply({ 
-            content: '❌ 관리자만 사용할 수 있습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     const title = interaction.fields.getTextInputValue('announcement_title');
@@ -213,10 +283,17 @@ async function handleAnnouncementModal(interaction) {
 // 유저 초기화 처리
 async function handleResetModal(interaction) {
     if (!isAdmin(interaction.user.id)) {
-        return await interaction.reply({ 
-            content: '❌ 관리자만 사용할 수 있습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     const targetUserId = interaction.fields.getTextInputValue('target_user_id');
@@ -231,10 +308,17 @@ async function handleResetModal(interaction) {
 
     const targetUser = await User.findOne({ discordId: targetUserId });
     if (!targetUser) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저를 찾을 수 없습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     // 유저 데이터 초기화
@@ -250,14 +334,29 @@ async function handleResetModal(interaction) {
         .setFooter({ text: `관리자: ${interaction.user.username}` })
         .setTimestamp();
 
-    return await interaction.reply({
-        embeds: [embed],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            flags: 64
+        });
+    }
 }
 
 // 엠블럼 지급 모달
 async function showEmblemGiveModal(interaction) {
+    const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+    
+    // 이미 defer된 경우 오류 처리
+    if (interaction.deferred || interaction.replied) {
+        console.error('[AdminModals] Cannot show modal - interaction already deferred/replied');
+        return;
+    }
+    
     const modal = new ModalBuilder()
         .setCustomId('admin_emblem_give_modal')
         .setTitle('엠블럼 지급');
@@ -295,10 +394,17 @@ async function showEmblemGiveModal(interaction) {
 // 엠블럼 지급 처리
 async function handleEmblemGiveModal(interaction) {
     if (!isAdmin(interaction.user.id)) {
-        return await interaction.reply({ 
-            content: '❌ 관리자만 사용할 수 있습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 관리자만 사용할 수 있습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     const targetUserId = interaction.fields.getTextInputValue('target_user_id');
@@ -307,10 +413,17 @@ async function handleEmblemGiveModal(interaction) {
 
     const targetUser = await User.findOne({ discordId: targetUserId });
     if (!targetUser) {
-        return await interaction.reply({ 
-            content: '❌ 해당 유저를 찾을 수 없습니다!', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '❌ 해당 유저를 찾을 수 없습니다!', 
+                flags: 64 
+            });
+        }
     }
 
     // 엠블럼 지급
@@ -324,18 +437,25 @@ async function handleEmblemGiveModal(interaction) {
     const embed = new EmbedBuilder()
         .setColor('#00ff00')
         .setTitle('✅ 엠블럼 지급 완료')
-        .setDescription(`**${targetUser.username}**님에게 엠블럼을 지급했습니다.`)
+        .setDescription(`**${targetUser.username || targetUserId}**님에게 엠블럼을 지급했습니다.`)
         .addFields(
-            { name: '🏆 엠블럼', value: emblemName, inline: true },
-            { name: '📊 레벨', value: `Lv.${emblemLevel}`, inline: true }
+            { name: '🏆 엠블럼', value: emblemName || '이름 없음', inline: true },
+            { name: '📊 레벨', value: `Lv.${emblemLevel || 1}`, inline: true }
         )
         .setFooter({ text: `관리자: ${interaction.user.username}` })
         .setTimestamp();
 
-    return await interaction.reply({
-        embeds: [embed],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            flags: 64
+        });
+    }
 }
 
 module.exports = {

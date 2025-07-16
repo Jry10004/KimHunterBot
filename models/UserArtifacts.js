@@ -221,7 +221,7 @@ userArtifactsSchema.methods.unlockPickaxe = function(pickaxeType) {
 };
 
 // 유물 추가
-userArtifactsSchema.methods.addArtifact = function(artifact) {
+userArtifactsSchema.methods.addArtifact = async function(artifact) {
     this.artifacts.push(artifact);
     this.statistics.totalArtifactsFound += 1;
     this.statistics.rarityCount[artifact.rarity] += 1;
@@ -236,11 +236,27 @@ userArtifactsSchema.methods.addArtifact = function(artifact) {
         };
     }
     
+    // User 모델의 통합 랭킹 데이터 업데이트
+    const User = require('./User');
+    const user = await User.findOne({ discordId: this.userId });
+    if (user) {
+        if (!user.rankingStats) user.rankingStats = {};
+        if (!user.rankingStats.artifact) user.rankingStats.artifact = {};
+        
+        user.rankingStats.artifact.totalFound = this.statistics.totalArtifactsFound;
+        user.rankingStats.artifact.highestValue = Math.max(
+            user.rankingStats.artifact.highestValue || 0,
+            artifact.value
+        );
+        user.rankingStats.artifact.lastUpdated = new Date();
+        await user.save();
+    }
+    
     return this.save();
 };
 
 // 유물 판매
-userArtifactsSchema.methods.sellArtifact = function(artifactId, sellPrice) {
+userArtifactsSchema.methods.sellArtifact = async function(artifactId, sellPrice) {
     const artifactIndex = this.artifacts.findIndex(a => a.id === artifactId && !a.sold);
     
     if (artifactIndex === -1) {
@@ -254,6 +270,18 @@ userArtifactsSchema.methods.sellArtifact = function(artifactId, sellPrice) {
     
     this.statistics.totalArtifactsSold += 1;
     this.statistics.totalEarnings += sellPrice;
+    
+    // User 모델의 통합 랭킹 데이터 업데이트
+    const User = require('./User');
+    const user = await User.findOne({ discordId: this.userId });
+    if (user) {
+        if (!user.rankingStats) user.rankingStats = {};
+        if (!user.rankingStats.artifact) user.rankingStats.artifact = {};
+        
+        user.rankingStats.artifact.totalEarnings = this.statistics.totalEarnings;
+        user.rankingStats.artifact.lastUpdated = new Date();
+        await user.save();
+    }
     
     return this.save();
 };

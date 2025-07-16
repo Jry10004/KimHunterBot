@@ -10,13 +10,10 @@ module.exports = {
         // 관리자 확인
         const ADMIN_IDS = ['424480594542592009', '532128778175619084', '295980447849250817'];
         if (!ADMIN_IDS.includes(interaction.user.id)) {
-            return await interaction.reply({
-                content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!',
-                ephemeral: true
+            return await interaction.editReply({
+                content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!'
             });
         }
-
-        await interaction.deferReply({ ephemeral: true });
 
         try {
             const pvp = pvpSystem.getInstance();

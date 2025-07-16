@@ -3,10 +3,45 @@ const randomItemData = require('../data/randomItemData');
 class RandomItemGenerator {
     constructor() {
         this.data = randomItemData;
+        // 스탯 선택 통계 추적
+        this.statSelectionStats = {
+            strength: 0,
+            agility: 0,
+            intelligence: 0,
+            vitality: 0,
+            luck: 0,
+            attack: 0,
+            defense: 0,
+            hp: 0,
+            dodge: 0
+        };
+        this.totalSelections = 0;
+        
+        // 등급별 통계 추적
+        this.rarityStats = {
+            legendary: {
+                strength: 0,
+                agility: 0,
+                intelligence: 0,
+                vitality: 0,
+                luck: 0,
+                attack: 0,
+                defense: 0,
+                hp: 0,
+                dodge: 0,
+                total: 0
+            }
+        };
     }
 
     // 등급 결정
     determineRarity(gachaType) {
+        // gacha type이 유효한지 확인
+        if (!this.data.gachaRates[gachaType]) {
+            console.warn(`Invalid gacha type: ${gachaType}, falling back to beginner`);
+            gachaType = 'beginner';
+        }
+        
         const rates = this.data.gachaRates[gachaType].rates;
         const random = Math.random();
         let cumulative = 0;
@@ -27,7 +62,7 @@ class RandomItemGenerator {
     }
     
     // 부위별 아이템 생성
-    generateItemBySlot(slot, gachaType) {
+    generateItemBySlot(slot, gachaType, userEmblemType = null) {
         // 방패 생성 시 로그
         if (slot === 'shield') {
             console.log(`[generateItemBySlot] 방패 아이템 생성 시작`);
@@ -36,10 +71,20 @@ class RandomItemGenerator {
         // 1. 등급 결정 (스탯용)
         const rarity = this.determineRarity(gachaType);
         
-        // 2. 단어 선택 (각각 무작위 등급)
-        const prefixRarity = this.determineWordRarity();
-        const adjectiveRarity = this.determineWordRarity();
-        const itemNameRarity = this.determineWordRarity();
+        // 2. 단어 선택 (쓰레기 등급은 이름도 쓰레기로 통일)
+        let prefixRarity, adjectiveRarity, itemNameRarity;
+        
+        if (rarity === 'trash') {
+            // 쓰레기 등급은 이름도 모두 쓰레기로
+            prefixRarity = 'trash';
+            adjectiveRarity = 'trash';
+            itemNameRarity = 'trash';
+        } else {
+            // 다른 등급은 각각 무작위
+            prefixRarity = this.determineWordRarity();
+            adjectiveRarity = this.determineWordRarity();
+            itemNameRarity = this.determineWordRarity();
+        }
         
         const prefix = this.selectWord(prefixRarity, 'prefix');
         const adjective = this.selectWord(adjectiveRarity, 'adjective');
@@ -69,13 +114,16 @@ class RandomItemGenerator {
                 // 100번 시도 후에도 못 찾으면 기본값 사용
                 if (attempts > 100) {
                     console.log(`[generateItemBySlot] 100번 시도 실패! 슬롯 ${slot}에 대한 기본값 사용`);
-                    if (slot === 'weapon') itemName = '검';
-                    else if (slot === 'armor') itemName = '갑옷';
-                    else if (slot === 'helmet') itemName = '투구';
-                    else if (slot === 'gloves') itemName = '장갑';
-                    else if (slot === 'boots') itemName = '신발';
-                    else if (slot === 'shield') itemName = '방패';
-                    
+                    const defaultNames = {
+                        weapon: '검',
+                        armor: '갑옷',
+                        helmet: '투구',
+                        gloves: '장갑',
+                        boots: '신발',
+                        shield: '방패',
+                        accessory: '반지'
+                    };
+                    itemName = defaultNames[slot] || '장비';
                     itemType = slot;
                     
                     // 방패 기본값 사용 시 로그
@@ -88,7 +136,7 @@ class RandomItemGenerator {
         }
         
         // 4. 옵션 생성
-        const options = this.generateOptions(rarity, itemType);
+        const options = this.generateOptions(rarity, itemType, userEmblemType);
         
         // 방패 생성 완료 로그
         if (slot === 'shield') {
@@ -105,21 +153,18 @@ class RandomItemGenerator {
         
         // 6. 가격 계산
         const basePrice = {
-            legendary: 100000,  // 1/10로 감소
-            unique: 10000,      // 1/10로 감소
-            epic: 1000,         // 1/10로 감소
-            rare: 1000,
-            normal: 100,
-            trash: 10
+            legendary: 10000,   // 100000 → 10000
+            unique: 1000,       // 10000 → 1000
+            epic: 100,          // 1000 → 100
+            rare: 100,          // 1000 → 100
+            normal: 10,         // 100 → 10
+            trash: 1            // 10 → 1
         };
         
         const optionMultiplier = options.reduce((sum, opt) => sum + opt.value, 0) / 10;
         const price = Math.floor(basePrice[rarity] * (1 + optionMultiplier));
         
-        // 7. 아이템 점수 계산
-        const itemScore = this.calculateItemScore(rarity, options, prefixRarity, adjectiveRarity, itemNameRarity, specialCombo);
-        
-        // 8. 아이템 객체 생성
+        // 7. 아이템 객체 생성
         const item = {
             id: `random_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
             name: `${prefix} ${adjective} ${itemName}`,
@@ -133,7 +178,7 @@ class RandomItemGenerator {
             specialCombo: specialCombo,
             sellPrice: Math.floor(price * 0.3),
             enhanceLevel: 0,
-            score: itemScore,
+            score: 0, // 나중에 계산
             nameRarities: {
                 prefix: prefixRarity,
                 adjective: adjectiveRarity,
@@ -151,14 +196,27 @@ class RandomItemGenerator {
             item.specialStats = specialCombo.stats;
         }
         
+        // 직업 정보 없이 기본 점수 계산
+        item.score = this.calculateItemScore(item);
+        
         return item;
     }
 
     // 단어 선택
     selectWord(rarity, wordType) {
+        // rarity가 유효한지 확인
+        if (!this.data.words[rarity]) {
+            console.warn(`Invalid rarity: ${rarity}, falling back to normal`);
+            rarity = 'normal';
+        }
+        
         const words = this.data.words[rarity][wordType];
-        if (!words) {
-            console.error(`No words found for rarity: ${rarity}, wordType: ${wordType}`);
+        if (!words || words.length === 0) {
+            console.warn(`No words found for rarity: ${rarity}, wordType: ${wordType}`);
+            // 기본값 반환
+            if (wordType === 'prefix') return '기본';
+            if (wordType === 'adjective') return '평범한';
+            if (wordType === 'items') return '장비';
             return '아이템';
         }
         return words[Math.floor(Math.random() * words.length)];
@@ -176,22 +234,79 @@ class RandomItemGenerator {
         return true;
     }
 
-    // 옵션 생성
-    generateOptions(rarity, itemType) {
+    // 옵션 생성 - 완전히 새로 작성
+    generateOptions(rarity, itemType, userEmblemType = null) {
         const options = [];
-        const availableOptions = this.data.optionTypes[itemType];
+        // 모든 부위가 동일한 옵션 풀 사용
+        const availableOptions = this.data.optionTypes.universal;
         const ranges = this.data.optionRanges[rarity];
         
-        // 망작은 특별 처리
+        // 디버그: 장비 타입별 사용 가능한 옵션
+        if (Math.random() < 0.1) { // 10% 확률로 로그
+            console.log(`[generateOptions] ${itemType} 타입의 가능한 옵션: ${availableOptions.join(', ')}`);
+        }
+        
+        // 망작은 특별 처리 - 랜덤하게 1개만
         if (rarity === 'trash') {
-            return [
-                { name: "공격력", key: "attack", value: 4 },
-                { name: "방어력", key: "defense", value: 4 },
-                { name: "힘", key: "strength", value: 4 },
-                { name: "민첩", key: "agility", value: 4 },
-                { name: "지능", key: "intelligence", value: 4 },
-                { name: "체력", key: "vitality", value: 4 }
-            ];
+            const randomOption = availableOptions[Math.floor(Math.random() * availableOptions.length)];
+            const range = ranges[randomOption] || { min: 1, max: 3 };
+            // 쓰레기는 항상 최소값만
+            const value = range.min;
+            return [{
+                name: this.getOptionName(randomOption),
+                key: randomOption,
+                value: value
+            }];
+        }
+
+        // 직업별 주스탯 정의 (정확한 엠블럼 이름)
+        const mainStatByEmblem = {
+            // 전사 계열
+            '초보전사': 'strength',
+            '튼튼한 기사': 'strength',
+            '용맹한 검사': 'strength',
+            '맹렬한 전사': 'strength',
+            '전설의 기사': 'strength',
+            
+            // 궁수 계열
+            '마을사냥꾼': 'agility',
+            '숲의 궁수': 'agility',
+            '바람 사수': 'agility',
+            '정확한 사격수': 'agility',
+            '전설의 명궁': 'agility',
+            
+            // 수호자 계열
+            '초보 수호자': 'vitality',
+            '철벽 방패병': 'vitality',
+            '불굴의 수호자': 'vitality',
+            '강철 파수꾼': 'vitality',
+            '전설의 철벽': 'vitality',
+            
+            // 마법사 계열
+            '견습 마법사': 'intelligence',
+            '원소 술사': 'intelligence',
+            '신비한 현자': 'intelligence',
+            '대마법사': 'intelligence',
+            '전설의 아크메이지': 'intelligence',
+            
+            // 도적 계열
+            '떠돌이 도적': 'luck',
+            '운 좋은 도둑': 'luck',
+            '행운의 닌자': 'luck',
+            '복 많은 도적': 'luck',
+            '전설의 행운아': 'luck'
+        };
+
+        // 유저의 주스탯 확인
+        let userMainStat = null;
+        if (userEmblemType) {
+            const emblemType = userEmblemType.toLowerCase();
+            for (const [key, value] of Object.entries(mainStatByEmblem)) {
+                if (emblemType.includes(key)) {
+                    userMainStat = value;
+                    break;
+                }
+            }
         }
 
         // 옵션 개수 결정
@@ -200,39 +315,105 @@ class RandomItemGenerator {
             countRange.min : 
             Math.floor(Math.random() * (countRange.max - countRange.min + 1)) + countRange.min;
 
-        // 중복 없이 옵션 선택
+        // 옵션 생성 (무기/장갑은 공격력 우선)
         const selectedOptions = [];
-        const availableCopy = [...availableOptions];
-
-        for (let i = 0; i < optionCount && availableCopy.length > 0; i++) {
-            const index = Math.floor(Math.random() * availableCopy.length);
-            const optionKey = availableCopy.splice(index, 1)[0];
+        
+        // 무기나 장갑의 경우 첫 번째 옵션은 60% 확률로 공격력
+        if ((itemType === 'weapon' || itemType === 'gloves') && optionCount > 0) {
+            if (Math.random() < 0.6) {
+                const range = ranges['attack'] || { min: 1, max: 10 };
+                let value = Math.floor(Math.random() * range.max) + 1;
+                
+                // 0.5% 확률로 주스탯 1~2배 증폭
+                if ('attack' === userMainStat && Math.random() < 0.005) {
+                    const multiplier = 1 + Math.random(); // 1.0 ~ 2.0
+                    value = Math.min(Math.floor(value * multiplier), range.max);
+                }
+                
+                selectedOptions.push({
+                    name: this.getOptionName('attack'),
+                    key: 'attack',
+                    value: value
+                });
+            }
+        }
+        
+        // 스탯 사용 빈도 추적 (균등 분배를 위해)
+        const statUsageCount = {};
+        availableOptions.forEach(opt => statUsageCount[opt] = 0);
+        selectedOptions.forEach(opt => statUsageCount[opt.key] = (statUsageCount[opt.key] || 0) + 1);
+        
+        // 나머지 옵션들
+        for (let i = selectedOptions.length; i < optionCount; i++) {
+            // 무기/장갑은 30% 추가 확률로 공격력
+            let selectedOption;
+            if ((itemType === 'weapon' || itemType === 'gloves') && 
+                Math.random() < 0.3 && 
+                statUsageCount['attack'] < 2) { // 공격력은 최대 2개까지만
+                selectedOption = 'attack';
+            } else {
+                // 가중치 기반 선택 - 적게 사용된 스탯일수록 높은 확률
+                const weights = availableOptions.map(opt => {
+                    const usage = statUsageCount[opt] || 0;
+                    // 사용 횟수가 적을수록 높은 가중치 (최소 1)
+                    return Math.max(1, 10 - usage * 3);
+                });
+                
+                // 가중치 기반 랜덤 선택
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                let random = Math.random() * totalWeight;
+                
+                for (let j = 0; j < availableOptions.length; j++) {
+                    random -= weights[j];
+                    if (random <= 0) {
+                        selectedOption = availableOptions[j];
+                        break;
+                    }
+                }
+                
+                // 폴백: 만약 선택되지 않았다면 완전 랜덤
+                if (!selectedOption) {
+                    selectedOption = availableOptions[Math.floor(Math.random() * availableOptions.length)];
+                }
+            }
             
-            // 옵션 값 결정 (최소~최대 랜덤)
-            const range = ranges[optionKey] || ranges.stats || { min: 1, max: 5 };
-            const value = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+            // 옵션 값 결정 (1 ~ 최대값)
+            const range = ranges[selectedOption] || { min: 1, max: 10 };
+            let value = Math.floor(Math.random() * range.max) + 1;
             
-            // 옵션 이름 매핑
-            const optionNames = {
-                attack: "공격력",
-                defense: "방어력",
-                strength: "힘",
-                agility: "민첩",
-                intelligence: "지능",
-                vitality: "체력",
-                luck: "행운",
-                hp: "추가HP",
-                dodge: "회피력"
-            };
+            // 0.5% 확률로 주스탯 1~2배 증폭
+            if (selectedOption === userMainStat && Math.random() < 0.005) {
+                const multiplier = 1 + Math.random(); // 1.0 ~ 2.0
+                value = Math.min(Math.floor(value * multiplier), range.max);
+            }
 
             selectedOptions.push({
-                name: optionNames[optionKey],
-                key: optionKey,
+                name: this.getOptionName(selectedOption),
+                key: selectedOption,
                 value: value
             });
+            
+            // 사용 횟수 증가
+            statUsageCount[selectedOption] = (statUsageCount[selectedOption] || 0) + 1;
         }
 
         return selectedOptions;
+    }
+
+    // 옵션 이름 가져오기
+    getOptionName(optionKey) {
+        const optionNames = {
+            attack: "공격력",
+            defense: "방어력",
+            strength: "힘",
+            agility: "민첩",
+            intelligence: "지능",
+            vitality: "체력",
+            luck: "행운",
+            hp: "추가HP",
+            dodge: "회피력"
+        };
+        return optionNames[optionKey] || optionKey;
     }
 
     // 특수 조합 확인
@@ -257,7 +438,7 @@ class RandomItemGenerator {
     }
 
     // 아이템 생성
-    generateItem(gachaType) {
+    generateItem(gachaType, userEmblemType = null) {
         // 1. 등급 결정 (스탯용)
         const rarity = this.determineRarity(gachaType);
         
@@ -277,28 +458,25 @@ class RandomItemGenerator {
         itemType = this.data.determineItemCategory(itemName);
         
         // 4. 옵션 생성
-        const options = this.generateOptions(rarity, itemType);
+        const options = this.generateOptions(rarity, itemType, userEmblemType);
         
         // 5. 특수 조합 확인
         const specialCombo = this.checkSpecialCombo(prefix, adjective, itemName);
         
         // 6. 가격 계산 (등급과 옵션에 따라)
         const basePrice = {
-            legendary: 100000,  // 1/10로 감소
-            unique: 10000,      // 1/10로 감소
-            epic: 1000,         // 1/10로 감소
-            rare: 1000,
-            normal: 100,
-            trash: 10
+            legendary: 10000,   // 100000 → 10000
+            unique: 1000,       // 10000 → 1000
+            epic: 100,          // 1000 → 100
+            rare: 100,          // 1000 → 100
+            normal: 10,         // 100 → 10
+            trash: 1            // 10 → 1
         };
         
         const optionMultiplier = options.reduce((sum, opt) => sum + opt.value, 0) / 10;
         const price = Math.floor(basePrice[rarity] * (1 + optionMultiplier));
         
-        // 7. 아이템 점수 계산
-        const itemScore = this.calculateItemScore(rarity, options, prefixRarity, adjectiveRarity, itemNameRarity, specialCombo);
-        
-        // 8. 아이템 객체 생성
+        // 7. 아이템 객체 생성
         const item = {
             id: `random_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
             name: `${prefix} ${adjective} ${itemName}`,
@@ -312,7 +490,7 @@ class RandomItemGenerator {
             specialCombo: specialCombo,
             sellPrice: Math.floor(price * 0.3), // 판매가는 구매가의 60%
             enhanceLevel: 0,
-            score: itemScore,
+            score: 0, // 나중에 계산
             nameRarities: {
                 prefix: prefixRarity,
                 adjective: adjectiveRarity,
@@ -329,6 +507,9 @@ class RandomItemGenerator {
         if (specialCombo && specialCombo.stats) {
             item.specialStats = specialCombo.stats;
         }
+        
+        // 직업 정보 없이 기본 점수 계산
+        item.score = this.calculateItemScore(item);
 
         return item;
     }
@@ -378,35 +559,73 @@ class RandomItemGenerator {
         return info;
     }
 
-    // 아이템 점수 계산
-    calculateItemScore(statRarity, options, prefixRarity, adjectiveRarity, itemNameRarity, specialCombo) {
-        // 점수 가중치
-        const rarityScores = {
-            legendary: 100,
-            unique: 50,
-            epic: 30,
-            rare: 15,
-            normal: 5,
-            trash: 1
+    // 아이템 점수 계산 - 직업별 가중치 적용
+    calculateItemScore(item, userJob = null) {
+        // 점수는 순수하게 스탯 총합 기반으로 계산
+        // 100점 = 스탯 총합 500 이상 (레전드리 최고급 기준)
+        const SCORE_PER_STAT = 0.2; // 스탯 1당 0.2점
+        
+        // 주스탯과 공격력 비율
+        // 공격력 1 = 주스탯 2 정도의 가치
+        // 예: 공격력 50 = 힘 100과 비슷한 가치
+        
+        // 직업별 스탯 가중치
+        const JOB_WEIGHTS = {
+            warrior: { strength: 3.0, vitality: 2.0, attack: 1.5, defense: 1.2, hp: 1.0, agility: 0.5, intelligence: 0.3, luck: 0.5, dodge: 0.3 },
+            archer: { agility: 3.0, luck: 2.5, attack: 2.0, strength: 0.8, dodge: 1.5, hp: 0.7, defense: 0.5, vitality: 0.6, intelligence: 0.4 },
+            mage: { intelligence: 3.0, attack: 2.0, luck: 1.5, hp: 1.0, defense: 0.7, agility: 0.5, strength: 0.3, vitality: 0.6, dodge: 0.8 },
+            thief: { luck: 3.0, agility: 3.0, attack: 1.8, dodge: 2.0, strength: 0.6, hp: 0.7, defense: 0.4, intelligence: 0.5, vitality: 0.5 },
+            defender: { vitality: 3.5, defense: 3.0, hp: 2.5, strength: 1.5, attack: 0.8, agility: 0.4, intelligence: 0.4, luck: 0.5, dodge: 0.6 }
         };
         
-        // 1. 실제 스탯 합계: 40% (기존 20% → 40%)
-        const totalStats = options.reduce((sum, opt) => sum + opt.value, 0);
-        const statSumScore = (totalStats / 10) * 0.4;
+        // 스탯 총합 계산
+        const statTotal = Object.values(item.stats || {}).reduce((sum, value) => sum + value, 0);
         
-        // 2. 스탯 희귀도: 30% (기존 40% → 30%)
-        const statRarityScore = rarityScores[statRarity] * 0.3;
+        let score = 0;
         
-        // 3. 이름 희귀도: 20% (기존 30% → 20%)
-        const nameScore = ((rarityScores[prefixRarity] + rarityScores[adjectiveRarity] + rarityScores[itemNameRarity]) / 3) * 0.2;
+        if (!userJob || !JOB_WEIGHTS[userJob]) {
+            // 직업 정보 없으면 순수 스탯 총합 기반
+            // 스탯 1당 0.33점 (스탯 총합 300 = 100점)
+            score = Math.min(100, statTotal * SCORE_PER_STAT);
+        } else {
+            // 직업별 가중치 적용
+            const weights = JOB_WEIGHTS[userJob];
+            let weightedScore = 0;
+            
+            for (const [stat, value] of Object.entries(item.stats || {})) {
+                const weight = weights[stat] || 0.1;
+                weightedScore += value * weight;
+            }
+            
+            // 가중치 적용 후 스탯 1당 0.33점으로 계산
+            // 가중치 평균을 고려하여 보정
+            const avgWeight = 1.2; // 평균 가중치
+            score = Math.min(100, (weightedScore / avgWeight) * SCORE_PER_STAT);
+        }
         
-        // 4. 특수 효과 보너스: 10% (유지)
-        const specialBonus = specialCombo ? 50 * 0.1 : 0;
+        // 최소 점수 보장 (등급별)
+        const MIN_SCORE_BY_RARITY = {
+            trash: 1,
+            normal: 3,
+            rare: 5,
+            epic: 8,
+            unique: 12,
+            legendary: 15
+        };
         
-        // 총점 계산 (0~100점)
-        const totalScore = Math.round(statSumScore + statRarityScore + nameScore + specialBonus);
+        const minScore = MIN_SCORE_BY_RARITY[item.rarity] || 1;
+        score = Math.max(minScore, Math.floor(score));
         
-        return Math.min(100, Math.max(0, totalScore));
+        // 이름 등급이 모두 쓰레기인 경우 추가 제한
+        if (item.nameRarities && 
+            item.nameRarities.prefix === 'trash' && 
+            item.nameRarities.adjective === 'trash' && 
+            item.nameRarities.itemName === 'trash') {
+            // 모든 이름이 쓰레기면 점수를 더 낮게 제한
+            score = Math.min(score, 5);
+        }
+        
+        return Math.floor(score);
     }
 
     // 아이템 타입 한글 변환
@@ -471,12 +690,12 @@ class RandomItemGenerator {
         
         // 7. 가격 계산
         const basePrice = {
-            legendary: 100000,  // 1/10로 감소
-            unique: 10000,      // 1/10로 감소
-            epic: 1000,         // 1/10로 감소
-            rare: 1000,
-            normal: 100,
-            trash: 10
+            legendary: 10000,   // 100000 → 10000
+            unique: 1000,       // 10000 → 1000
+            epic: 100,          // 1000 → 100
+            rare: 100,          // 1000 → 100
+            normal: 10,         // 100 → 10
+            trash: 1            // 10 → 1
         };
         
         const optionMultiplier = options.reduce((sum, opt) => sum + opt.value, 0) / 10;
@@ -504,66 +723,6 @@ class RandomItemGenerator {
         });
         
         return item;
-    }
-    
-    // 특정 슬롯에 맞는 아이템 생성
-    generateItemBySlot(slot, gachaType = 'normal') {
-        let attempts = 0;
-        const maxAttempts = 100;
-        
-        while (attempts < maxAttempts) {
-            attempts++;
-            
-            // 일반 아이템 생성
-            const item = this.generateItem(gachaType);
-            
-            // 생성된 아이템의 타입이 요청한 슬롯과 일치하는지 확인
-            const itemType = this.data.determineItemCategory(item.name.split(' ').pop());
-            
-            console.log(`[generateItemBySlot] 시도 ${attempts}: 아이템="${item.name.split(' ').pop()}", 타입="${itemType}", 슬롯="${slot}", 유효=${itemType === slot}`);
-            
-            if (itemType === slot) {
-                item.type = slot; // 타입을 명확히 설정
-                return item;
-            }
-            
-            // 20번마다 상태 출력
-            if (attempts % 20 === 0) {
-                console.log(`[generateItemBySlot] 시도 ${attempts}: 아직 적합한 아이템을 찾지 못함...`);
-            }
-        }
-        
-        // 100번 시도 후에도 못 찾으면 기본값 반환
-        console.log(`[generateItemBySlot] ${maxAttempts}번 시도 실패! 슬롯 ${slot}에 대한 기본값 사용`);
-        
-        // 기본 아이템 생성
-        const defaultItems = {
-            weapon: { name: "기본 검", stats: { attack: 10 } },
-            armor: { name: "기본 갑옷", stats: { defense: 10 } },
-            helmet: { name: "기본 투구", stats: { defense: 5 } },
-            gloves: { name: "기본 장갑", stats: { attack: 5 } },
-            boots: { name: "기본 신발", stats: { agility: 5 } },
-            shield: { name: "기본 방패", stats: { defense: 15 } },
-            accessory: { name: "기본 장신구", stats: { luck: 5 } }
-        };
-        
-        const defaultItem = defaultItems[slot] || defaultItems.weapon;
-        const rarity = this.determineRarity(gachaType);
-        
-        return {
-            id: `random_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-            name: `${this.selectWord(rarity, 'prefix')} ${this.selectWord(rarity, 'adjective')} ${defaultItem.name}`,
-            type: slot,
-            rarity: rarity,
-            color: this.data.rarityColors[rarity],
-            emoji: this.data.rarityEmojis[rarity],
-            stats: defaultItem.stats,
-            description: this.generateDescription(rarity),
-            price: 1000,
-            sellPrice: 300,
-            enhanceLevel: 0,
-            score: Math.floor(Math.random() * 20) + 1
-        };
     }
 }
 

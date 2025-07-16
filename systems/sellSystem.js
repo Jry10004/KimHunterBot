@@ -395,11 +395,24 @@ async function showGradeSellMenu(interaction, user) {
 }
 
 // 등급별 판매 실행
-async function executeGradeSell(interaction, userId, maxRarity) {
+async function executeGradeSell(interaction, userId, maxRarity, isConfirmed = false) {
     try {
-        // 즉시 응답
-        if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferUpdate();
+        // 안전한 defer 처리
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferUpdate();
+            }
+        } catch (error) {
+            if (error.code === 10062) {
+                console.log('[GradeSell] Interaction expired');
+                return;
+            } else if (error.code === 40060) {
+                console.log('[GradeSell] Interaction already acknowledged');
+                // 이미 acknowledged된 경우 계속 진행
+            } else {
+                console.error('[GradeSell] Defer error:', error);
+                return;
+            }
         }
         
         // 중복 판매 방지
@@ -463,12 +476,12 @@ async function executeGradeSell(interaction, userId, maxRarity) {
             });
         }
         
-        // 고급 아이템 경고
+        // 고급 아이템 경고 (확인되지 않은 경우에만)
         const hasValuableItems = itemsToSell.some(item => 
             ['unique', 'legendary'].includes(item.rarity) || item.enhancement > 5
         );
         
-        if (hasValuableItems && maxRarity !== 'trash' && maxRarity !== 'normal') {
+        if (!isConfirmed && hasValuableItems && maxRarity !== 'trash' && maxRarity !== 'normal') {
             const confirmEmbed = new EmbedBuilder()
                 .setColor('#FF0000')
                 .setTitle('⚠️ 고급 아이템 판매 경고')

@@ -25,25 +25,25 @@ const artifactExploration = {
             name: '동 곡괭이',
             baseEfficiency: 1,
             maxLevel: 100,
-            upgradeCost: (level) => Math.floor(100 * Math.pow(1.15, level)),
-            findChance: (level) => 0.1 + (level * 0.002), // 10% ~ 30%
-            qualityBonus: (level) => 1 + (level * 0.01) // 1x ~ 2x
+            upgradeCost: (level) => Math.floor(1000 * Math.pow(1.08, level)), // 총 10억 목표
+            findChance: (level) => 0.1 + (level * 0.004), // 10% ~ 50%
+            qualityBonus: (level) => 1 + (level * 0.02) // 1x ~ 3x
         },
         silver: {
             name: '은 곡괭이',
             baseEfficiency: 2,
             maxLevel: 100,
-            upgradeCost: (level) => Math.floor(500 * Math.pow(1.18, level)),
-            findChance: (level) => 0.15 + (level * 0.003), // 15% ~ 45%
-            qualityBonus: (level) => 1.5 + (level * 0.015) // 1.5x ~ 3x
+            upgradeCost: (level) => Math.floor(5000 * Math.pow(1.085, level)), // 총 50억 목표
+            findChance: (level) => 0.2 + (level * 0.005), // 20% ~ 70%
+            qualityBonus: (level) => 2 + (level * 0.03) // 2x ~ 5x
         },
         gold: {
             name: '금 곡괭이',
             baseEfficiency: 3,
             maxLevel: 100,
-            upgradeCost: (level) => Math.floor(2000 * Math.pow(1.2, level)),
-            findChance: (level) => 0.2 + (level * 0.004), // 20% ~ 60%
-            qualityBonus: (level) => 2 + (level * 0.02) // 2x ~ 4x
+            upgradeCost: (level) => Math.floor(10000 * Math.pow(1.087, level)), // 총 100억 목표
+            findChance: (level) => 0.3 + (level * 0.006), // 30% ~ 90%
+            qualityBonus: (level) => 3 + (level * 0.04) // 3x ~ 7x
         }
     },
 
@@ -52,42 +52,42 @@ const artifactExploration = {
         common: {
             name: '일반',
             color: '#808080',
-            basePrice: 500,        // 100 → 500
+            basePrice: 10000,        // 1만
             findWeight: 50,
             priceMultiplier: 1
         },
         uncommon: {
             name: '고급',
             color: '#00FF00',
-            basePrice: 2500,       // 500 → 2,500
+            basePrice: 50000,        // 5만
             findWeight: 30,
             priceMultiplier: 1.5
         },
         rare: {
             name: '희귀',
             color: '#0080FF',
-            basePrice: 10000,      // 2,000 → 10,000
+            basePrice: 200000,       // 20만
             findWeight: 15,
             priceMultiplier: 2
         },
         epic: {
             name: '영웅',
             color: '#800080',
-            basePrice: 50000,      // 10,000 → 50,000
+            basePrice: 1000000,      // 100만
             findWeight: 4,
             priceMultiplier: 3
         },
         legendary: {
             name: '전설',
             color: '#FFA500',
-            basePrice: 250000,     // 50,000 → 250,000
+            basePrice: 5000000,      // 500만
             findWeight: 0.9,
             priceMultiplier: 5
         },
         mythic: {
             name: '신화',
             color: '#FF0000',
-            basePrice: 1000000,    // 200,000 → 1,000,000
+            basePrice: 20000000,     // 2천만
             findWeight: 0.1,
             priceMultiplier: 10
         }
@@ -161,14 +161,14 @@ const artifactExploration = {
 
     // 탐사 비용 및 보상
     exploration: {
-        baseCost: 1000,
-        costMultiplier: 1.5, // 레벨당 비용 증가율
+        baseCost: 100000,  // 탐사 기본 비용 10만
+        costMultiplier: 1.05, // 10번당 5% 증가
         baseReward: 100,
         rewardMultiplier: 2, // 레벨당 보상 증가율
-        cooldown: 60000, // 1분 쿨다운
-        specialEventChance: 0.05, // 5% 특별 이벤트 확률
-        doubleRewardChance: 0.1, // 10% 더블 보상 확률
-        companyBonusChance: 0.15 // 15% 회사 보너스 확률
+        cooldown: 30000, // 30초 쿨다운
+        specialEventChance: 0.1, // 10% 특별 이벤트 확률
+        doubleRewardChance: 0.15, // 15% 더블 보상 확률
+        companyBonusChance: 0.2 // 20% 회사 보너스 확률
     },
 
     // 특별 이벤트

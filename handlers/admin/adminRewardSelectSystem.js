@@ -28,8 +28,56 @@ class AdminRewardSelectSystem {
 
         const embed = new EmbedBuilder()
             .setColor('#e74c3c')
-            .setTitle('🎁 관리자 보상 시스템 (선택식)')
-            .setDescription('선택 메뉴를 통해 쉽게 보상을 지급할 수 있습니다.')
+            .setTitle('🎁 통합 보상 시스템')
+            .setDescription('보상 지급 방식을 선택하세요.')
+            .addFields(
+                { 
+                    name: '👤 선택 보상', 
+                    value: '특정 유저를 선택하여 보상 지급\n└ 골드, 아이템, 경험치, 티켓 등', 
+                    inline: true 
+                },
+                { 
+                    name: '👥 전체 보상', 
+                    value: '모든 유저 또는 조건부 지급\n└ 활성 유저, 레벨 범위 등', 
+                    inline: true 
+                }
+            )
+            .setFooter({ text: '모든 보상 지급은 로그에 기록됩니다.' });
+
+        const mainButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('admin_reward_select_mode')
+                    .setLabel('👤 선택 보상')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('🎯'),
+                new ButtonBuilder()
+                    .setCustomId('admin_reward_bulk_mode')
+                    .setLabel('👥 전체 보상')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('🌐'),
+                new ButtonBuilder()
+                    .setCustomId('admin_reward_history')
+                    .setLabel('📜 지급 내역')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('admin_panel')
+                    .setLabel('🔙 관리자 메뉴')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await interaction.editReply({
+            embeds: [embed],
+            components: [mainButtons]
+        });
+    }
+
+    // 선택 보상 메뉴
+    async showSelectRewardMenu(interaction) {
+        const embed = new EmbedBuilder()
+            .setColor('#3498db')
+            .setTitle('🎯 선택 보상 시스템')
+            .setDescription('특정 유저에게 보상을 지급합니다.')
             .addFields(
                 { name: '💰 골드', value: '드롭다운으로 선택', inline: true },
                 { name: '🎁 아이템', value: '카테고리별 선택', inline: true },
@@ -37,8 +85,7 @@ class AdminRewardSelectSystem {
                 { name: '🎫 티켓', value: '종류별 선택', inline: true },
                 { name: '💎 스탯', value: '타입별 선택', inline: true },
                 { name: '📦 세트', value: '미리 정의된 세트', inline: true }
-            )
-            .setFooter({ text: '모든 보상 지급은 로그에 기록됩니다.' });
+            );
 
         const buttons = new ActionRowBuilder()
             .addComponents(
@@ -64,15 +111,6 @@ class AdminRewardSelectSystem {
                     .setStyle(ButtonStyle.Primary)
             );
             
-        const buttons1_5 = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('admin_equip_menu')
-                    .setLabel('🛡️ 3단어 장비 생성')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('🆕')
-            );
-
         const buttons2 = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
@@ -80,22 +118,19 @@ class AdminRewardSelectSystem {
                     .setLabel('📦 세트 보상')
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
-                    .setCustomId('admin_bulk_menu')
-                    .setLabel('👥 전체 지급')
-                    .setStyle(ButtonStyle.Success),
+                    .setCustomId('admin_equip_menu')
+                    .setLabel('🛡️ 3단어 장비 생성')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('🆕'),
                 new ButtonBuilder()
-                    .setCustomId('admin_reward_history')
-                    .setLabel('📜 지급 내역')
-                    .setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder()
-                    .setCustomId('admin_panel')
-                    .setLabel('🔙 관리자 메뉴')
+                    .setCustomId('admin_reward_menu')
+                    .setLabel('🔙 보상 메뉴')
                     .setStyle(ButtonStyle.Secondary)
             );
 
         await interaction.editReply({
             embeds: [embed],
-            components: [buttons, buttons1_5, buttons2]
+            components: [buttons, buttons2]
         });
     }
 
@@ -198,7 +233,7 @@ class AdminRewardSelectSystem {
                 { label: '무기', value: 'weapons', emoji: '⚔️' },
                 { label: '방어구', value: 'armors', emoji: '🛡️' },
                 { label: '소비 아이템', value: 'consumables', emoji: '🧪' },
-                { label: '특수 아이템', value: 'special', emoji: '✨' },
+                { label: '특수 아이템 (강화석/주문서)', value: 'special', emoji: '✨' },
                 { label: '관리자 전용', value: 'admin', emoji: '👑' }
             ]);
 
@@ -238,6 +273,7 @@ class AdminRewardSelectSystem {
     // 아이템 목록 표시
     async showItemList(interaction, category) {
         await interaction.deferUpdate().catch(() => {});
+        
         const categoryItems = items[category];
         if (!categoryItems) return;
 
@@ -669,13 +705,20 @@ class AdminRewardSelectSystem {
 
                 case 'item':
                     const item = createItem(reward.itemId, 1, 0);
+                    if (!item) {
+                        return await interaction.reply({
+                            content: '❌ 아이템을 찾을 수 없습니다.',
+                            flags: 64
+                        });
+                    }
+                    
                     if (!targetUser.inventory) targetUser.inventory = [];
                     targetUser.inventory.push(item);
                     await targetUser.save();
                     
                     resultMessage = `🎁 **아이템 지급 완료**\n` +
                         `대상: ${targetUser.nickname}\n` +
-                        `아이템: ${rarityEmojis[item.rarity]} ${item.name}`;
+                        `아이템: ${item.emoji || rarityEmojis[item.rarity] || '⚪'} ${item.name}`;
                     break;
 
                 case 'ticket':

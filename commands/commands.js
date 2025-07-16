@@ -163,6 +163,11 @@ const productionCommands = [
         type: 1,
     },
     {
+        name: '엠블럼관리',
+        description: '관리자 전용 엠블럼 관리 명령어',
+        type: 1,
+    },
+    {
         name: '사냥',
         description: '사냥터로 이동합니다',
         type: 1,
@@ -568,58 +573,6 @@ const productionCommands = [
         type: 1,
         options: [
             {
-                name: '엠블럼초기화',
-                description: '특정 유저의 엠블럼을 초기화합니다',
-                type: 1,
-                options: [
-                    {
-                        name: '유저',
-                        description: '엠블럼을 초기화할 유저',
-                        type: 6,
-                        required: true
-                    }
-                ]
-            },
-            {
-                name: '엠블럼지급',
-                description: '특정 유저에게 엠블럼을 지급합니다',
-                type: 1,
-                options: [
-                    {
-                        name: '유저',
-                        description: '엠블럼을 지급받을 유저',
-                        type: 6,
-                        required: true
-                    },
-                    {
-                        name: '계열',
-                        description: '엠블럼 계열',
-                        type: 3,
-                        required: true,
-                        choices: [
-                            { name: '⚔️ 전사', value: 'warrior' },
-                            { name: '🏹 궁수', value: 'archer' },
-                            { name: '🛡️ 수호자', value: 'defender' },
-                            { name: '🧙 마법사', value: 'wizard' },
-                            { name: '🗡️ 도적', value: 'rogue' }
-                        ]
-                    },
-                    {
-                        name: '등급',
-                        description: '엠블럼 등급 (0-4)',
-                        type: 4,
-                        required: true,
-                        min_value: 0,
-                        max_value: 4
-                    }
-                ]
-            },
-            {
-                name: '엠블럼현황',
-                description: '전체 엠블럼 보유 현황을 확인합니다',
-                type: 1
-            },
-            {
                 name: '엠블럼상점새로고침',
                 description: '영구 엠블럼 상점을 새로고침합니다',
                 type: 1
@@ -744,6 +697,50 @@ const productionCommands = [
         name: 'pvp정리',
         description: '멈춘 PVP 채널들을 정리합니다 (관리자 전용)',
         type: 1
+    },
+    {
+        name: '보스소환',
+        description: '특정 보스를 소환합니다 (관리자 전용)',
+        type: 1,
+        options: [
+            {
+                name: '보스',
+                description: '소환할 보스를 선택하세요',
+                type: 3,
+                required: true,
+                choices: [
+                    { name: '👺 고블린 족장', value: 'goblin_chief' },
+                    { name: '💀 해골 왕', value: 'skeleton_king' },
+                    { name: '🗡️ 그림자 암살자', value: 'shadow_assassin' },
+                    { name: '👹 데몬 로드', value: 'demon_lord' },
+                    { name: '🗿 고대 골렘', value: 'ancient_golem' },
+                    { name: '🐉 서리 드래곤', value: 'frost_dragon' },
+                    { name: '🔥 화염 엘리멘탈', value: 'fire_elemental' }
+                ]
+            }
+        ]
+    },
+    {
+        name: '보스디버그',
+        description: '보스 시스템 디버깅 (관리자 전용)',
+        type: 1,
+        options: [
+            {
+                name: '상태',
+                description: '현재 보스 상태 확인',
+                type: 1
+            },
+            {
+                name: '소환',
+                description: '보스 강제 소환',
+                type: 1
+            },
+            {
+                name: '리셋',
+                description: '보스 시스템 리셋',
+                type: 1
+            }
+        ]
     }
 ];
 

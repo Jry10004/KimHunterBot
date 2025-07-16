@@ -7,7 +7,16 @@ const ActivityLog = require('../../models/ActivityLog');
 const { MONSTER_EMOJIS } = require('../../data/monsterEmojis');
 const { applyHuntingDamageBonus, applyGoldBonus, applyExpBonus, applyDropRateBonus } = require('../common/specialEffects');
 const { MONSTER_MUTATIONS, generateMutation, calculateElementalDamage } = require('../../data/monsterMutations');
-const { calculateHuntingDamage, calculateDodgeChance, calculateDamageReduction } = require('../common/damageCalculator');
+const { 
+    calculateHuntingDamage, 
+    calculateDodgeChance, 
+    calculateDamageReduction,
+    applyWarriorDamageReduction,
+    calculateDefenderShield,
+    calculateDefenderDamageReduction,
+    calculateDefenderCounterAttack,
+    calculateThiefDodgeCounter
+} = require('../common/damageCalculator');
 const buffSystem = require('../common/buffSystem');
 const { LOOT_APPRAISAL } = require('../../data/lootAppraisal');
 const { HUNTING_TOURNAMENT, calculateWeeklyScore } = require('../../data/huntingTournament');
@@ -15,6 +24,9 @@ const { LOOT_MARKET, calculateAppraiserChance, recordMarketEvent, updateMarketPr
 const lifeSystem = require('../../systems/lifeSystemIntegration');
 const MissionHelper = require('../../utils/missionHelper');
 const { restBonusSystem } = require('../../systems/restBonus');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../../utils/levelCapHelper');
+// const { showCraftingMenu } = require('../../systems/materialCraftingSystem');
+// const { updateMissionProgress } = require('../../systems/huntingPassSystem');
 
 const GAME_GIFS = require('../../data/gameGifs');
 
@@ -46,14 +58,15 @@ const HUNTING_GIFS = {
     ]
 };
 
-// 연속 사냥 보너스 계산
+// 연속 사냥 보너스 계산 (강화된 보너스)
 function getStreakBonus(streak) {
-    if (streak >= 50) return { expBonus: 2.0, goldBonus: 2.0, dropBonus: 0.5 };
-    if (streak >= 30) return { expBonus: 1.5, goldBonus: 1.5, dropBonus: 0.3 };
-    if (streak >= 20) return { expBonus: 1.3, goldBonus: 1.3, dropBonus: 0.2 };
-    if (streak >= 10) return { expBonus: 1.2, goldBonus: 1.2, dropBonus: 0.15 };
-    if (streak >= 5) return { expBonus: 1.1, goldBonus: 1.1, dropBonus: 0.1 };
-    if (streak >= 3) return { expBonus: 1.05, goldBonus: 1.05, dropBonus: 0.05 };
+    if (streak >= 100) return { expBonus: 3.0, goldBonus: 3.0, dropBonus: 1.0 };
+    if (streak >= 50) return { expBonus: 2.5, goldBonus: 2.5, dropBonus: 0.8 };
+    if (streak >= 30) return { expBonus: 2.0, goldBonus: 2.0, dropBonus: 0.6 };
+    if (streak >= 20) return { expBonus: 1.7, goldBonus: 1.7, dropBonus: 0.4 };
+    if (streak >= 10) return { expBonus: 1.5, goldBonus: 1.5, dropBonus: 0.3 };
+    if (streak >= 5) return { expBonus: 1.3, goldBonus: 1.3, dropBonus: 0.2 };
+    if (streak >= 3) return { expBonus: 1.1, goldBonus: 1.1, dropBonus: 0.1 };
     return { expBonus: 1.0, goldBonus: 1.0, dropBonus: 0 };
 }
 
@@ -182,6 +195,22 @@ async function showHuntingMenu(interaction, page = 0) {
                 .setStyle(ButtonStyle.Success)
                 .setDisabled(false), // 테스트를 위해 임시로 항상 활성화
             new ButtonBuilder()
+                .setCustomId('fishing_cast')
+                .setLabel('🎣 낚시')
+                .setStyle(ButtonStyle.Primary),
+            // new ButtonBuilder()
+            //     .setCustomId('material_crafting')
+            //     .setLabel('🔨 재료 제작')
+            //     .setStyle(ButtonStyle.Success),
+            // new ButtonBuilder()
+            //     .setCustomId('hunting_pass')
+            //     .setLabel('🎫 사냥 패스')
+            //     .setStyle(ButtonStyle.Primary)
+        );
+    
+    const mainButton = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
                 .setCustomId('main_menu')
                 .setLabel('🏠 메인')
                 .setStyle(ButtonStyle.Secondary)
@@ -191,12 +220,12 @@ async function showHuntingMenu(interaction, page = 0) {
     if (interaction.deferred || interaction.replied) {
         return await interaction.editReply({
             embeds: [embed],
-            components: [huntingButtons, navButtons]
+            components: [huntingButtons, navButtons, mainButton]
         });
     } else {
         return await interaction.reply({
             embeds: [embed],
-            components: [huntingButtons, navButtons],
+            components: [huntingButtons, navButtons, mainButton],
             flags: 64
         });
     }
@@ -297,7 +326,8 @@ async function executeHunt(interaction, areaId) {
     const isDodged = Math.random() < userDodgeChance;
     
     // 실제 전투 시뮬레이션
-    let userHealth = (user.health || 100) + (user.stats?.vitality || 10) * 10 + user.level * 20;
+    // 유저 체력 계산 개선 (기본체력 + 체력스탯보너스 + 레벨보너스)
+    let userHealth = 1000 + (user.stats?.vitality || 10) * 50 + user.level * 100;
     let monsterHealth = monsterStats.health;
     
     // 보스/변이 체력 보정
@@ -320,17 +350,33 @@ async function executeHunt(interaction, areaId) {
         userBuffs.push(poisonBuff);
     }
     
-    // 전투 턴 계산 (최대 10턴)
+    // 전투 턴 계산 (최대 20턴으로 증가)
     let turns = 0;
     let isWin = false;
     let isCritical = userDamageResult.isCritical;
     let battleEffects = [];
     
-    while (turns < 10 && userHealth > 0 && monsterHealth > 0) {
+    while (turns < 20 && userHealth > 0 && monsterHealth > 0) {
         // 유저 공격
         const damageResult = calculateHuntingDamage(user, monsterStats);
+        let actualDamage = 0;
+        
         if (Math.random() > monsterDodgeChance) {
-            monsterHealth -= damageResult.damage;
+            actualDamage = damageResult.damage;
+            
+            // 궁수 2연타 확인
+            if (damageResult.hasDoubleHit) {
+                actualDamage = damageResult.totalDamage;
+                battleEffects.push('🏹 2연타 공격!');
+            }
+            
+            // 도적 그림자 공격 확인
+            if (damageResult.hasExtraAttack) {
+                actualDamage = damageResult.totalDamage;
+                battleEffects.push('🗡️ 그림자 공격!');
+            }
+            
+            monsterHealth -= actualDamage;
             if (damageResult.isCritical) isCritical = true;
             
             // 특수 무기 효과 (랜덤 버프)
@@ -344,13 +390,47 @@ async function executeHunt(interaction, areaId) {
                 userBuffs.push(attackBuff);
                 battleEffects.push('⚔️ 무기 효과 발동!');
             }
+        } else {
+            // 도적 회피 반격 체크
+            const dodgeCounter = calculateThiefDodgeCounter(monsterStats, user);
+            if (dodgeCounter.hasCounter) {
+                monsterHealth -= dodgeCounter.counterDamage;
+                battleEffects.push(`🗡️ 회피 반격! ${dodgeCounter.counterDamage} 데미지`);
+            }
         }
         
         // 몬스터 공격
         if (monsterHealth > 0 && !isDodged) {
-            const monsterDamage = Math.floor((monsterStats.attack + 10) * (0.8 + Math.random() * 0.4));
-            const reduction = calculateDamageReduction(user.defense || 10);
-            userHealth -= Math.floor(monsterDamage * (1 - reduction));
+            // 몬스터 데미지 계산 조정 (너무 높았음)
+            let monsterDamage = Math.floor((monsterStats.attack) * (0.5 + Math.random() * 0.3));
+            
+            // 수호자 보호막 및 기본 방어 적용
+            const shieldReduction = calculateDefenderShield(user);
+            const baseReduction = calculateDefenderDamageReduction(user);
+            const defenseReduction = calculateDamageReduction(user.defense || 10);
+            const totalReduction = shieldReduction + baseReduction + defenseReduction;
+            
+            if (shieldReduction > 0) {
+                battleEffects.push('🛡️ 보호막 발동!');
+            }
+            
+            monsterDamage = Math.floor(monsterDamage * (1 - totalReduction));
+            
+            // 전사 불굴의 의지 체크
+            const warriorReduction = applyWarriorDamageReduction(monsterDamage, user);
+            if (warriorReduction.reduced) {
+                monsterDamage = warriorReduction.damage;
+                battleEffects.push(`⚔️ 불굴의 의지! -${warriorReduction.reductionAmount}`);
+            }
+            
+            userHealth -= monsterDamage;
+            
+            // 수호자 반격 체크
+            const counterAttack = calculateDefenderCounterAttack(monsterDamage, user);
+            if (counterAttack.hasCounter) {
+                monsterHealth -= counterAttack.counterDamage;
+                battleEffects.push(`🛡️ 반격! ${counterAttack.counterDamage} 데미지`);
+            }
             
             // 보스 특수 공격
             if (isBoss && Math.random() < 0.2) {
@@ -501,8 +581,37 @@ async function executeHunt(interaction, areaId) {
         user.lastHuntingTime = now;
         user.totalHunts = (user.totalHunts || 0) + 1;
         
-        // 연속 사냥 정보 즉시 저장
-        await user.save();
+        // 연속 사냥 미션 체크
+        // if (user.huntingStreak >= 50) {
+        //     await updateMissionProgress(user, 'streak', user.huntingStreak);
+        // }
+        
+        // 연속 사냥 정보 즉시 저장 (VersionError 대비 retry 로직)
+        let saveAttempts = 0;
+        const maxAttempts = 3;
+        while (saveAttempts < maxAttempts) {
+            try {
+                await user.save();
+                break;
+            } catch (error) {
+                if (error.name === 'VersionError' && saveAttempts < maxAttempts - 1) {
+                    saveAttempts++;
+                    console.log(`[Hunting] VersionError on save attempt ${saveAttempts}, retrying...`);
+                    // 사용자 데이터 다시 조회
+                    const freshUser = await User.findById(user._id);
+                    if (freshUser) {
+                        // 필요한 필드만 업데이트
+                        freshUser.huntingTickets = user.huntingTickets;
+                        freshUser.huntingStreak = user.huntingStreak;
+                        freshUser.lastHuntingTime = user.lastHuntingTime;
+                        freshUser.totalHunts = user.totalHunts;
+                        user = freshUser;
+                    }
+                } else {
+                    throw error;
+                }
+            }
+        }
         
         // 몬스터의 exp와 gold는 배열 형태 [최소값, 최대값]
         const expMin = monster.exp[0];
@@ -519,10 +628,17 @@ async function executeHunt(interaction, areaId) {
             expGain *= 3;
             goldGain *= 3;
             user.bossKills = (user.bossKills || 0) + 1;
+            // 사냥 패스 미션 업데이트
+            // await updateMissionProgress(user, 'boss', 1);
         } else if (isRare) {
             expGain *= 1.5;
             goldGain *= 1.5;
+            // 사냥 패스 미션 업데이트
+            // await updateMissionProgress(user, 'rare', 1);
         }
+        
+        // 일반 사냥 미션 업데이트
+        // await updateMissionProgress(user, 'hunt', 1);
         
         // 변이 보너스 적용
         if (mutation) {
@@ -552,7 +668,13 @@ async function executeHunt(interaction, areaId) {
             goldGain += treasureGold;
         }
         
-        user.exp += expGain;
+        // 만렙 체크 후 경험치 추가
+        let actualExpGained = 0;
+        if (canGainExperience(user)) {
+            actualExpGained = addExperienceSafely(user, expGain);
+        } else {
+            expGain = 0; // 만렙인 경우 경험치 획득량 0으로 표시
+        }
         user.gold += goldGain;
         
         console.log(`[사냥] ${user.discordId} - 경험치: ${user.exp} (+${expGain}), 골드: ${user.gold} (+${goldGain})`);
@@ -719,6 +841,31 @@ async function executeHunt(interaction, areaId) {
                     fromMutation: true
                 });
             }
+        }
+        
+        // 엠블럼 기적의 주문서 드롭 체크 (0.035% 확률)
+        if (Math.random() < 0.00035) { // 0.035%
+            if (!user.items) user.items = {};
+            user.items.emblemMiracleScroll = (user.items.emblemMiracleScroll || 0) + 1;
+            
+            // 드롭 아이템 목록에 추가
+            dropItems.push({
+                item: {
+                    id: 'emblemMiracleScroll',
+                    name: '엠블럼 기적의 주문서',
+                    emoji: '🌟',
+                    rarity: '신화',
+                    value: 10000000
+                },
+                quantity: 1,
+                isSpecialDrop: true
+            });
+            
+            // 라이프 시스템 뉴스 연동
+            lifeSystem.reportRareDrop(user, {
+                name: '엠블럼 기적의 주문서',
+                rarity: '신화'
+            }, area.name, 1);
         }
         
         // 미확인 아이템 드롭 (변이 몬스터와 보스는 확률 증가)
@@ -894,6 +1041,8 @@ async function executeHunt(interaction, areaId) {
             dropItems.forEach(drop => {
                 if (drop.isMutationDrop) {
                     dropText += `${drop.item.emoji} **${drop.item.name}** (${drop.item.rarity}) ✨ _변이 특수 드롭!_\n`;
+                } else if (drop.isSpecialDrop) {
+                    dropText += `${drop.item.emoji} **${drop.item.name}** (${drop.item.rarity}) 🌟 _극희귀 드롭!_\n`;
                 } else {
                     dropText += `${drop.item.emoji || '📦'} **${drop.item.name}** (${drop.item.rarity})`;
                     if (drop.quantity > 1) dropText += ` x${drop.quantity}`;

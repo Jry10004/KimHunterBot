@@ -1,152 +1,272 @@
-// 순환 참조 방지를 위해 직접 구현
+// 전투력 계산 시스템 - 완전 재작성
+// 직업별 가중치가 반영된 실전 중심 전투력
+
+// 직업별 스탯 가중치 정의
+const JOB_WEIGHTS = {
+    warrior: { 
+        strength: 2.5,  // 3.0 -> 2.5 하향
+        vitality: 1.5,  // 2.0 -> 1.5 하향
+        attack: 1.5, 
+        defense: 1.2, 
+        hp: 1.0, 
+        agility: 0.5, 
+        intelligence: 0.3, 
+        luck: 0.5, 
+        dodge: 0.3 
+    },
+    archer: { 
+        agility: 3.5,  // 3.3 -> 3.5 추가 상향
+        luck: 3.1,     // 2.9 -> 3.1 추가 상향
+        attack: 2.5,   // 2.3 -> 2.5 추가 상향
+        strength: 0.8, 
+        dodge: 1.8,    // 1.6 -> 1.8 추가 상향
+        hp: 0.7, 
+        defense: 0.5, 
+        vitality: 0.6, 
+        intelligence: 0.4 
+    },
+    mage: { 
+        intelligence: 3.3,  // 3.5 -> 3.3 (5% 너프)
+        attack: 2.4,        // 2.5 -> 2.4 (5% 너프)
+        luck: 1.5, 
+        hp: 1.0, 
+        defense: 0.7, 
+        agility: 0.5, 
+        strength: 0.3, 
+        vitality: 0.6, 
+        dodge: 0.8 
+    },
+    thief: { 
+        luck: 3.2,     // 3.0 -> 3.2 상향
+        agility: 3.2,  // 3.0 -> 3.2 상향
+        attack: 2.0,   // 1.8 -> 2.0 상향
+        dodge: 2.1,    // 2.0 -> 2.1 상향
+        strength: 0.6, 
+        hp: 0.7, 
+        defense: 0.4, 
+        intelligence: 0.5, 
+        vitality: 0.5 
+    },
+    defender: { 
+        vitality: 3.5, 
+        defense: 3.0, 
+        hp: 2.5, 
+        strength: 1.5, 
+        attack: 0.8, 
+        agility: 0.4, 
+        intelligence: 0.4, 
+        luck: 0.5, 
+        dodge: 0.6 
+    }
+};
+
+// 엠블럼에서 직업 추출
+function getJobFromEmblem(emblem) {
+    if (!emblem) return null;
+    
+    const emblemLower = emblem.toLowerCase();
+    
+    // 전사 계열 (정확한 엠블럼 이름)
+    if (emblem === '초보전사' || emblem === '튼튼한 기사' || 
+        emblem === '용맹한 검사' || emblem === '맹렬한 전사' || 
+        emblem === '전설의 기사') {
+        return 'warrior';
+    }
+    
+    // 궁수 계열 (정확한 엠블럼 이름)
+    if (emblem === '마을사냥꾼' || emblem === '숲의 궁수' || 
+        emblem === '바람 사수' || emblem === '정확한 사격수' || 
+        emblem === '전설의 명궁') {
+        return 'archer';
+    }
+    
+    // 수호자 계열 (정확한 엠블럼 이름)
+    if (emblem === '초보 수호자' || emblem === '철벽 방패병' || 
+        emblem === '불굴의 수호자' || emblem === '강철 파수꾼' || 
+        emblem === '전설의 철벽') {
+        return 'defender';
+    }
+    
+    // 마법사 계열 (정확한 엠블럼 이름)
+    if (emblem === '견습 마법사' || emblem === '원소 술사' || 
+        emblem === '신비한 현자' || emblem === '대마법사' || 
+        emblem === '전설의 아크메이지') {
+        return 'mage';
+    }
+    
+    // 도적 계열 (정확한 엠블럼 이름)
+    if (emblem === '떠돌이 도적' || emblem === '운 좋은 도둑' || 
+        emblem === '행운의 닌자' || emblem === '복 많은 도적' || 
+        emblem === '전설의 행운아') {
+        return 'thief';
+    }
+    
+    // 강화된 엠블럼 처리 (+숫자)
+    const baseEmblem = emblem.replace(/\s*\+\d+$/, '');
+    if (baseEmblem !== emblem) {
+        return getJobFromEmblem(baseEmblem);
+    }
+    
+    return null;
+}
+
+// 장착된 아이템 가져오기
 function getEquippedItem(user, slot) {
     if (!user || !user.equipment) return null;
     
     const slotIndex = user.equipment[slot];
     if (slotIndex === undefined || slotIndex === null || slotIndex < 0) return null;
     
-    // inventorySlot으로 찾기
     if (user.inventory) {
         const item = user.inventory.find(item => item && item.inventorySlot === slotIndex);
         if (item) return item;
         
-        // 못 찾았으면 배열 인덱스로 찾기
         return user.inventory[slotIndex] || null;
     }
     
     return null;
 }
 
-function getEmblemLevel(user, emblemType) {
-    if (!user || !user.emblems) return 0;
-    const emblem = user.emblems.find(e => e.type === emblemType);
-    return emblem ? emblem.level : 0;
-}
-
-// 통합 전투력 계산 함수 - 모든 곳에서 이 함수를 사용
-function calculateCombatPower(user) {
-    let totalPower = 0;
-    
-    // 1. 기본 스탯 전투력 계산
-    const stats = user.stats || {};
-    const baseStats = {
-        str: stats.strength || 10,
-        agi: stats.agility || 10,
-        int: stats.intelligence || 10,
-        vit: stats.vitality || 10,
-        luk: stats.luck || 10
+// 전체 스탯 계산 (기본 + 장비)
+function getTotalStats(user) {
+    const totalStats = {
+        strength: user.stats?.strength || 10,
+        agility: user.stats?.agility || 10,
+        intelligence: user.stats?.intelligence || 10,
+        vitality: user.stats?.vitality || 10,
+        luck: user.stats?.luck || 10,
+        attack: 10,  // 기본 공격력 (장비 공격력으로 대체됨)
+        defense: 10,  // 기본 방어력 (장비 방어력으로 대체됨)
+        hp: 0,  // 장비에서 오는 추가 HP
+        dodge: 0
     };
     
-    // 스탯별 가중치 적용
-    const statPower = 
-        (baseStats.str * 2) +      // 힘: x2
-        (baseStats.agi * 1.5) +    // 민첩: x1.5
-        (baseStats.int * 1.2) +    // 지능: x1.2
-        (baseStats.vit * 1.8) +    // 체력: x1.8
-        (baseStats.luk * 0.5);     // 행운: x0.5
-    
-    totalPower += statPower;
-    
-    // 2. 장비 전투력 계산
-    let equipmentPower = 0;
+    // 장비 스탯 추가
     if (user.equipment && user.inventory) {
-        const slots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'accessory'];
+        const slots = ['weapon', 'armor', 'helmet', 'gloves', 'boots', 'shield', 'accessory'];
         
         for (const slot of slots) {
             const item = getEquippedItem(user, slot);
             if (item && item.stats) {
-                // 기본 능력치
-                const attack = item.stats.attack || 0;
-                const defense = item.stats.defense || 0;
-                const hp = item.stats.hp || 0;
-                
-                // 강화 보너스 적용
-                const enhancement = item.enhancement || 0;
-                const totalAttack = attack + (enhancement * 10);
-                const totalDefense = defense + (enhancement * 10);
-                const totalHp = hp + (enhancement * 20);
-                
-                equipmentPower += totalAttack * 2;
-                equipmentPower += totalDefense * 1.5;
-                equipmentPower += totalHp * 0.5;
-                equipmentPower += (item.stats.dodge || 0) * 1;
-                equipmentPower += (item.stats.luck || 0) * 0.5;
+                for (const [stat, value] of Object.entries(item.stats)) {
+                    if (totalStats.hasOwnProperty(stat)) {
+                        totalStats[stat] += value;
+                    }
+                }
+                // 강화 수치 반영
+                if (item.enhancement || item.enhanceLevel) {
+                    const enhanceLevel = item.enhancement || item.enhanceLevel || 0;
+                    if (item.stats.attack) {
+                        totalStats.attack += enhanceLevel * 10;
+                    }
+                    if (item.stats.defense) {
+                        totalStats.defense += enhanceLevel * 10;
+                    }
+                    if (item.stats.hp) {
+                        totalStats.hp += enhanceLevel * 20;
+                    }
+                }
             }
         }
     }
-    totalPower += equipmentPower;
     
-    // 3. 엠블럼 강화 보너스
-    if (user.emblemEnhancement && user.emblemEnhancement.level > 0) {
-        totalPower += user.emblemEnhancement.level * 20; // 강화 레벨당 +20
+    // 장신구 스탯 추가
+    if (user.equippedAccessories) {
+        const accessorySlots = ['ring1', 'ring2', 'necklace', 'bracelet1', 'bracelet2', 'earring1', 'earring2'];
+        for (const slot of accessorySlots) {
+            const accessory = user.equippedAccessories[slot];
+            if (accessory && accessory.stats) {
+                const stats = accessory.stats instanceof Map ? Object.fromEntries(accessory.stats) : accessory.stats;
+                for (const [stat, value] of Object.entries(stats)) {
+                    if (totalStats.hasOwnProperty(stat) && value > 0) {
+                        totalStats[stat] += value;
+                    }
+                }
+            }
+        }
     }
     
-    // 4. 레벨 보너스
-    totalPower += user.level * 10;
+    // 엠블럼 강화 스탯 추가 (중복 제거 - appliedStats만 사용)
+    if (user.emblemEnhancement && user.emblemEnhancement.appliedStats) {
+        for (const [stat, value] of Object.entries(user.emblemEnhancement.appliedStats)) {
+            if (totalStats.hasOwnProperty(stat) && value > 0) {
+                totalStats[stat] += value;
+            }
+        }
+    }
     
-    // 5. PVP 강화 전투력
+    return totalStats;
+}
+
+// 전투력 계산 - 직업별 특화
+function calculateCombatPower(user) {
+    // 1. 직업 확인
+    const job = getJobFromEmblem(user.emblem);
+    const weights = job ? JOB_WEIGHTS[job] : null;
+    
+    // 2. 전체 스탯 계산
+    const stats = getTotalStats(user);
+    
+    // 3. 직업별 가중치 적용 전투력
+    let combatPower = 0;
+    
+    if (weights) {
+        // 직업별 가중치 적용
+        for (const [stat, value] of Object.entries(stats)) {
+            const weight = weights[stat] || 0.1;
+            combatPower += value * weight;
+        }
+    } else {
+        // 직업 정보 없으면 기본 계산
+        combatPower = (stats.strength * 2) + 
+                      (stats.agility * 1.5) + 
+                      (stats.intelligence * 1.2) + 
+                      (stats.vitality * 1.8) + 
+                      (stats.luck * 0.5) +
+                      (stats.attack * 2) +
+                      (stats.defense * 1.5) +
+                      (stats.hp * 0.3) +
+                      (stats.dodge * 1);
+    }
+    
+    // 4. 레벨 보정 (하향 조정)
+    combatPower += user.level * 50;  // 100 -> 50 하향
+    
+    // 5. 추가 시스템 보너스
+    // PVP 강화
     if (user.pvp?.attackEnhancement) {
         const pvpPower = 
             (user.pvp.attackEnhancement.high || 0) * 15 +
             (user.pvp.attackEnhancement.middle || 0) * 10 +
             (user.pvp.attackEnhancement.low || 0) * 5;
-        totalPower += pvpPower;
+        combatPower += pvpPower;
     }
     
-    // 6. 에너지 조각 전투력
-    if (user.energyFragments?.fragments) {
-        let fragmentAttackBonus = 0;
-        // 각 레벨별 조각의 공격력 보너스 계산
-        Object.entries(user.energyFragments.fragments).forEach(([level, count]) => {
-            if (count > 0) {
-                fragmentAttackBonus += parseInt(level) * count; // 레벨 * 개수 = 공격력 보너스
-            }
-        });
-        totalPower += fragmentAttackBonus * 2; // 공격력 보너스를 전투력으로 변환 (x2)
-    }
-    
-    // 7. 운동 시스템 보너스
+    // 운동 시스템
     if (user.fitness?.stats) {
         const fitnessBonus = 
             (user.fitness.stats.strength || 0) * 2 +
             (user.fitness.stats.stamina || 0) * 1.5 +
             (user.fitness.stats.agility || 0) * 1;
-        totalPower += fitnessBonus;
+        combatPower += fitnessBonus;
     }
     
-    // 8. 목걸이 보너스 (구버전 호환)
-    if (user.equippedNecklace && user.equippedNecklace.stats) {
-        const necklacePower = 
-            (user.equippedNecklace.stats.attack || 0) * 2 +
-            (user.equippedNecklace.stats.defense || 0) * 1.5 +
-            (user.equippedNecklace.stats.hp || 0) * 0.5;
-        totalPower += necklacePower;
-    }
+    return Math.floor(combatPower);
+}
+
+// 전투력 차이에 따른 전투 수정치
+function getCombatModifier(attackerPower, defenderPower) {
+    const ratio = attackerPower / defenderPower;
     
-    // 9. 장신구 전투력 (신버전 - 7슬롯)
-    if (user.equippedAccessories) {
-        Object.values(user.equippedAccessories).forEach(accessory => {
-            if (accessory && accessory.stats) {
-                const stats = accessory.stats instanceof Map ? Object.fromEntries(accessory.stats) : accessory.stats;
-                
-                // 기본 스탯
-                totalPower += (stats.attack || 0) * 2;
-                totalPower += (stats.defense || 0) * 1.5;
-                totalPower += (stats.hp || 0) * 0.5;
-                totalPower += (stats.critical || 0) * 1;
-                totalPower += (stats.dodge || 0) * 1;
-                
-                // 특수 스탯
-                totalPower += (stats.pvpDamage || 0) * 0.5;
-                totalPower += (stats.huntingDamage || 0) * 0.5;
-                totalPower += (stats.bossDamage || 0) * 0.5;
-            }
-        });
-    }
-    
-    return Math.floor(totalPower);
+    return {
+        damage: Math.min(3.0, Math.max(0.2, ratio)),  // 0.2배 ~ 3배
+        hitRate: Math.min(0.95, Math.max(0.20, 0.5 + (ratio - 1) * 0.3))  // 20% ~ 95%
+    };
 }
 
 module.exports = {
-    calculateCombatPower
+    calculateCombatPower,
+    getCombatModifier,
+    getJobFromEmblem,
+    getTotalStats
 };

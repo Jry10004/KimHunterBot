@@ -265,10 +265,6 @@ class DogBotEventAnnouncer {
                         .setLabel('⚔️ 공격하기')
                         .setStyle(ButtonStyle.Danger),
                     new ButtonBuilder()
-                        .setCustomId('dogbot_ranking')
-                        .setLabel('📊 순위')
-                        .setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder()
                         .setCustomId('dogbot_status')
                         .setLabel('📊 현황 보기')
                         .setStyle(ButtonStyle.Secondary)

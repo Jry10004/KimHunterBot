@@ -20,9 +20,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 0.8, // 피로도 증가율
             rewards: {
-                goldPerMinute: 10,
-                expPerMinute: 5,
-                fitnessExpPerMinute: 8
+                goldPerMinute: 500,    // 10 -> 500 (50x)
+                expPerMinute: 50,      // 5 -> 50 (10x)
+                fitnessExpPerMinute: 80  // 8 -> 80 (10x)
             }
         },
         jogging: {
@@ -42,9 +42,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 0.6,
             rewards: {
-                goldPerMinute: 8,
-                expPerMinute: 6,
-                fitnessExpPerMinute: 10
+                goldPerMinute: 400,    // 8 -> 400 (50x)
+                expPerMinute: 60,      // 6 -> 60 (10x)
+                fitnessExpPerMinute: 100  // 10 -> 100 (10x)
             }
         },
         stretching: {
@@ -64,9 +64,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 0.3,
             rewards: {
-                goldPerMinute: 5,
-                expPerMinute: 4,
-                fitnessExpPerMinute: 6
+                goldPerMinute: 250,    // 5 -> 250 (50x)
+                expPerMinute: 40,      // 4 -> 40 (10x)
+                fitnessExpPerMinute: 60  // 6 -> 60 (10x)
             }
         },
         
@@ -88,9 +88,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 1.2,
             rewards: {
-                goldPerMinute: 20,
-                expPerMinute: 10,
-                fitnessExpPerMinute: 15
+                goldPerMinute: 1000,   // 20 -> 1000 (50x)
+                expPerMinute: 100,     // 10 -> 100 (10x)
+                fitnessExpPerMinute: 150  // 15 -> 150 (10x)
             }
         },
         treadmill: {
@@ -110,9 +110,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 0.9,
             rewards: {
-                goldPerMinute: 15,
-                expPerMinute: 12,
-                fitnessExpPerMinute: 18
+                goldPerMinute: 750,    // 15 -> 750 (50x)
+                expPerMinute: 120,     // 12 -> 120 (10x)
+                fitnessExpPerMinute: 180  // 18 -> 180 (10x)
             }
         },
         spinning: {
@@ -132,9 +132,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 1.4,
             rewards: {
-                goldPerMinute: 18,
-                expPerMinute: 14,
-                fitnessExpPerMinute: 20
+                goldPerMinute: 900,    // 18 -> 900 (50x)
+                expPerMinute: 140,     // 14 -> 140 (10x)
+                fitnessExpPerMinute: 200  // 20 -> 200 (10x)
             }
         },
         
@@ -156,9 +156,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 1.0,
             rewards: {
-                goldPerMinute: 30,
-                expPerMinute: 20,
-                fitnessExpPerMinute: 25
+                goldPerMinute: 1500,   // 30 -> 1500 (50x)
+                expPerMinute: 200,     // 20 -> 200 (10x)
+                fitnessExpPerMinute: 250  // 25 -> 250 (10x)
             }
         },
         pilates: {
@@ -178,9 +178,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 0.7,
             rewards: {
-                goldPerMinute: 25,
-                expPerMinute: 18,
-                fitnessExpPerMinute: 22
+                goldPerMinute: 1250,   // 25 -> 1250 (50x)
+                expPerMinute: 180,     // 18 -> 180 (10x)
+                fitnessExpPerMinute: 220  // 22 -> 220 (10x)
             }
         },
         crossfit: {
@@ -200,9 +200,9 @@ const EXERCISE_SYSTEM = {
             },
             fatigueRate: 1.8,
             rewards: {
-                goldPerMinute: 35,
-                expPerMinute: 25,
-                fitnessExpPerMinute: 30
+                goldPerMinute: 1750,   // 35 -> 1750 (50x)
+                expPerMinute: 250,     // 25 -> 250 (10x)
+                fitnessExpPerMinute: 300  // 30 -> 300 (10x)
             }
         }
     },
@@ -220,13 +220,13 @@ const EXERCISE_SYSTEM = {
     equipment: {
         clothes: {
             basic: { name: '기본 운동복', efficiency: 1.0, cost: 0 },
-            brand: { name: '브랜드 운동복', efficiency: 1.1, cost: 5000 },
-            pro: { name: '프로 운동복', efficiency: 1.2, cost: 20000 }
+            brand: { name: '브랜드 운동복', efficiency: 1.1, cost: 250000 },  // 5000 -> 250000 (50x)
+            pro: { name: '프로 운동복', efficiency: 1.2, cost: 1000000 }     // 20000 -> 1000000 (50x)
         },
         shoes: {
             basic: { name: '기본 운동화', speed: 1.0, cost: 0 },
-            running: { name: '러닝화', speed: 1.15, cost: 8000 },
-            pro: { name: '프로 운동화', speed: 1.3, cost: 30000 }
+            running: { name: '러닝화', speed: 1.15, cost: 400000 },      // 8000 -> 400000 (50x)
+            pro: { name: '프로 운동화', speed: 1.3, cost: 1500000 }   // 30000 -> 1500000 (50x)
         }
     },
     
@@ -237,7 +237,7 @@ const EXERCISE_SYSTEM = {
             emoji: '🥤',
             duration: 7200000, // 2시간
             effect: { strength: 1.5 },
-            cost: 1000,
+            cost: 50000,   // 1000 -> 50000 (50x)
             description: '근력 운동 효율 +50%'
         },
         bcaa: {
@@ -245,7 +245,7 @@ const EXERCISE_SYSTEM = {
             emoji: '💊',
             duration: 10800000, // 3시간
             effect: { fatigueReduction: 0.7 },
-            cost: 1500,
+            cost: 75000,   // 1500 -> 75000 (50x)
             description: '피로도 증가 -30%'
         },
         booster: {
@@ -253,7 +253,7 @@ const EXERCISE_SYSTEM = {
             emoji: '⚡',
             duration: 3600000, // 1시간
             effect: { allStats: 1.3 },
-            cost: 2000,
+            cost: 100000,  // 2000 -> 100000 (50x)
             description: '모든 운동 효율 +30%'
         }
     },

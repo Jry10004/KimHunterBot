@@ -5,6 +5,7 @@ const BOSS_SYSTEM = require('../../data/bossSystem');
 const { applyBossRaidBonus, applyExpBonus, applyGoldBonus } = require('../common/specialEffects');
 const { calculateCombatPower } = require('../common/utils');
 const MissionHelper = require('../../utils/missionHelper');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../../utils/levelCapHelper');
 
 // 보스 레이드 세션 관리
 const bossRaidSessions = new Map();
@@ -60,10 +61,6 @@ class BossRaidSystem {
                         .setLabel('💎 장신구 상점')
                         .setStyle(ButtonStyle.Primary)
                         .setEmoji('💍'),
-                    new ButtonBuilder()
-                        .setCustomId('boss_raid_ranking')
-                        .setLabel('🏆 레이드 랭킹')
-                        .setStyle(ButtonStyle.Secondary),
                     new ButtonBuilder()
                         .setCustomId('main_menu')
                         .setLabel('🏠 메인 메뉴')
@@ -207,7 +204,10 @@ class BossRaidSystem {
         console.log(`[BossRaid] ${user.nickname || user.discordId} - 특수 효과 적용 후 골드: ${goldReward}, 경험치: ${expReward}`);
 
         user.gold += goldReward;
-        user.exp += expReward;
+        // 레벨 100 체크 후 경험치 추가
+        if (user.level < MAX_LEVEL) {
+            user.exp += expReward;
+        }
         
         // 골드 획득 미션 업데이트
         await MissionHelper.updateGoldEarned(user.discordId, goldReward);

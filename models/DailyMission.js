@@ -12,7 +12,7 @@ const dailyMissionSchema = new mongoose.Schema({
         attendance: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 1 } },
         miniGames: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 3 } },
         pvpBattles: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 10 } },
-        earnGold: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 50000 } },
+        earnGold: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 2500000 } },  // 50,000 -> 2,500,000 (50x)
         enhanceTries: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 3 } },
         exercise: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 1 } },
         hunting: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 5 } },
@@ -23,7 +23,7 @@ const dailyMissionSchema = new mongoose.Schema({
     // 주간미션 진행도
     weeklyMissions: {
         totalPvpWins: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 30 } },
-        totalGoldEarned: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 1000000 } },
+        totalGoldEarned: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 50000000 } },  // 1,000,000 -> 50,000,000 (50x)
         totalEnhanceSuccess: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 10 } },
         totalMiniGames: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 50 } },
         totalHunting: { completed: Boolean, progress: { type: Number, default: 0 }, target: { type: Number, default: 100 } },

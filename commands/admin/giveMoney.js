@@ -17,13 +17,23 @@ module.exports = {
                 .setMinValue(1)),
     
     async execute(interaction) {
+        console.log('[GiveMoney v2] Command executed by:', interaction.user.id, interaction.user.username);
+        console.log('[GiveMoney v2] Interaction state - Deferred:', interaction.deferred, 'Replied:', interaction.replied);
+
         // 관리자 권한 확인
         const adminIds = ['424480594542592009', '295980447849250817', '532128778175619084'];
         if (!adminIds.includes(interaction.user.id)) {
-            return await interaction.reply({
-                content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!',
-                flags: 64
-            });
+            // defer 상태 확인
+            if (interaction.deferred) {
+                return await interaction.editReply({
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!'
+                });
+            } else {
+                return await interaction.reply({
+                    content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!',
+                    flags: 64
+                });
+            }
         }
 
         const targetUser = interaction.options.getUser('유저');
@@ -32,10 +42,16 @@ module.exports = {
         // 타겟 유저 데이터 조회
         const userData = await User.findOne({ discordId: targetUser.id });
         if (!userData || !userData.registered) {
-            return await interaction.reply({
-                content: '❌ 해당 유저는 게임에 등록되지 않았습니다!',
-                flags: 64
-            });
+            if (interaction.deferred) {
+                return await interaction.editReply({
+                    content: '❌ 해당 유저는 게임에 등록되지 않았습니다!'
+                });
+            } else {
+                return await interaction.reply({
+                    content: '❌ 해당 유저는 게임에 등록되지 않았습니다!',
+                    flags: 64
+                });
+            }
         }
 
         // 골드 지급
@@ -58,9 +74,17 @@ module.exports = {
             .setTimestamp()
             .setFooter({ text: `관리자: ${interaction.user.username}` });
 
-        await interaction.reply({
-            embeds: [embed]
-        });
+        // defer 상태 확인
+        if (interaction.deferred) {
+            await interaction.editReply({
+                embeds: [embed]
+            });
+        } else {
+            await interaction.reply({
+                embeds: [embed],
+                flags: 64
+            });
+        }
 
         // 로그
         console.log(`[골드 지급] ${targetUser.username}(${targetUser.id})에게 ${amount}G 지급 - 관리자: ${interaction.user.username}`);

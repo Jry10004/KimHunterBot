@@ -58,62 +58,62 @@ const ARTIFACT_SYSTEM = {
     artifacts: {
         // 일반 유물 (70% 확률)
         common: [
-            { name: '고대 동전', value: [100, 300], emoji: '🪙', description: '녹슨 고대 동전. 골동품 수집가들이 좋아한다.' },
-            { name: '토기 조각', value: [80, 250], emoji: '🏺', description: '부서진 토기의 일부. 고고학적 가치가 있다.' },
-            { name: '돌 조각상', value: [150, 400], emoji: '🗿', description: '작은 석상. 고대 신을 형상화한 듯하다.' },
-            { name: '청동 팔찌', value: [200, 500], emoji: '💫', description: '고대 청동으로 만든 장신구.' },
-            { name: '화석 조개', value: [120, 350], emoji: '🐚', description: '수백만 년 전의 조개 화석.' }
+            { name: '고대 동전', value: [6500, 19500], emoji: '🪙', description: '녹슨 고대 동전. 골동품 수집가들이 좋아한다.' },
+            { name: '토기 조각', value: [5200, 16250], emoji: '🏺', description: '부서진 토기의 일부. 고고학적 가치가 있다.' },
+            { name: '돌 조각상', value: [9750, 26000], emoji: '🗿', description: '작은 석상. 고대 신을 형상화한 듯하다.' },
+            { name: '청동 팔찌', value: [13000, 32500], emoji: '💫', description: '고대 청동으로 만든 장신구.' },
+            { name: '화석 조개', value: [7800, 22750], emoji: '🐚', description: '수백만 년 전의 조개 화석.' }
         ],
         
         // 고급 유물 (20% 확률)
         rare: [
-            { name: '황금 목걸이', value: [800, 1500], emoji: '💎', description: '순금으로 제작된 고대 목걸이. 눈부시게 빛난다.' },
-            { name: '보석 단검', value: [1000, 2000], emoji: '🗡️', description: '보석이 박힌 의식용 단검. 날카롭고 아름답다.' },
-            { name: '고대 두루마리', value: [600, 1200], emoji: '📜', description: '고대 문자로 쓰인 신비한 두루마리.' },
-            { name: '수정 구슬', value: [900, 1800], emoji: '🔮', description: '마법의 힘이 깃든 투명한 수정구.' },
-            { name: '은 잔', value: [700, 1300], emoji: '🏆', description: '왕족이 사용했던 것으로 추정되는 은잔.' }
+            { name: '황금 목걸이', value: [52000, 97500], emoji: '💎', description: '순금으로 제작된 고대 목걸이. 눈부시게 빛난다.' },
+            { name: '보석 단검', value: [65000, 130000], emoji: '🗡️', description: '보석이 박힌 의식용 단검. 날카롭고 아름답다.' },
+            { name: '고대 두루마리', value: [39000, 78000], emoji: '📜', description: '고대 문자로 쓰인 신비한 두루마리.' },
+            { name: '수정 구슬', value: [58500, 117000], emoji: '🔮', description: '마법의 힘이 깃든 투명한 수정구.' },
+            { name: '은 잔', value: [45500, 84500], emoji: '🏆', description: '왕족이 사용했던 것으로 추정되는 은잔.' }
         ],
         
         // 에픽 유물 (8% 확률)
         epic: [
-            { name: '왕관의 조각', value: [3000, 5000], emoji: '👑', description: '전설의 왕이 착용했던 황금 왕관의 일부.' },
-            { name: '용의 비늘', value: [4000, 6000], emoji: '🐉', description: '고대 용족의 비늘. 마법적 기운이 느껴진다.' },
-            { name: '신의 성물', value: [3500, 5500], emoji: '✨', description: '신에게 바쳐진 성스러운 제단의 일부.' },
-            { name: '시간의 모래시계', value: [5000, 7000], emoji: '⏳', description: '시간을 조작할 수 있다는 전설의 모래시계.' },
-            { name: '불멸의 약초', value: [4500, 6500], emoji: '🌿', description: '영생을 약속하는 신비한 약초. 아직도 생생하다.' }
+            { name: '왕관의 조각', value: [195000, 325000], emoji: '👑', description: '전설의 왕이 착용했던 황금 왕관의 일부.' },
+            { name: '용의 비늘', value: [260000, 390000], emoji: '🐉', description: '고대 용족의 비늘. 마법적 기운이 느껴진다.' },
+            { name: '신의 성물', value: [227500, 357500], emoji: '✨', description: '신에게 바쳐진 성스러운 제단의 일부.' },
+            { name: '시간의 모래시계', value: [325000, 455000], emoji: '⏳', description: '시간을 조작할 수 있다는 전설의 모래시계.' },
+            { name: '불멸의 약초', value: [292500, 422500], emoji: '🌿', description: '영생을 약속하는 신비한 약초. 아직도 생생하다.' }
         ],
         
         // 레전드리 유물 (2% 확률)
         legendary: [
-            { name: '창조의 서판', value: [15000, 25000], emoji: '📋', description: '세상을 창조한 신의 설계도가 새겨진 금속판.' },
-            { name: '무한의 보석', value: [20000, 30000], emoji: '💎', description: '우주의 힘이 응축된 전설의 보석. 무지개빛으로 빛난다.' },
-            { name: '시공간 열쇠', value: [18000, 28000], emoji: '🗝️', description: '차원을 여는 열쇠. 다른 세계로의 문을 열 수 있다.' },
-            { name: '생명의 나무 가지', value: [22000, 32000], emoji: '🌳', description: '모든 생명의 근원인 세계수의 가지.' },
-            { name: '별의 눈물', value: [25000, 35000], emoji: '⭐', description: '죽어가는 별이 흘린 눈물이 굳어서 만들어진 보석.' }
+            { name: '창조의 서판', value: [975000, 1625000], emoji: '📋', description: '세상을 창조한 신의 설계도가 새겨진 금속판.' },
+            { name: '무한의 보석', value: [1300000, 1950000], emoji: '💎', description: '우주의 힘이 응축된 전설의 보석. 무지개빛으로 빛난다.' },
+            { name: '시공간 열쇠', value: [1170000, 1820000], emoji: '🗝️', description: '차원을 여는 열쇠. 다른 세계로의 문을 열 수 있다.' },
+            { name: '생명의 나무 가지', value: [1430000, 2080000], emoji: '🌳', description: '모든 생명의 근원인 세계수의 가지.' },
+            { name: '별의 눈물', value: [1625000, 2275000], emoji: '⭐', description: '죽어가는 별이 흘린 눈물이 굳어서 만들어진 보석.' }
         ]
     },
 
     // 탐사 지역별 특화 유물
     specialArtifacts: {
         desert: [
-            { name: '파라오의 황금 마스크', value: [10000, 15000], emoji: '👺', rarity: 'legendary' },
-            { name: '미라의 붕대', value: [2000, 3000], emoji: '🏺', rarity: 'epic' }
+            { name: '파라오의 황금 마스크', value: [500000, 750000], emoji: '👺', rarity: 'legendary' },
+            { name: '미라의 붕대', value: [100000, 150000], emoji: '🏺', rarity: 'epic' }
         ],
         ocean: [
-            { name: '해적왕의 보물상자', value: [12000, 18000], emoji: '💰', rarity: 'legendary' },
-            { name: '인어의 진주', value: [3000, 4000], emoji: '🦪', rarity: 'epic' }
+            { name: '해적왕의 보물상자', value: [600000, 900000], emoji: '💰', rarity: 'legendary' },
+            { name: '인어의 진주', value: [150000, 200000], emoji: '🦪', rarity: 'epic' }
         ],
         mountain: [
-            { name: '설인의 발자국 화석', value: [8000, 12000], emoji: '👣', rarity: 'legendary' },
-            { name: '얼음 수정', value: [2500, 3500], emoji: '❄️', rarity: 'epic' }
+            { name: '설인의 발자국 화석', value: [400000, 600000], emoji: '👣', rarity: 'legendary' },
+            { name: '얼음 수정', value: [125000, 175000], emoji: '❄️', rarity: 'epic' }
         ],
         jungle: [
-            { name: '잃어버린 도시의 열쇠', value: [11000, 16000], emoji: '🗝️', rarity: 'legendary' },
-            { name: '아즈텍 황금 조각상', value: [2800, 3800], emoji: '🗿', rarity: 'epic' }
+            { name: '잃어버린 도시의 열쇠', value: [550000, 800000], emoji: '🗝️', rarity: 'legendary' },
+            { name: '아즈텍 황금 조각상', value: [140000, 190000], emoji: '🗿', rarity: 'epic' }
         ],
         space: [
-            { name: '외계 문명의 데이터 코어', value: [30000, 50000], emoji: '🛸', rarity: 'legendary' },
-            { name: '운석 조각', value: [5000, 7000], emoji: '☄️', rarity: 'epic' }
+            { name: '외계 문명의 데이터 코어', value: [1500000, 2500000], emoji: '🛸', rarity: 'legendary' },
+            { name: '운석 조각', value: [250000, 350000], emoji: '☄️', rarity: 'epic' }
         ]
     },
 
@@ -126,13 +126,13 @@ const ARTIFACT_SYSTEM = {
         { name: '찢어진 천조각', description: '너무 오래되어 부스러지는 천이다.', emoji: '🧽' }
     ],
 
-    // 탐사 비용 (지역별)
+    // 탐사 비용 (지역별) - 유물 가격에 비례해서 조정
     explorationCosts: {
-        desert: { min: 500, max: 2000 },
-        ocean: { min: 1000, max: 3000 },
-        mountain: { min: 800, max: 2500 },
-        jungle: { min: 600, max: 2200 },
-        space: { min: 2000, max: 5000 }
+        desert: { min: 15000, max: 50000 },     // 일반~고급 유물 가격대
+        ocean: { min: 30000, max: 80000 },      // 고급~레어 유물 가격대
+        mountain: { min: 25000, max: 70000 },   // 고급~레어 유물 가격대
+        jungle: { min: 20000, max: 60000 },     // 일반~고급 유물 가격대
+        space: { min: 60000, max: 150000 }      // 에픽~레전드리 유물 가격대
     },
 
     // 스토리 텍스트

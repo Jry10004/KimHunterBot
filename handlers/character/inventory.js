@@ -325,12 +325,16 @@ async function showItemDetail(interaction, itemIndex) {
             const totalDefense = item.stats.defense + enhancement * 10;
             statInfo.push(`🛡️ 방어력: +${totalDefense} (기본 ${item.stats.defense} + 강화 ${enhancement * 10})`);
         }
+        if (item.stats.strength) statInfo.push(`💪 힘: +${item.stats.strength}`);
+        if (item.stats.agility) statInfo.push(`🏃 민첩: +${item.stats.agility}`);
+        if (item.stats.intelligence) statInfo.push(`🧠 지능: +${item.stats.intelligence}`);
+        if (item.stats.vitality) statInfo.push(`❤️ 체력: +${item.stats.vitality}`);
+        if (item.stats.luck) statInfo.push(`🍀 행운: +${item.stats.luck}`);
         if (item.stats.hp) {
             const totalHp = item.stats.hp + enhancement * 20;
-            statInfo.push(`❤️ 체력: +${totalHp} (기본 ${item.stats.hp} + 강화 ${enhancement * 20})`);
+            statInfo.push(`💖 추가 HP: +${totalHp} (기본 ${item.stats.hp} + 강화 ${enhancement * 20})`);
         }
         if (item.stats.dodge) statInfo.push(`💨 회피: +${item.stats.dodge}`);
-        if (item.stats.luck) statInfo.push(`🍀 행운: +${item.stats.luck}`);
 
         if (statInfo.length > 0) {
             itemEmbed.addFields({

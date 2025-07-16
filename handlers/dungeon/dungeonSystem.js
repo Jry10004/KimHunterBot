@@ -5,6 +5,15 @@ const { calculateCombatPower } = require('../common/combatPower');
 const MissionHelper = require('../../utils/missionHelper');
 const ActivityLog = require('../../models/ActivityLog');
 const { 
+    calculateDamage, 
+    calculateDodgeChance,
+    applyWarriorDamageReduction,
+    calculateDefenderShield,
+    calculateDefenderDamageReduction,
+    calculateDefenderCounterAttack,
+    calculateThiefDodgeCounter
+} = require('../common/damageCalculator');
+const { 
     DUNGEON_THEMES, 
     DUNGEON_EVENTS, 
     DUNGEON_BUFFS, 
@@ -13,6 +22,7 @@ const {
     MONSTER_AI_PATTERNS 
 } = require('../../data/dungeonEnhanced');
 const ARTIFACT_SYSTEM = require('../../data/artifactSystem');
+const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../../utils/levelCapHelper');
 
 class AutoDungeonSystem {
     constructor() {
@@ -95,8 +105,8 @@ class AutoDungeonSystem {
     }
 
     getFloorRewards(floor) {
-        const baseGold = 100 * floor;
-        const baseExp = 50 * floor;
+        const baseGold = 5000 * floor;  // 100 -> 5000 (50x increase)
+        const baseExp = 500 * floor;    // 50 -> 500 (10x increase)
         
         const rewards = {
             gold: baseGold + Math.floor(Math.random() * baseGold),
@@ -115,8 +125,8 @@ class AutoDungeonSystem {
         
         // 10층마다 보스 보상 (특별 유물 확정)
         if (floor % 10 === 0) {
-            rewards.gold *= 3;
-            rewards.exp *= 2;
+            rewards.gold *= 5;  // 3 -> 5 (더 많은 보스 보상)
+            rewards.exp *= 3;   // 2 -> 3
             const bossArtifact = this.getBossArtifact(floor);
             if (bossArtifact) {
                 rewards.items.push(bossArtifact);
@@ -190,6 +200,20 @@ class AutoDungeonSystem {
 
     // 던전 자동 탐험 시작
     async startAutoDungeon(interaction) {
+        // 먼저 defer 처리
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ flags: 64 });
+            }
+        } catch (error) {
+            if (error.code === 10062) {
+                console.log('[Dungeon] Start interaction expired');
+                return;
+            }
+            console.error('[Dungeon] Start defer error:', error);
+            return;
+        }
+        
         const userId = interaction.user.id;
         
         // 이미 활성화된 세션이 있는지 확인
@@ -214,19 +238,33 @@ class AutoDungeonSystem {
             const timeUntilRegen = Math.max(0, nextRegenTime - now);
             const minutesLeft = Math.ceil(timeUntilRegen / 60000);
             
-            return await interaction.reply({
-                content: `🎫 던전 티켓이 부족합니다!\n⏰ **${minutesLeft}분 후** 티켓이 생성됩니다.\n30분마다 1장씩 재생성됩니다.`,
-                flags: 64
-            });
+            try {
+                if (!interaction.deferred && !interaction.replied) {
+                    await interaction.deferReply({ flags: 64 });
+                }
+                return await interaction.editReply({
+                    content: `🎫 던전 티켓이 부족합니다!\n⏰ **${minutesLeft}분 후** 티켓이 생성됩니다.\n30분마다 1장씩 재생성됩니다.`
+                });
+            } catch (error) {
+                console.error('[Dungeon] Ticket reply error:', error);
+                return;
+            }
         }
         
         // 티켓 사용 (TicketManager 사용)
         const ticketResult = await TicketManager.useTicket(userId, 'dungeon');
         if (!ticketResult.success) {
-            return await interaction.reply({
-                content: ticketResult.error,
-                flags: 64
-            });
+            try {
+                if (!interaction.deferred && !interaction.replied) {
+                    await interaction.deferReply({ flags: 64 });
+                }
+                return await interaction.editReply({
+                    content: ticketResult.error
+                });
+            } catch (error) {
+                console.error('[Dungeon] Ticket error reply:', error);
+                return;
+            }
         }
         userData = ticketResult.user;
         
@@ -241,7 +279,11 @@ class AutoDungeonSystem {
             criticalRate: Math.min((userData.stats?.luck || 10) * 0.5, 30),
             accuracy: 85 + Math.min((userData.stats?.agility || 10) * 0.3, 15),
             evasion: Math.min((userData.stats?.agility || 10) * 0.5, 25),
-            lifesteal: Math.min((userData.stats?.intelligence || 10) * 0.3, 15)
+            lifesteal: Math.min((userData.stats?.intelligence || 10) * 0.3, 15),
+            // 통합 데미지 계산을 위한 추가 정보
+            stats: userData.stats,
+            emblem: userData.emblem,
+            level: userData.level
         };
         
         // 탐험 중 GIF 표시
@@ -252,7 +294,7 @@ class AutoDungeonSystem {
             .setColor('#FFA500')
             .setFooter({ text: '잠시만 기다려주세요...' });
 
-        await interaction.reply({ embeds: [processingEmbed] });
+        await interaction.editReply({ embeds: [processingEmbed] });
 
         // 자동 탐험 진행
         const dungeonResult = await this.simulateDungeonRun(userData, playerStats);
@@ -383,8 +425,8 @@ class AutoDungeonSystem {
         
         // 최소 보상 보장 (던전 진입 보상)
         if (result.totalGold === 0) {
-            result.totalGold = 50 * startFloor; // 층당 최소 50골드
-            result.totalExp = 25 * startFloor; // 층당 최소 25경험치
+            result.totalGold = 2500 * startFloor; // 층당 최소 2500골드 (50x increase)
+            result.totalExp = 250 * startFloor; // 층당 최소 250경험치 (10x increase)
         }
         
         return result;
@@ -452,7 +494,11 @@ class AutoDungeonSystem {
             }
 
             // 데미지 계산 (전투력 비율 반영)
-            let damage = this.calculateDamage(playerStats, monsterStats) * Math.max(powerRatio, 0.5);
+            const damageResult = calculateDamage(playerStats, monsterStats, {
+                skillMultiplier: 1.0,
+                damageType: 'physical'
+            });
+            let damage = damageResult.totalDamage * Math.max(powerRatio, 0.5);
             
             // 스킬 효과 적용
             if (skillActivation) {
@@ -483,9 +529,36 @@ class AutoDungeonSystem {
             }
 
             // 몬스터 공격 (전투력 비율 역반영)
-            const monsterDamage = this.calculateDamage(monsterStats, playerStats) * Math.max(1 / powerRatio, 0.5);
+            const monsterDamageResult = calculateDamage(monsterStats, playerStats, {
+                skillMultiplier: 1.0,
+                damageType: 'physical'
+            });
+            let monsterDamage = monsterDamageResult.totalDamage * Math.max(1 / powerRatio, 0.5);
+            
+            // 수호자 보호막 및 기본 방어 적용
+            const shieldReduction = calculateDefenderShield(playerStats);
+            const baseReduction = calculateDefenderDamageReduction(playerStats);
+            const totalReduction = shieldReduction + baseReduction;
+            
+            if (totalReduction > 0) {
+                monsterDamage *= (1 - totalReduction);
+            }
+            
+            // 전사 불굴의 의지 체크
+            const warriorReduction = applyWarriorDamageReduction(monsterDamage, playerStats);
+            if (warriorReduction.reduced) {
+                monsterDamage = warriorReduction.damage;
+            }
+            
             playerHp -= monsterDamage;
             result.damageTaken += monsterDamage;
+            
+            // 수호자 반격 체크
+            const counterAttack = calculateDefenderCounterAttack(monsterDamage, playerStats);
+            if (counterAttack.hasCounter && playerHp > 0) {
+                monsterHp -= counterAttack.counterDamage;
+                result.damageDealt += counterAttack.counterDamage;
+            }
 
             // 버섯팡 반격 처리
             if (skillActivation && playerPosition === 'low') {
@@ -522,30 +595,30 @@ class AutoDungeonSystem {
         return Math.random() * 100 < chance;
     }
 
-    // 데미지 계산
-    calculateDamage(attacker, defender) {
-        let damage = attacker.attack - (defender.defense * 0.5);
-        
-        // 크리티컬 확률
-        if (Math.random() * 100 < (attacker.criticalRate || 10)) {
-            damage *= 1.5;
-        }
-        
-        // 회피 확률
-        if (Math.random() * 100 < (defender.evasion || 5)) {
-            damage = 0;
-        }
-        
-        return Math.max(Math.floor(damage), 10);
-    }
+    // 데미지 계산 - 이제 통합 시스템 사용
+    // calculateDamage(attacker, defender) {
+    //     let damage = attacker.attack - (defender.defense * 0.5);
+    //     
+    //     // 크리티컬 확률
+    //     if (Math.random() * 100 < (attacker.criticalRate || 10)) {
+    //         damage *= 1.5;
+    //     }
+    //     
+    //     // 회피 확률
+    //     if (Math.random() * 100 < (defender.evasion || 5)) {
+    //         damage = 0;
+    //     }
+    //     
+    //     return Math.max(Math.floor(damage), 10);
+    // }
 
     // 랜덤 이벤트 생성
     generateRandomEvent(floor) {
         const events = [
-            { name: '💰 보물상자 발견!', gold: floor * 50, heal: 0 },
+            { name: '💰 보물상자 발견!', gold: floor * 2500, heal: 0 },  // 50 -> 2500 (50x)
             { name: '💚 회복의 샘', gold: 0, heal: 200 },
             { name: '⚡ 함정 발동!', gold: 0, heal: -100 },
-            { name: '🧙 떠돌이 상인', gold: floor * 20, heal: 50 }
+            { name: '🧙 떠돌이 상인', gold: floor * 1000, heal: 50 }     // 20 -> 1000 (50x)
         ];
         
         return events[Math.floor(Math.random() * events.length)];
@@ -596,9 +669,12 @@ class AutoDungeonSystem {
             ? `${formatNumber(result.totalGold)}G → ${formatNumber(previewFinalGold)}G (+${formatNumber(titleBonusAmount)})`
             : formatNumber(result.totalGold) + 'G';
         
+        // 만렙일 때 경험치 0으로 표시
+        const displayExp = userData.level >= MAX_LEVEL ? 0 : result.totalExp;
+        
         embed.addFields(
             { name: '💰 획득 골드', value: goldValue, inline: true },
-            { name: '✨ 획득 경험치', value: formatNumber(result.totalExp) + ' EXP', inline: true },
+            { name: '✨ 획득 경험치', value: formatNumber(displayExp) + ' EXP', inline: true },
             { name: '🎁 획득 아이템', value: itemText.substring(0, 50) + (itemText.length > 50 ? '...' : ''), inline: true }
         );
 
@@ -706,16 +782,31 @@ class AutoDungeonSystem {
         }
         
         userData.gold += finalGold;
-        userData.exp += result.totalExp;  // 경험치 지급 추가!
+        
+        // 만렙 체크 후 경험치 추가
+        let actualExpGained = 0;
+        if (canGainExperience(userData)) {
+            actualExpGained = addExperienceSafely(userData, result.totalExp);
+        } else {
+            console.log(`[Dungeon] ${userData.nickname}님은 만렙이므로 경험치를 받지 않습니다.`);
+        }
         
         // 레벨업 체크
         let leveledUp = false;
-        const requiredExp = userData.level * 100;
-        if (userData.exp >= requiredExp) {
-            userData.level++;
-            userData.exp -= requiredExp;
-            userData.statPoints = (userData.statPoints || 0) + 5;
-            leveledUp = true;
+        if (userData.level < MAX_LEVEL) {
+            const requiredExp = userData.level * 100;
+            if (userData.exp >= requiredExp) {
+                userData.level++;
+                userData.exp -= requiredExp;
+                userData.statPoints = (userData.statPoints || 0) + 5;
+                leveledUp = true;
+                
+                // 만렙 도달 시 경험치 0으로 설정
+                if (userData.level >= MAX_LEVEL) {
+                    userData.level = MAX_LEVEL;
+                    userData.exp = 0;
+                }
+            }
         }
         
         // 활동 로그 기록
@@ -731,7 +822,7 @@ class AutoDungeonSystem {
                     items: result.items || []
                 },
                 goldChange: result.totalGold,
-                expGained: result.totalExp,
+                expGained: actualExpGained,  // 실제 받은 경험치 기록
                 levelUp: leveledUp,
                 newLevel: leveledUp ? userData.level : null
             }
@@ -741,6 +832,25 @@ class AutoDungeonSystem {
             lastFloor: result.finalFloor,
             lastAttempt: Date.now()
         };
+        
+        // 통합 랭킹 데이터 업데이트
+        if (!userData.rankingStats) userData.rankingStats = {};
+        if (!userData.rankingStats.dungeon) {
+            userData.rankingStats.dungeon = {
+                maxFloor: 0,
+                totalClears: 0,
+                lastUpdated: null
+            };
+        }
+        
+        // 최고 층수 업데이트
+        if (result.finalFloor > (userData.rankingStats.dungeon.maxFloor || 0)) {
+            userData.rankingStats.dungeon.maxFloor = result.finalFloor;
+        }
+        
+        // 총 클리어 횟수 증가
+        userData.rankingStats.dungeon.totalClears = (userData.rankingStats.dungeon.totalClears || 0) + 1;
+        userData.rankingStats.dungeon.lastUpdated = new Date();
         
         // 골드 획득 미션 업데이트
         await MissionHelper.updateGoldEarned(userData.discordId, result.totalGold);

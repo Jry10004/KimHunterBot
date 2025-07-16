@@ -1,9 +1,10 @@
-const { 
-    handlePrelaunchEventButton,
-    startPrelaunchEvent,
-    loadPrelaunchData,
-    savePrelaunchData 
-} = require('./prelaunchEvent');
+// 사전강화 이벤트 종료로 주석 처리
+// const { 
+//     handlePrelaunchEventButton,
+//     startPrelaunchEvent,
+//     loadPrelaunchData,
+//     savePrelaunchData 
+// } = require('./prelaunchEvent');
 
 const {
     scheduleDogBotEvent,
@@ -16,10 +17,10 @@ const {
 async function handleEventInteraction(interaction) {
     const customId = interaction.customId;
     
-    // 사전강화 이벤트 버튼
-    if (customId === 'prelaunch_event_info' || customId === 'prelaunch_leaderboard') {
-        return await handlePrelaunchEventButton(interaction);
-    }
+    // 사전강화 이벤트 버튼 - 이벤트 종료로 비활성화
+    // if (customId === 'prelaunch_event_info' || customId === 'prelaunch_leaderboard') {
+    //     return await handlePrelaunchEventButton(interaction);
+    // }
     
     // 추가 이벤트 처리는 여기에
 }
@@ -50,8 +51,8 @@ function initializeAllEvents(client) {
 module.exports = {
     handleEventInteraction,
     initializeAllEvents,
-    loadPrelaunchData,
-    savePrelaunchData,
+    // loadPrelaunchData,  // 사전강화 이벤트 종료
+    // savePrelaunchData,  // 사전강화 이벤트 종료
     checkDogBotAnswer,
     rememberDogChannel,
     triggerDogBotEvent

@@ -30,5 +30,37 @@
     "price": 3000000,
     "level": 65,
     "enhanceLevel": 0
+  },
+  {
+    "emblemName": "견습 마법사",
+    "category": "wizard",
+    "purchaseDate": "2025-07-14T16:41:40.782Z",
+    "price": 300000,
+    "level": 20,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "원소 술사",
+    "category": "wizard",
+    "purchaseDate": "2025-07-14T17:30:56.890Z",
+    "price": 500000,
+    "level": 35,
+    "enhanceLevel": 1
+  },
+  {
+    "emblemName": "신비한 현자",
+    "category": "wizard",
+    "purchaseDate": "2025-07-14T17:31:14.620Z",
+    "price": 1500000,
+    "level": 50,
+    "enhanceLevel": 1
+  },
+  {
+    "emblemName": "대마법사",
+    "category": "wizard",
+    "purchaseDate": "2025-07-14T17:31:32.814Z",
+    "price": 3000000,
+    "level": 65,
+    "enhanceLevel": 1
   }
 ]

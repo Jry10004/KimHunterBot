@@ -7,10 +7,17 @@ const { LOOT_APPRAISAL, appraiseLoot } = require('../../data/lootAppraisal');
 async function showAppraisalMenu(interaction) {
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
-        return await interaction.reply({ 
-            content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
-            flags: 64 
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({ 
+                content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.'
+            });
+        } else {
+            return await interaction.reply({ 
+                content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
+                flags: 64 
+            });
+        }
     }
     
     if (!user.lootAppraisal) {
@@ -55,11 +62,19 @@ async function showAppraisalMenu(interaction) {
                     .setStyle(ButtonStyle.Secondary)
             );
         
-        return await interaction.reply({
-            embeds: [embed],
-            components: [buttons],
-            flags: 64
-        });
+        // 이미 defer된 경우 editReply 사용
+        if (interaction.deferred) {
+            return await interaction.editReply({
+                embeds: [embed],
+                components: [buttons]
+            });
+        } else {
+            return await interaction.reply({
+                embeds: [embed],
+                components: [buttons],
+                flags: 64
+            });
+        }
     }
     
     // 미확인 아이템 목록 표시
@@ -110,17 +125,28 @@ async function showAppraisalMenu(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    return await interaction.reply({
-        embeds: [embed],
-        components: [buttons],
-        flags: 64
-    });
+    // 이미 defer된 경우 editReply 사용
+    if (interaction.deferred) {
+        return await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            components: [buttons],
+            flags: 64
+        });
+    }
 }
 
 // 감정 실행
 async function executeAppraisal(interaction, count = 1) {
     try {
-        await interaction.deferUpdate();
+        // 이미 defer된 상태가 아니면 deferUpdate
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
         
         const user = await getUser(interaction.user.id);
     if (!user.lootAppraisal || user.lootAppraisal.unidentifiedItems.length === 0) {
@@ -321,12 +347,33 @@ async function executeAppraisal(interaction, count = 1) {
         components: [buttons]
     });
     } catch (error) {
-        console.error('감정 실행 오류:', error);
-        return await interaction.editReply({
-            content: `❌ 감정 중 오류가 발생했습니다: ${error.message}`,
-            embeds: [],
-            components: []
-        });
+        console.error('[Appraisal] Error during appraisal:', error);
+        
+        // 이미 응답한 경우 아무것도 하지 않음
+        if (error.code === 'InteractionAlreadyReplied') {
+            console.log('[Appraisal] Interaction already replied, skipping error response');
+            return;
+        }
+        
+        // 응답 가능한 경우에만 에러 메시지 전송
+        try {
+            if (interaction.deferred) {
+                return await interaction.editReply({
+                    content: '❌ 감정 중 오류가 발생했습니다. 다시 시도해주세요.',
+                    embeds: [],
+                    components: []
+                });
+            } else if (!interaction.replied) {
+                return await interaction.reply({
+                    content: '❌ 감정 중 오류가 발생했습니다. 다시 시도해주세요.',
+                    embeds: [],
+                    components: [],
+                    flags: 64
+                });
+            }
+        } catch (replyError) {
+            console.error('[Appraisal] Failed to send error message:', replyError);
+        }
     }
 }
 

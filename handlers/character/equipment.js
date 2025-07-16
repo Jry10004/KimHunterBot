@@ -33,13 +33,45 @@ const RARITY_EMOJIS = {
 };
 
 // 아이템 점수 계산 (최적화 장착용)
-function calculateItemScore(item) {
+function calculateItemScore(item, userEmblemType = null) {
     if (!item) return 0;
+    
+    // 직업별 주스탯 정의
+    const mainStatByEmblem = {
+        '전사': 'strength',
+        'warrior': 'strength',
+        '궁수': 'agility',
+        'archer': 'agility',
+        '마법사': 'intelligence',
+        'mage': 'intelligence',
+        '도적': 'agility',
+        'rogue': 'agility',
+        '수호자': 'vitality',
+        'guardian': 'vitality'
+    };
+    
+    // 유저의 주스탯 확인
+    let userMainStat = null;
+    if (userEmblemType) {
+        const emblemBase = userEmblemType.replace(/\s*\+\d+$/, ''); // 강화 레벨 제거
+        for (const [key, value] of Object.entries(mainStatByEmblem)) {
+            if (emblemBase.toLowerCase().includes(key)) {
+                userMainStat = value;
+                break;
+            }
+        }
+    }
     
     // 새로운 아이템 시스템의 score 필드가 있으면 사용
     if (item.score !== undefined) {
         // 강화 레벨 보너스 추가 (강화당 100점)
-        const totalScore = item.score + (item.enhancement || 0) * 100;
+        let totalScore = item.score + (item.enhancement || 0) * 100;
+        
+        // 주스탯 보너스 추가 (주스탯 1당 10점 추가)
+        if (userMainStat && item.stats && item.stats[userMainStat]) {
+            totalScore += item.stats[userMainStat] * 10;
+        }
+        
         return totalScore;
     }
     
@@ -70,15 +102,23 @@ function calculateItemScore(item) {
     
     // 기본 스탯
     if (item.stats) {
+        // 주스탯 가중치 적용 (주스탯은 5배 가중치)
+        if (userMainStat && item.stats[userMainStat]) {
+            score += item.stats[userMainStat] * 10;
+        }
+        
+        // 전투력 관련 스탯
         score += (item.stats.attack || 0) * 2;
         score += (item.stats.defense || 0) * 2;
         score += (item.stats.hp || 0) * 0.5;
         score += (item.stats.dodge || 0) * 1;
-        score += (item.stats.luck || 0) * 1;
-        score += (item.stats.strength || 0) * 2;
-        score += (item.stats.agility || 0) * 1.5;
-        score += (item.stats.intelligence || 0) * 1.5;
-        score += (item.stats.vitality || 0) * 1;
+        
+        // 나머지 스탯들 (주스탯이 아닌 경우)
+        if (userMainStat !== 'strength') score += (item.stats.strength || 0) * 2;
+        if (userMainStat !== 'agility') score += (item.stats.agility || 0) * 2;
+        if (userMainStat !== 'intelligence') score += (item.stats.intelligence || 0) * 2;
+        if (userMainStat !== 'vitality') score += (item.stats.vitality || 0) * 2;
+        score += (item.stats.luck || 0) * 2;
     }
     
     return score;
@@ -159,18 +199,30 @@ async function showEquipment(interaction) {
                     statText.push(`🛡️ +${defenseBonus}`);
                     totalStats.defense += defenseBonus;
                 }
+                if (equippedItem.stats.strength) {
+                    statText.push(`💪 +${equippedItem.stats.strength}`);
+                }
+                if (equippedItem.stats.agility) {
+                    statText.push(`🏃 +${equippedItem.stats.agility}`);
+                }
+                if (equippedItem.stats.intelligence) {
+                    statText.push(`🧠 +${equippedItem.stats.intelligence}`);
+                }
+                if (equippedItem.stats.vitality) {
+                    statText.push(`❤️ +${equippedItem.stats.vitality}`);
+                }
+                if (equippedItem.stats.luck) {
+                    statText.push(`🍀 +${equippedItem.stats.luck}`);
+                    totalStats.luck += equippedItem.stats.luck;
+                }
                 if (equippedItem.stats.hp) {
                     const hpBonus = equippedItem.stats.hp + (equippedItem.enhancement || 0) * 20;
-                    statText.push(`❤️ +${hpBonus}`);
+                    statText.push(`💖 +${hpBonus}`);
                     totalStats.hp += hpBonus;
                 }
                 if (equippedItem.stats.dodge) {
                     statText.push(`💨 +${equippedItem.stats.dodge}`);
                     totalStats.dodge += equippedItem.stats.dodge;
-                }
-                if (equippedItem.stats.luck) {
-                    statText.push(`🍀 +${equippedItem.stats.luck}`);
-                    totalStats.luck += equippedItem.stats.luck;
                 }
             }
             
@@ -240,14 +292,26 @@ async function showEquipment(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-    return await interaction.editReply({
-        embeds: [equipmentEmbed],
-        components: [buttons],
-    });
+    try {
+        return await interaction.editReply({
+            embeds: [equipmentEmbed],
+            components: [buttons],
+        });
+    } catch (error) {
+        console.error('[showEquipment] editReply 오류:', error);
+        throw error;
+    }
 }
 
 // 장비 카테고리 선택
 async function showEquipCategory(interaction) {
+    console.log('[showEquipCategory] 함수 시작');
+    console.log('[showEquipCategory] interaction 상태:', {
+        deferred: interaction.deferred,
+        replied: interaction.replied,
+        customId: interaction.customId
+    });
+    
     const categoryEmbed = new EmbedBuilder()
         .setColor('#3498db')
         .setTitle('🎽 장비 카테고리 선택')
@@ -273,17 +337,41 @@ async function showEquipCategory(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-    return await interaction.update({
-        embeds: [categoryEmbed],
-        components: [
-            new ActionRowBuilder().addComponents(selectMenu),
-            buttons
-        ]
-    });
+    // interaction 응답 처리
+    try {
+        if (interaction.deferred || interaction.replied) {
+            console.log('[showEquipCategory] editReply 사용');
+            return await interaction.editReply({
+                embeds: [categoryEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(selectMenu),
+                    buttons
+                ]
+            });
+        } else {
+            console.log('[showEquipCategory] update 사용');
+            return await interaction.update({
+                embeds: [categoryEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(selectMenu),
+                    buttons
+                ]
+            });
+        }
+    } catch (error) {
+        console.error('[showEquipCategory] 응답 오류:', error.message);
+        if (error.code === 10062) {
+            console.log('[showEquipCategory] Unknown interaction - 타임아웃');
+            return;
+        }
+        throw error;
+    }
 }
 
 // 장착 가능한 아이템 목록 표시
 async function showEquippableItems(interaction, slot, page = 1) {
+    console.log('[showEquippableItems] 함수 시작 - 슬롯:', slot, '페이지:', page);
+    
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
         return await interaction.editReply({ 
@@ -301,22 +389,38 @@ async function showEquippableItems(interaction, slot, page = 1) {
         const slotInfo = slot === 'accessory' ? '💍 악세사리/방패' : `${EQUIPMENT_SLOTS[slot].emoji} ${EQUIPMENT_SLOTS[slot].name}`;
         const additionalInfo = slot === 'accessory' ? '\n\nℹ️ 악세사리 또는 방패 타입의 아이템을 장착할 수 있습니다.' : '';
         
-        return await interaction.update({
-            content: `${slotInfo} 슬롯에 장착 가능한 아이템이 없습니다.${additionalInfo}`,
-            embeds: [],
-            components: [
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('equip_category')
-                        .setLabel('🎽 다른 슬롯 선택')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId('equipment')
-                        .setLabel('⚔️ 장비로 돌아가기')
-                        .setStyle(ButtonStyle.Secondary)
-                )
-            ]
-        });
+        try {
+            const responseData = {
+                content: `${slotInfo} 슬롯에 장착 가능한 아이템이 없습니다.${additionalInfo}`,
+                embeds: [],
+                components: [
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('equip_category')
+                            .setLabel('🎽 다른 슬롯 선택')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('equipment')
+                            .setLabel('⚔️ 장비로 돌아가기')
+                            .setStyle(ButtonStyle.Secondary)
+                    )
+                ]
+            };
+            
+            if (interaction.deferred || interaction.replied) {
+                console.log('[showEquippableItems] 아이템 없음 - editReply 사용');
+                return await interaction.editReply(responseData);
+            } else {
+                console.log('[showEquippableItems] 아이템 없음 - update 사용');
+                return await interaction.update(responseData);
+            }
+        } catch (error) {
+            console.error('[showEquippableItems] 응답 오류:', error);
+            if (error.code === 10062) {
+                return;
+            }
+            throw error;
+        }
     }
 
     // 페이지네이션 설정
@@ -396,10 +500,27 @@ async function showEquippableItems(interaction, slot, page = 1) {
         components.push(navigationButtons);
     }
 
-    return await interaction.update({
-        embeds: [itemListEmbed],
-        components: components
-    });
+    try {
+        const responseData = {
+            embeds: [itemListEmbed],
+            components: components
+        };
+        
+        if (interaction.deferred || interaction.replied) {
+            console.log('[showEquippableItems] 아이템 목록 표시 - editReply 사용');
+            return await interaction.editReply(responseData);
+        } else {
+            console.log('[showEquippableItems] 아이템 목록 표시 - update 사용');
+            return await interaction.update(responseData);
+        }
+    } catch (error) {
+        console.error('[showEquippableItems] 아이템 목록 응답 오류:', error);
+        if (error.code === 10062) {
+            console.log('[showEquippableItems] Unknown interaction - 타임아웃');
+            return;
+        }
+        throw error;
+    }
 }
 
 // 전투력 계산
@@ -431,12 +552,43 @@ function calculateCombatPower(user, equipmentStats) {
 
 // 최적화 장착 기능
 async function optimizeEquipment(interaction) {
-    await interaction.deferUpdate().catch(() => {});
+    console.log('[optimizeEquipment] 함수 시작');
+    console.log('[optimizeEquipment] interaction 상태:', {
+        deferred: interaction.deferred,
+        replied: interaction.replied,
+        customId: interaction.customId
+    });
     
-    const user = await getUser(interaction.user.id);
-    if (!user || !user.registered) {
+    // defer 처리
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+            console.log('[optimizeEquipment] deferUpdate 성공');
+        } else {
+            console.log('[optimizeEquipment] 이미 deferred 또는 replied 상태');
+        }
+    } catch (error) {
+        console.error('[optimizeEquipment] defer 오류:', error.message);
+        if (error.code === 10062) {
+            console.log('[optimizeEquipment] Unknown interaction - 타임아웃');
+            return;
+        }
+    }
+    
+    let user;
+    try {
+        user = await getUser(interaction.user.id);
+        if (!user || !user.registered) {
+            return await interaction.followUp({ 
+                content: '먼저 회원가입을 해주세요!',
+                flags: 64
+            });
+        }
+        console.log('[optimizeEquipment] 유저 정보 로드 완료:', user.nickname || user.discordId);
+    } catch (error) {
+        console.error('[optimizeEquipment] 유저 데이터 로드 오류:', error);
         return await interaction.followUp({ 
-            content: '먼저 회원가입을 해주세요!',
+            content: '❌ 유저 데이터 로드 중 오류가 발생했습니다.',
             flags: 64
         });
     }
@@ -461,7 +613,7 @@ async function optimizeEquipment(interaction) {
             }
         }
         
-        const currentScore = calculateItemScore(currentItem);
+        const currentScore = calculateItemScore(currentItem, user.emblem);
         
         if (currentItem) {
             console.log(`[optimizeEquipment] ${slot} 현재 장착: "${currentItem.name}" (인덱스: ${currentSlot}, 점수: ${currentScore}, 희귀도: ${currentItem.rarity}, 강화: +${currentItem.enhancement || 0})`);
@@ -492,7 +644,7 @@ async function optimizeEquipment(interaction) {
         let bestScore = 0;
         
         for (const { item, index } of availableItems) {
-            const score = calculateItemScore(item);
+            const score = calculateItemScore(item, user.emblem);
             const stats = item.stats ? Object.entries(item.stats).map(([k, v]) => `${k}:${v}`).join(', ') : 'none';
             console.log(`[optimizeEquipment] ${slot} 아이템 평가: "${item.name}" (인덱스: ${index}, 점수: ${score}, 희귀도: ${item.rarity}, 강화: +${item.enhancement || 0}, 스탯: ${stats})`);
             if (score > bestScore) {
@@ -536,12 +688,20 @@ async function optimizeEquipment(interaction) {
         }
     }
     
-    await user.save();
-    console.log(`[optimizeEquipment] 저장 완료. 변경된 슬롯 수: ${changedSlots.length}`);
-    
-    // 저장 후 확인
-    const savedUser = await getUser(interaction.user.id);
-    console.log(`[optimizeEquipment] 저장된 장비 상태:`, savedUser.equipment);
+    try {
+        await user.save();
+        console.log(`[optimizeEquipment] 저장 완료. 변경된 슬롯 수: ${changedSlots.length}`);
+        
+        // 저장 후 확인
+        const savedUser = await getUser(interaction.user.id);
+        console.log(`[optimizeEquipment] 저장된 장비 상태:`, savedUser.equipment);
+    } catch (saveError) {
+        console.error('[optimizeEquipment] 저장 오류:', saveError);
+        return await interaction.followUp({
+            content: '❌ 장비 저장 중 오류가 발생했습니다.',
+            flags: 64
+        });
+    }
     
     // 결과 메시지 생성
     if (changedSlots.length > 0) {
@@ -595,7 +755,20 @@ async function optimizeEquipment(interaction) {
 
 // 아이템 장착 처리
 async function equipItem(interaction, slot, itemIndex) {
-    await interaction.deferUpdate().catch(() => {});
+    console.log('[equipItem] 함수 시작 - 슬롯:', slot, '아이템 인덱스:', itemIndex);
+    
+    // defer 처리
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+            console.log('[equipItem] deferUpdate 성공');
+        }
+    } catch (error) {
+        console.error('[equipItem] defer 오류:', error.message);
+        if (error.code === 10062) {
+            return;
+        }
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
@@ -622,13 +795,24 @@ async function equipItem(interaction, slot, itemIndex) {
         }
     } else {
         // 새 아이템 확인
-        const newItem = user.inventory?.[itemIndex];
+        console.log(`[equipItem] 장착 시도 - 슬롯: ${slot}, 인덱스: ${itemIndex}`);
+        console.log(`[equipItem] 인벤토리 크기: ${user.inventory?.length || 0}`);
+        
+        // inventorySlot으로 아이템 찾기 (우선), 못 찾으면 인덱스로 찾기
+        let newItem = user.inventory?.find(item => item.inventorySlot === itemIndex);
         if (!newItem) {
+            newItem = user.inventory?.[itemIndex];
+        }
+        
+        if (!newItem) {
+            console.log(`[equipItem] 아이템을 찾을 수 없음 - 인덱스/슬롯: ${itemIndex}`);
             return await interaction.followUp({
-                content: '❌ 아이템을 찾을 수 없습니다.',
+                content: `❌ 아이템을 찾을 수 없습니다. (인덱스: ${itemIndex})`,
                 flags: 64
             });
         }
+        
+        console.log(`[equipItem] 찾은 아이템: ${newItem.name}, 타입: ${newItem.type}, inventorySlot: ${newItem.inventorySlot}`);
         
         // 각 슬롯에 맞는 타입만 장착 가능
         const isValidType = newItem.type === slot;
@@ -667,7 +851,22 @@ async function equipItem(interaction, slot, itemIndex) {
         
         await user.save();
         
-        const rarityEmoji = RARITY_EMOJIS[newItem.rarity || '일반'];
+        // 희귀도 이모지 처리 - 영문/한글 모두 지원
+        let rarityEmoji = '';
+        if (newItem.rarity) {
+            // 영문 희귀도를 한글로 변환
+            const rarityMap = {
+                'common': '일반',
+                'uncommon': '고급',
+                'rare': '레어',
+                'epic': '에픽',
+                'legendary': '레전드리',
+                'mythic': '신화'
+            };
+            const rarity = rarityMap[newItem.rarity] || newItem.rarity;
+            rarityEmoji = RARITY_EMOJIS[rarity] || '';
+        }
+        
         const enhancement = newItem.enhancement ? ` (+${newItem.enhancement})` : '';
         
         await interaction.followUp({
@@ -732,11 +931,83 @@ async function unequipAll(interaction) {
     return await showEquipment(interaction);
 }
 
+// 아이템 장착 핸들러
+async function handleEquipItem(interaction) {
+    console.log('[handleEquipItem] 함수 시작');
+    console.log('[handleEquipItem] customId:', interaction.customId);
+    
+    // equip_item_slot 형식
+    const parts = interaction.customId.split('_');
+    const slot = parts[2];
+    const selectedValues = interaction.values;
+    
+    console.log('[handleEquipItem] 슬롯:', slot, '선택된 값:', selectedValues);
+    
+    if (!selectedValues || selectedValues.length === 0) {
+        return await interaction.reply({
+            content: '❌ 아이템을 선택해주세요.',
+            flags: 64
+        });
+    }
+    
+    const itemIndex = parseInt(selectedValues[0]);
+    console.log('[handleEquipItem] 아이템 인덱스:', itemIndex);
+    
+    return await equipItem(interaction, slot, itemIndex);
+}
+
+// 장비 해제 핸들러
+async function handleUnequip(interaction) {
+    // unequip_slot 형식
+    const parts = interaction.customId.split('_');
+    const slot = parts[1];
+    
+    const user = await getUser(interaction.user.id);
+    if (!user || !user.registered) {
+        return await interaction.reply({
+            content: '먼저 회원가입을 해주세요!',
+            flags: 64
+        });
+    }
+    
+    // 해당 슬롯의 장비 해제
+    if (user.equipment && user.equipment[slot] >= 0) {
+        user.equipment[slot] = -1;
+        await user.save();
+        
+        await interaction.reply({
+            content: `✅ ${EQUIPMENT_SLOTS[slot].name} 장비를 해제했습니다.`,
+            flags: 64
+        });
+    } else {
+        await interaction.reply({
+            content: `❌ ${EQUIPMENT_SLOTS[slot].name} 슬롯에 장착된 장비가 없습니다.`,
+            flags: 64
+        });
+    }
+    
+    // 장비 화면 다시 표시
+    return await showEquipment(interaction);
+}
+
+// 장비 슬롯 선택 핸들러
+async function handleEquipmentSlotSelect(interaction) {
+    // equipment_slot_slot 형식
+    const parts = interaction.customId.split('_');
+    const slot = parts[2];
+    
+    // 해당 슬롯의 장착 가능한 아이템 표시
+    return await showEquippableItems(interaction, slot);
+}
+
 module.exports = {
     showEquipment,
     showEquipCategory,
     showEquippableItems,
     optimizeEquipment,
     equipItem,
-    unequipAll
+    unequipAll,
+    handleEquipItem,
+    handleUnequip,
+    handleEquipmentSlotSelect
 };

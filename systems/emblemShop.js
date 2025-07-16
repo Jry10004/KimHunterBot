@@ -312,11 +312,13 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
                 EMBLEMS[type].emblems.some(e => e.name === user.emblem)
             );
             
-            if (currentType !== selectedCategory) {
-                userStatus = `\n⚠️ **현재 ${EMBLEMS[currentType].name} 계열 엠블럼을 보유중입니다.**\n` +
+            if (currentType && currentType !== selectedCategory) {
+                userStatus = `\n⚠️ **현재 ${EMBLEMS[currentType]?.name || '알 수 없는'} 계열 엠블럼을 보유중입니다.**\n` +
                            `**다른 계열로는 변경할 수 없습니다!**\n`;
-            } else {
+            } else if (currentType) {
                 userStatus = `\n✅ **현재 엠블럼: ${user.emblem}**\n`;
+            } else {
+                userStatus = `\n⚠️ **알 수 없는 엠블럼을 보유중입니다: ${user.emblem}**\n`;
             }
         } else if (user.level < 20) {
             userStatus = `\n❌ **레벨 20 이상부터 엠블럼을 구매할 수 있습니다!** (현재: Lv.${user.level})\n`;
@@ -476,6 +478,102 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
             embeds: [shopEmbed],
             components: [actionRow, backButton]
         });
+    }
+    
+    // 엠블럼 강화석 구매 처리
+    if (interaction.customId.startsWith('emblem_shop_buy_')) {
+        const user = await getUser(interaction.user.id);
+        if (!user || !user.registered) {
+            await interaction.followUp({ 
+                content: '❌ 먼저 회원가입을 해주세요!',
+                flags: 64
+            });
+            return;
+        }
+        
+        let price = 0;
+        let itemName = '';
+        let quantity = 1;
+        let itemId = '';
+        
+        switch (interaction.customId) {
+            case 'emblem_shop_buy_stone':
+                price = 50000;
+                itemName = '💎 엠블럼 강화석';
+                itemId = 'emblemEnhanceStone';
+                break;
+            case 'emblem_shop_buy_stone_10':
+                price = 450000;
+                itemName = '💎 엠블럼 강화석 10개';
+                quantity = 10;
+                itemId = 'emblemEnhanceStone';
+                break;
+            case 'emblem_shop_buy_blessing':
+                price = 200000;
+                itemName = '✨ 축복 주문서';
+                itemId = 'emblem_blessing_scroll';
+                break;
+            case 'emblem_shop_buy_protection':
+                price = 150000;
+                itemName = '🛡️ 보호 주문서';
+                itemId = 'emblem_protection_scroll';
+                break;
+        }
+        
+        // 골드 확인
+        if (user.gold < price) {
+            await interaction.followUp({
+                content: `❌ 골드가 부족합니다! (필요: ${price.toLocaleString()}G, 보유: ${user.gold.toLocaleString()}G)`,
+                flags: 64
+            });
+            return;
+        }
+        
+        // 골드 차감
+        user.gold -= price;
+        
+        // 아이템 추가
+        if (itemId === 'emblemEnhanceStone') {
+            if (!user.items) user.items = {};
+            user.items.emblemEnhanceStone = (user.items.emblemEnhanceStone || 0) + quantity;
+        } else {
+            // 주문서는 인벤토리에 추가
+            if (!user.inventory) user.inventory = [];
+            const existingItem = user.inventory.find(item => item.id === itemId);
+            if (existingItem) {
+                existingItem.quantity = (existingItem.quantity || 1) + 1;
+            } else {
+                user.inventory.push({
+                    id: itemId,
+                    name: itemName.replace(/[^가-힣\s]/g, '').trim(),
+                    quantity: 1,
+                    type: 'consumable'
+                });
+            }
+        }
+        
+        await saveUser(user);
+        
+        // 구매 성공 메시지
+        const resultEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ 구매 완료!')
+            .setDescription(`${itemName}을(를) 구매했습니다!`)
+            .addFields(
+                { name: '💰 사용 골드', value: `${price.toLocaleString()}G`, inline: true },
+                { name: '💳 남은 골드', value: `${user.gold.toLocaleString()}G`, inline: true },
+                { name: '💎 보유 강화석', value: `${user.items?.emblemEnhanceStone || 0}개`, inline: true }
+            )
+            .setTimestamp();
+        
+        await interaction.followUp({
+            embeds: [resultEmbed],
+            flags: 64
+        });
+        
+        // 강화 화면으로 돌아가기
+        const { showEmblemEnhance } = require('../handlers/character/emblem');
+        return await showEmblemEnhance(interaction);
     }
     } catch (error) {
         console.error('[엠블럼 상점] 오류 발생:', error);

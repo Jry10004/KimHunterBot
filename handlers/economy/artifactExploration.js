@@ -50,24 +50,32 @@ async function showExplorationMenu(interaction, userId) {
             new ButtonBuilder()
                 .setCustomId(`artifact_pickaxe_${userId}`)
                 .setLabel('⛏️ 곡괭이 강화')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId(`artifact_ranking_${userId}`)
-                .setLabel('🏆 랭킹')
-                .setStyle(ButtonStyle.Secondary)
+                .setStyle(ButtonStyle.Primary)
         );
 
-    // StringSelectMenu에서 선택한 경우 update 사용
-    if (interaction.isStringSelectMenu()) {
-        await interaction.update({ embeds: [embed], components: [buttons] });
-    } else if (interaction.deferred) {
-        // 이미 defer된 경우 editReply 사용
-        await interaction.editReply({ embeds: [embed], components: [buttons] });
-    } else if (interaction.replied) {
-        // 이미 응답한 경우 followUp 사용
-        await interaction.followUp({ embeds: [embed], components: [buttons], flags: 64 });
-    } else {
-        await interaction.reply({ embeds: [embed], components: [buttons], flags: 64 });
+    // 응답 처리
+    try {
+        if (interaction.deferred) {
+            // 이미 defer된 경우 editReply 사용
+            await interaction.editReply({ embeds: [embed], components: [buttons] });
+        } else if (interaction.replied) {
+            // 이미 응답한 경우 followUp 사용
+            await interaction.followUp({ embeds: [embed], components: [buttons], flags: 64 });
+        } else if (interaction.isStringSelectMenu() && !interaction.deferred && !interaction.replied) {
+            // StringSelectMenu이고 아직 응답하지 않은 경우 update 사용
+            await interaction.update({ embeds: [embed], components: [buttons] });
+        } else {
+            // 그 외의 경우 reply 사용
+            await interaction.reply({ embeds: [embed], components: [buttons], flags: 64 });
+        }
+    } catch (error) {
+        console.error('[ArtifactExploration] Response error:', error);
+        // 에러 발생 시 followUp 시도
+        try {
+            await interaction.followUp({ embeds: [embed], components: [buttons], flags: 64 });
+        } catch (followUpError) {
+            console.error('[ArtifactExploration] FollowUp error:', followUpError);
+        }
     }
 }
 
@@ -150,6 +158,20 @@ async function showCompanySelection(interaction, userId) {
 
 // 실제 탐사 실행
 async function executeExploration(interaction, userId, companyId) {
+    // 먼저 defer 처리
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[Artifact] Exploration interaction expired');
+            return;
+        }
+        console.error('[Artifact] Exploration defer error:', error);
+        return;
+    }
+    
     const user = await User.findOne({ discordId: userId });
     const userArtifacts = await UserArtifacts.findOne({ userId });
     const company = await ArtifactCompany.findOne({ companyId });
@@ -160,9 +182,10 @@ async function executeExploration(interaction, userId, companyId) {
         const cooldownTime = Date.now() - new Date(userArtifacts.lastExploration).getTime();
         if (cooldownTime < artifactData.exploration.cooldown) {
             const remainingTime = Math.ceil((artifactData.exploration.cooldown - cooldownTime) / 1000);
-            return interaction.reply({
+            return interaction.editReply({
                 content: `⏱️ 탐사 쿨다운 중입니다! ${remainingTime}초 후에 다시 시도하세요.`,
-                flags: 64
+                embeds: [],
+                components: []
             });
         }
     }
@@ -171,9 +194,10 @@ async function executeExploration(interaction, userId, companyId) {
     const explorationCost = Math.floor(artifactData.exploration.baseCost * Math.pow(artifactData.exploration.costMultiplier, userArtifacts.statistics.totalExplorations / 10));
     
     if (user.gold < explorationCost) {
-        return interaction.reply({
+        return interaction.editReply({
             content: `💸 탐사 비용이 부족합니다! 필요: ${explorationCost.toLocaleString()} 골드`,
-            flags: 64
+            embeds: [],
+            components: []
         });
     }
 
@@ -253,7 +277,7 @@ async function executeExploration(interaction, userId, companyId) {
             );
         
         // 공개 메시지로 전송
-        await interaction.reply({ 
+        await interaction.editReply({ 
             embeds: [failEmbed], 
             components: [buttons]
         });
@@ -277,29 +301,62 @@ async function executeExploration(interaction, userId, companyId) {
 
     // 유물 발견
     const artifacts = [];
+    const scrollDropped = [];
+    
     for (let i = 0; i < multiFind; i++) {
-        const rarity = calculateRarityWithBonus(pickaxeType, pickaxeLevel, company.specialty, rarityBonus);
-        const items = artifactData.items[rarity];
-        const item = items[Math.floor(Math.random() * items.length)];
-        const artifactName = artifactData.generateArtifactName(rarity, item);
-        const artifactValue = artifactData.calculateArtifactPrice(rarity, company.multiplier, stock.currentPrice);
+        // 지역특화 유물 체크 (5% 확률)
+        if (Math.random() < 0.05 && ARTIFACT_SYSTEM.specialArtifacts[company.specialty]) {
+            const specialItems = ARTIFACT_SYSTEM.specialArtifacts[company.specialty];
+            const specialItem = specialItems[Math.floor(Math.random() * specialItems.length)];
+            
+            // 지역특화 유물 가격 계산
+            const [minValue, maxValue] = specialItem.value;
+            const artifactValue = Math.floor(minValue + Math.random() * (maxValue - minValue));
+            
+            const artifact = {
+                id: `${Date.now()}_${i}_special`,
+                name: specialItem.name,
+                rarity: specialItem.rarity,
+                baseItem: specialItem.name,
+                foundWith: {
+                    company: companyId,
+                    pickaxe: pickaxeType,
+                    pickaxeLevel: pickaxeLevel
+                },
+                value: artifactValue,
+                isSpecial: true,
+                emoji: specialItem.emoji
+            };
+            
+            artifacts.push(artifact);
+            await userArtifacts.addArtifact(artifact);
+        } else {
+            // 일반 유물
+            const rarity = calculateRarityWithBonus(pickaxeType, pickaxeLevel, company.specialty, rarityBonus);
+            const items = artifactData.items[rarity];
+            const item = items[Math.floor(Math.random() * items.length)];
+            const artifactName = artifactData.generateArtifactName(rarity, item);
+            const artifactValue = artifactData.calculateArtifactPrice(rarity, company.multiplier, stock.currentPrice);
 
-        const artifact = {
-            id: `${Date.now()}_${i}`,
-            name: artifactName,
-            rarity: rarity,
-            baseItem: item,
-            foundWith: {
-                company: companyId,
-                pickaxe: pickaxeType,
-                pickaxeLevel: pickaxeLevel
-            },
-            value: artifactValue
-        };
+            const artifact = {
+                id: `${Date.now()}_${i}`,
+                name: artifactName,
+                rarity: rarity,
+                baseItem: item,
+                foundWith: {
+                    company: companyId,
+                    pickaxe: pickaxeType,
+                    pickaxeLevel: pickaxeLevel
+                },
+                value: artifactValue
+            };
 
-        artifacts.push(artifact);
-        await userArtifacts.addArtifact(artifact);
+            artifacts.push(artifact);
+            await userArtifacts.addArtifact(artifact);
+        }
     }
+    
+    // 주문서는 광산에서만 드롭되므로 여기서는 제거
 
     // 회사 통계 업데이트
     const totalValue = artifacts.reduce((sum, a) => sum + a.value, 0);
@@ -361,10 +418,16 @@ async function executeExploration(interaction, userId, companyId) {
     // 발견한 유물들
     let artifactList = '';
     artifacts.forEach((artifact, index) => {
-        const rarityInfo = artifactData.rarities[artifact.rarity];
-        const emoji = rarityEmojis[artifact.rarity] || '⚪';
-        artifactList += `${emoji} **${artifact.name}**\n`;
-        artifactList += `　└ ${rarityInfo.name} | ${artifact.value.toLocaleString()} 골드\n`;
+        if (artifact.isSpecial) {
+            // 지역특화 유물은 특별 표시
+            artifactList += `${artifact.emoji} **${artifact.name}** ⭐\n`;
+            artifactList += `　└ ${artifact.rarity === 'legendary' ? '전설급' : '에픽급'} 특화 유물 | ${artifact.value.toLocaleString()} 골드\n`;
+        } else {
+            const rarityInfo = artifactData.rarities[artifact.rarity];
+            const emoji = rarityEmojis[artifact.rarity] || '⚪';
+            artifactList += `${emoji} **${artifact.name}**\n`;
+            artifactList += `　└ ${rarityInfo.name} | ${artifact.value.toLocaleString()} 골드\n`;
+        }
     });
     
     successEmbed.addFields(
@@ -372,7 +435,11 @@ async function executeExploration(interaction, userId, companyId) {
             name: '🏺 발견한 유물', 
             value: artifactList || '없음', 
             inline: false 
-        },
+        }
+    );
+    
+    
+    successEmbed.addFields(
         { 
             name: '📍 탐사 장소', 
             value: `${company.emoji} ${company.name}`, 
@@ -427,7 +494,7 @@ async function executeExploration(interaction, userId, companyId) {
         );
 
     // 공개 메시지로 전송
-    await interaction.reply({ 
+    await interaction.editReply({ 
         embeds: [successEmbed], 
         components: [buttons]
     });
@@ -601,7 +668,7 @@ async function showPickaxeMenu(interaction, userId) {
         
         let fieldValue = '';
         if (!isUnlocked) {
-            const unlockCost = type === 'silver' ? 50000 : 200000;
+            const unlockCost = type === 'silver' ? 5000000000 : 10000000000;  // 은: 50억, 금: 100억
             fieldValue = `🔒 잠김 (해금 비용: ${unlockCost.toLocaleString()} 골드)`;
         } else {
             fieldValue = `레벨: ${userPickaxe.level}/100\n`;
@@ -1230,6 +1297,39 @@ async function performMineExploration(interaction, userId, mineId) {
         await userArtifacts.addArtifact(artifact);
     }
     
+    // 주문서 드롭 체크 (0.3% 확률)
+    const scrollDropped = [];
+    if (Math.random() < 0.003) {
+        const scrollTypes = [
+            { id: 'enhancement_protection', name: '강화 보호 주문서', description: '강화 실패 시 레벨 유지' },
+            { id: 'enhancement_blessing', name: '강화 축복 주문서', description: '강화 성공률 2배 증가' },
+            { id: 'emblem_protection', name: '엠블렘 보호 주문서', description: '엠블렘 강화 실패 시 레벨 유지' },
+            { id: 'emblem_blessing', name: '엠블렘 축복 주문서', description: '엠블렘 강화 성공률 2배 증가' }
+        ];
+        
+        const scroll = scrollTypes[Math.floor(Math.random() * scrollTypes.length)];
+        const user = await User.findOne({ discordId: userId });
+        
+        if (user) {
+            if (!user.inventory) user.inventory = [];
+            const existingItem = user.inventory.find(item => item.id === scroll.id);
+            if (existingItem) {
+                existingItem.quantity = (existingItem.quantity || 1) + 1;
+            } else {
+                user.inventory.push({
+                    id: scroll.id,
+                    name: scroll.name,
+                    type: 'consumable',
+                    description: scroll.description,
+                    quantity: 1,
+                    stackable: true
+                });
+            }
+            await user.save();
+            scrollDropped.push(scroll);
+        }
+    }
+    
     // 결과 표시 (재미있게!)
     const exclamations = ['대박!', '와우!', '짱이에요!', '굉장해요!', '놀라워요!', '멋져요!', '최고에요!'];
     const randomExclamation = exclamations[Math.floor(Math.random() * exclamations.length)];
@@ -1322,6 +1422,19 @@ async function performMineExploration(interaction, userId, mineId) {
         }
     );
     
+    // 주문서 드롭 표시
+    if (scrollDropped.length > 0) {
+        let scrollList = '';
+        scrollDropped.forEach(scroll => {
+            scrollList += `📜 **${scroll.name}**\n`;
+        });
+        resultEmbed.addFields({
+            name: '✨ 특별 보상!',
+            value: scrollList,
+            inline: false
+        });
+    }
+    
     const profitRate = ((totalValue - mine.entryFee) / mine.entryFee * 100).toFixed(1);
     if (profitRate > 0) {
         resultEmbed.setFooter({ text: `🎉 수익률 ${profitRate}%! 대박이네요!` });
@@ -1332,6 +1445,24 @@ async function performMineExploration(interaction, userId, mineId) {
     // 경험치 추가
     userArtifacts.pickaxes[pickaxeType].experience += findCount * 15;
     await userArtifacts.save();
+    
+    // 엠블럼 행운의 주문서 드롭 체크 (0.1% 확률)
+    let luckyScrollDropped = false;
+    if (Math.random() < 0.001) { // 0.1%
+        const user = await User.findOne({ discordId: userId });
+        if (!user.items) user.items = {};
+        if (!user.items.emblemLuckyScroll) user.items.emblemLuckyScroll = 0;
+        user.items.emblemLuckyScroll += 1;
+        await user.save();
+        luckyScrollDropped = true;
+        
+        // 특별 알림 추가
+        resultEmbed.addFields({
+            name: '🍀 ✨특별한 발견!✨',
+            value: '**엠블럼 행운의 주문서**를 발견했습니다! (0.1% 확률)',
+            inline: false
+        });
+    }
     
     // 미션 진행도 업데이트
     await MissionHelper.updateArtifactExplore(userId);
@@ -1530,28 +1661,33 @@ async function handleArtifactInteraction(interaction) {
 
     // 권한 체크
     if (interaction.user.id !== userId) {
-        return interaction.reply({ content: '❌ 다른 유저의 메뉴는 사용할 수 없습니다!', flags: 64 });
+        if (!interaction.deferred && !interaction.replied) {
+            return interaction.reply({ content: '❌ 다른 유저의 메뉴는 사용할 수 없습니다!', flags: 64 });
+        } else {
+            return interaction.followUp({ content: '❌ 다른 유저의 메뉴는 사용할 수 없습니다!', flags: 64 });
+        }
     }
 
-    // 버튼 인터랙션인 경우 먼저 defer
-    // mine 입장은 전체 공개로 처리
-    if (interaction.isButton()) {
-        if (action === 'mine' && params[0] === 'enter') {
-            await interaction.deferReply();  // 전체 공개
-        } else {
+    // 버튼 인터랙션인 경우 먼저 defer (이미 defer되지 않은 경우에만)
+    if (!interaction.deferred && !interaction.replied) {
+        if (interaction.isButton()) {
+            if (action === 'mine' && params[0] === 'enter') {
+                await interaction.deferReply();  // 전체 공개
+            } else {
+                try {
+                    await interaction.deferUpdate();  // 기존 메시지 업데이트
+                } catch (error) {
+                    // 이미 defer되었거나 응답된 경우 무시
+                    console.log('Defer update error (already deferred/replied):', error.message);
+                }
+            }
+        } else if (interaction.isStringSelectMenu()) {
             try {
-                await interaction.deferUpdate();  // 기존 메시지 업데이트
+                await interaction.deferUpdate();
             } catch (error) {
                 // 이미 defer되었거나 응답된 경우 무시
                 console.log('Defer update error (already deferred/replied):', error.message);
             }
-        }
-    } else if (interaction.isStringSelectMenu()) {
-        try {
-            await interaction.deferUpdate();
-        } catch (error) {
-            // 이미 defer되었거나 응답된 경우 무시
-            console.log('Defer update error (already deferred/replied):', error.message);
         }
     }
 
@@ -1719,7 +1855,7 @@ async function unlockPickaxe(interaction, pickaxeType, userId) {
     const user = await User.findOne({ discordId: userId });
     const userArtifacts = await UserArtifacts.findOne({ userId });
     
-    const unlockCost = pickaxeType === 'silver' ? 50000 : 200000;
+    const unlockCost = pickaxeType === 'silver' ? 5000000000 : 10000000000;  // 은: 50억, 금: 100억
     
     if (user.gold < unlockCost) {
         return interaction.reply({

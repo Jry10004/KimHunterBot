@@ -1047,7 +1047,40 @@ const userSchema = new mongoose.Schema({
     // 휴식 보상 시스템
     lastActivity: { type: Date, default: Date.now },                 // 마지막 활동 시간
     restBonusActive: { type: Boolean, default: false },              // 휴식 보상 활성 여부
-    restBonusEndTime: { type: Date, default: null }                  // 휴식 보상 종료 시간
+    restBonusEndTime: { type: Date, default: null },                 // 휴식 보상 종료 시간
+    
+    // 통합 랭킹 데이터
+    rankingStats: {
+        // 유물 탐사
+        artifact: {
+            totalEarnings: { type: Number, default: 0 },
+            totalFound: { type: Number, default: 0 },
+            highestValue: { type: Number, default: 0 },
+            lastUpdated: { type: Date, default: null }
+        },
+        // 던전 탐험
+        dungeon: {
+            maxFloor: { type: Number, default: 0 },
+            totalClears: { type: Number, default: 0 },
+            lastUpdated: { type: Date, default: null }
+        },
+        // 보스 토벌
+        boss: {
+            totalKills: { type: Number, default: 0 },
+            totalDamage: { type: Number, default: 0 },
+            maxDamage: { type: Number, default: 0 },
+            lastUpdated: { type: Date, default: null }
+        },
+        // 낚시
+        fishing: {
+            totalCaught: { type: Number, default: 0 },
+            bestCatch: {
+                name: { type: String, default: null },
+                size: { type: Number, default: 0 }
+            },
+            lastUpdated: { type: Date, default: null }
+        }
+    }
 }, {
     timestamps: true
 });
@@ -1146,6 +1179,18 @@ userSchema.pre('save', async function(next) {
             }
             if (item.equipped === undefined) {
                 item.equipped = false;
+            }
+            // 필수 필드 확인 및 기본값 설정
+            if (!item.setName) {
+                item.setName = '장비';
+                console.log(`[Pre-save] ${item.name}에 setName 기본값 설정`);
+            }
+            if (item.quantity === undefined || item.quantity === null) {
+                item.quantity = 1;
+            }
+            if (!item.id) {
+                item.id = `item_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                console.log(`[Pre-save] ${item.name}에 ID 생성: ${item.id}`);
             }
         });
         
