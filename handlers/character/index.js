@@ -3,7 +3,7 @@ const { showProfile } = require('./profile');
 const { showInventory, showItemDetail, equipItem } = require('./inventory');
 const { showStatDistribution } = require('./statDistribution');
 const { showEquipment } = require('./equipment');
-const { showEmblemMenu, purchaseEmblem, evolveEmblem, enhanceEmblem } = require('./emblem');
+const { showEmblem, showEmblemShop, showEmblemEnhance, handleEmblemPurchase } = require('./emblem');
 
 // 이벤트 및 상호작용 핸들러
 async function handleCharacterInteraction(interaction) {
@@ -91,10 +91,10 @@ async function handleCharacterInteraction(interaction) {
     
     // 엠블럼 관련
     else if (customId === 'emblem') {
-        return await showEmblemMenu(interaction);
+        return await showEmblem(interaction);
     }
     else if (customId === 'emblem_menu') {
-        return await showEmblemMenu(interaction);
+        return await showEmblem(interaction);
     }
     else if (customId === 'emblem_shop') {
         const { showEmblemShop } = require('../../systems/emblemShop');
@@ -102,14 +102,15 @@ async function handleCharacterInteraction(interaction) {
         return await showEmblemShop(interaction, user);
     }
     else if (customId.startsWith('buy_emblem_')) {
-        return await purchaseEmblem(interaction);
+        return await handleEmblemPurchase(interaction);
     }
     else if (customId.startsWith('evolve_emblem_')) {
-        return await evolveEmblem(interaction);
+        // evolveEmblem 함수가 없으므로 제거 또는 다른 처리
+        return;
     }
     else if (customId === 'emblem_evolve') {
-        const { showEmblemEvolution } = require('./emblem');
-        return await showEmblemEvolution(interaction);
+        // 엠블럼 진화는 구매로 처리됨
+        return await showEmblemShop(interaction);
     }
     else if (customId === 'emblem_enhance') {
         const { showEmblemEnhance } = require('./emblem');
