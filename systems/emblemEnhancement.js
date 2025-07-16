@@ -535,7 +535,7 @@ async function processEmblemEnhancementWithScroll(user, emblemType, scrollType) 
 // 엠블럼 강화 시도 함수
 async function tryEnhanceEmblem(interaction, count = 1) {
     try {
-        await interaction.deferUpdate();
+        // InteractionHandler에서 이미 defer했으므로 제거
         
         const { getUser, saveUser } = require('../handlers/common/utils');
         const user = await getUser(interaction.user.id);
