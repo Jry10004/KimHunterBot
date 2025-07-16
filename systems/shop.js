@@ -1384,23 +1384,7 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
                 // 컬렉터를 먼저 정지하여 중복 이벤트 방지 (retry_initiated 이유로 종료)
                 collector.stop('retry_initiated');
                 
-                // defer 즉시 처리
-                if (!i.deferred && !i.replied) {
-                    try {
-                        await i.deferUpdate();
-                    } catch (deferError) {
-                        // 이미 만료된 상호작용인 경우 새로운 메시지로 처리
-                        if (deferError.code === 10062) {
-                            console.log('[Shop] Interaction expired, creating new message');
-                            const User = require('../models/User');
-                            const updatedUser = await User.findOne({ discordId: i.user.id });
-                            await handleMultiGacha(i, async (id) => await User.findOne({ discordId: id }), async (u) => await u.save());
-                            return;
-                        }
-                        throw deferError;
-                    }
-                }
-                
+                // InteractionHandler에서 이미 defer했으므로 바로 처리
                 const User = require('../models/User');
                 await handleMultiGacha(i, async (id) => await User.findOne({ discordId: id }), async (u) => await u.save());
             } catch (error) {
