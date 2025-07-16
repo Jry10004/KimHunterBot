@@ -523,32 +523,6 @@ async function showEquippableItems(interaction, slot, page = 1) {
     }
 }
 
-// 전투력 계산
-function calculateCombatPower(user, equipmentStats) {
-    const baseStats = {
-        str: user.stats?.strength || 10,
-        agi: user.stats?.agility || 10,
-        int: user.stats?.intelligence || 10,
-        vit: user.stats?.vitality || 10,
-        luk: user.stats?.luck || 10
-    };
-
-    // 기본 전투력 = (힘 * 2) + (민첩 * 1.5) + (지능 * 1.2) + (체력 * 1.8) + (행운 * 0.5)
-    const basePower = 
-        (baseStats.str * 2) + 
-        (baseStats.agi * 1.5) + 
-        (baseStats.int * 1.2) + 
-        (baseStats.vit * 1.8) + 
-        (baseStats.luk * 0.5);
-
-    // 장비 전투력 = 공격력 * 2 + 방어력 * 1.5 + HP * 0.5
-    const equipmentPower = 
-        (equipmentStats.attack * 2) + 
-        (equipmentStats.defense * 1.5) + 
-        (equipmentStats.hp * 0.5);
-
-    return Math.floor(basePower + equipmentPower);
-}
 
 // 최적화 장착 기능
 async function optimizeEquipment(interaction) {
