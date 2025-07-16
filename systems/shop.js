@@ -1367,12 +1367,7 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
             }
         } else if (i.customId === 'multi_next') {
             try {
-                // 안전한 defer 처리
-                if (!i.deferred && !i.replied) {
-                    await i.deferUpdate().catch(err => {
-                        console.log('[multi_next] deferUpdate 실패:', err.message);
-                    });
-                }
+                // InteractionHandler에서 이미 defer했으므로 바로 처리
                 currentPage++;
                 await showMultiGachaResultPage(i, items, currentPage, itemsPerPage, user, selectedSlot, levelUps, isRetry);
             } catch (error) {
@@ -1563,7 +1558,25 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
 // 10회 뽑기 결과 페이지
 async function showMultiGachaResultPage(interaction, items, currentPage, itemsPerPage, user, selectedSlot, levelUps, isRetry = false) {
     const totalPages = 10; // 각 아이템마다 한 페이지
+    
+    // items 배열 및 currentPage 유효성 검증
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        console.error('[showMultiGachaResultPage] items 배열이 유효하지 않음:', items);
+        return;
+    }
+    
+    // currentPage 범위 확인
+    if (currentPage < 0 || currentPage >= items.length) {
+        console.error('[showMultiGachaResultPage] currentPage가 범위를 벗어남:', { currentPage, itemsLength: items.length });
+        currentPage = Math.max(0, Math.min(items.length - 1, currentPage));
+    }
+    
     const item = items[currentPage];
+    if (!item) {
+        console.error('[showMultiGachaResultPage] item이 undefined:', { currentPage, items });
+        return;
+    }
+    
     const slotData = user.shopLevels[selectedSlot];
     
     // 아이템 이름 분석
@@ -1750,25 +1763,26 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    // retry인 경우와 일반 gacha 구분하여 응답
+    // 응답 처리
     try {
-        if (isRetry || interaction.expired) {
-            // retry는 이미 메시지가 있으므로 edit
-            await interaction.editReply({
+        // interaction이 이미 defer되었는지 확인
+        if (!interaction.deferred && !interaction.replied) {
+            // defer되지 않았다면 reply 사용
+            await interaction.reply({
                 embeds: [resultEmbed],
                 components: [navigationButtons]
             });
         } else {
-            // 일반 gacha는 새 메시지
+            // 이미 defer되었다면 editReply 사용
             await interaction.editReply({
                 embeds: [resultEmbed],
                 components: [navigationButtons]
             });
         }
     } catch (error) {
-        if (error.code === 10062) {
-            // 만료된 경우 새 메시지 전송
-            console.log('[showMultiGachaResultPage] 인터랙션 만료, 새 메시지 전송');
+        if (error.code === 10062 || error.code === 'InteractionNotReplied') {
+            // 만료되거나 응답되지 않은 경우 새 메시지 전송
+            console.log('[showMultiGachaResultPage] 인터랙션 오류, 새 메시지 전송:', error.message);
             const channel = interaction.channel || interaction.message?.channel;
             if (channel) {
                 await channel.send({
