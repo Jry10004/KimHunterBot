@@ -858,6 +858,10 @@ class EnhanceSystem {
             await MissionHelper.updateEnhanceTry(interaction.user.id, false);
         }
 
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
         await user.save();
         
         let buttons;
@@ -1372,6 +1376,10 @@ async function handleEnhanceInteraction(interaction) {
             });
         }
         
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
         await user.save();
         await interaction.followUp({
             content: '✅ 보호석을 구매했습니다!',
@@ -1406,6 +1414,10 @@ async function handleEnhanceInteraction(interaction) {
                 description: '강화 성공률을 10% 증가시킵니다.'
             });
         }
+        
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
         
         await user.save();
         await interaction.followUp({

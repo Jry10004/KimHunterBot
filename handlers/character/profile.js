@@ -32,6 +32,12 @@ async function showProfile(interaction) {
     // 전투력 계산 (통합 함수 사용)
     const combatPower = calculateCombatPower(user);
     
+    // 계산된 전투력이 DB와 다르면 업데이트
+    if (user.combatPower !== combatPower) {
+        user.combatPower = combatPower;
+        await user.save();
+    }
+    
     // 마법사 엠블럼 확인
     const isMage = user.equippedEmblem && (
         user.equippedEmblem.includes('마법사') || 

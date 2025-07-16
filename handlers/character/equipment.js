@@ -689,6 +689,14 @@ async function optimizeEquipment(interaction) {
     }
     
     try {
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
         await user.save();
         console.log(`[optimizeEquipment] 저장 완료. 변경된 슬롯 수: ${changedSlots.length}`);
         
@@ -786,7 +794,11 @@ async function equipItem(interaction, slot, itemIndex) {
     if (itemIndex === -1) {
         if (currentSlot >= 0) {
             user.equipment[slot] = -1;
-            await user.save();
+            // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
+        await user.save();
             
             await interaction.followUp({
                 content: `✅ ${EQUIPMENT_SLOTS[slot].name}을(를) 해제했습니다.`,
@@ -848,6 +860,10 @@ async function equipItem(interaction, slot, itemIndex) {
             newItem.inventorySlot = itemIndex;
             user.markModified('inventory');
         }
+        
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
         
         await user.save();
         
@@ -920,6 +936,10 @@ async function unequipAll(interaction) {
             flags: 64
         });
     } else {
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
         await user.save();
         await interaction.followUp({
             content: `✅ ${unequippedCount}개의 장비를 모두 해제했습니다.`,
@@ -973,6 +993,10 @@ async function handleUnequip(interaction) {
     // 해당 슬롯의 장비 해제
     if (user.equipment && user.equipment[slot] >= 0) {
         user.equipment[slot] = -1;
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
         await user.save();
         
         await interaction.reply({

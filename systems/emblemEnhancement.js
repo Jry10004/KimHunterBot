@@ -591,6 +591,14 @@ async function tryEnhanceEmblem(interaction, count = 1) {
             if (user.items.emblemEnhanceStone <= 0) break;
         }
         
+        // 엠블럼 스탯 적용 및 전투력 재계산
+        const { applyEmblemStats } = require('../handlers/character/emblem');
+        await applyEmblemStats(user, emblemType);
+        
+        // 전투력 재계산
+        const { calculateCombatPower } = require('../handlers/common/combatPower');
+        user.combatPower = calculateCombatPower(user);
+        
         await user.save();
         
         // 결과 표시
