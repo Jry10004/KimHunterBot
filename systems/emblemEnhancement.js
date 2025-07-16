@@ -563,9 +563,10 @@ async function tryEnhanceEmblem(interaction, count = 1) {
         const actualCount = count === 'max' ? user.items.emblemEnhanceStone : count;
         
         // 엠블럼 타입 찾기
+        const { EMBLEMS } = require('./emblemShop');
         const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, '');
-        const emblemType = Object.keys(EMBLEM_ENHANCE_STATS).find(type => 
-            user.emblem.toLowerCase().includes(EMBLEM_ENHANCE_STATS[type].name)
+        const emblemType = Object.keys(EMBLEMS).find(type => 
+            EMBLEMS[type].emblems.some(e => e.name === baseEmblemName)
         );
         
         if (!emblemType) {
@@ -593,8 +594,9 @@ async function tryEnhanceEmblem(interaction, count = 1) {
         await saveUser(user);
         
         // 결과 표시
-        const embed = createEmblemEnhanceEmbed(user);
-        const components = createEmblemEnhanceButtons(user);
+        const embed = createEmblemEnhanceEmbed(user, emblemType);
+        const hasStones = user.items?.emblemEnhanceStone > 0;
+        const components = createEmblemEnhanceButtons(hasStones, user);
         
         let resultMessage = '';
         if (actualCount === 1) {
@@ -603,9 +605,21 @@ async function tryEnhanceEmblem(interaction, count = 1) {
             resultMessage = `🎰 ${actualCount}회 강화 결과:\n✅ 성공: ${totalSuccess}회\n❌ 실패: ${totalFail}회\n최종 레벨: **+${user.emblemEnhancement.level}**`;
         }
         
+        // 버튼 배열 처리 및 뒤로가기 버튼 추가
+        const { ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+        const backButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('emblem')
+                    .setLabel('◀️ 엠블럼으로 돌아가기')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+        
+        const buttonRows = Array.isArray(components) ? components : [components];
+        
         await interaction.editReply({
             embeds: [embed],
-            components: components
+            components: [...buttonRows, backButton]
         });
         
         await interaction.followUp({

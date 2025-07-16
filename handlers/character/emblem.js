@@ -198,14 +198,9 @@ async function showEmblemEnhance(interaction) {
     const hasStones = user.items?.emblemEnhanceStone > 0;
     const buttons = createEmblemEnhanceButtons(hasStones, user);
     
-    // 강화석 구매 및 뒤로가기 버튼
-    const shopAndBackButton = new ActionRowBuilder()
+    // 뒤로가기 버튼
+    const backButton = new ActionRowBuilder()
         .addComponents(
-            new ButtonBuilder()
-                .setCustomId('emblem_shop_stone')
-                .setLabel('💎 강화석 구매')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('🛒'),
             new ButtonBuilder()
                 .setCustomId('emblem')
                 .setLabel('◀️ 엠블럼으로 돌아가기')
@@ -217,7 +212,7 @@ async function showEmblemEnhance(interaction) {
     
     return await interaction.editReply({
         embeds: [embed],
-        components: [...buttonRows, shopAndBackButton]
+        components: [...buttonRows, backButton]
     });
 }
 

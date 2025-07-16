@@ -24,7 +24,8 @@
         "openedAt": 1752671329624,
         "closesAt": 1752673129624,
         "event": null,
-        "visitors": []
+        "visitors": [],
+        "closingWarned": true
       }
     ]
   ],
@@ -70,5 +71,5 @@
       }
     ]
   ],
-  "savedAt": 1752672347713
+  "savedAt": 1752672647718
 }
