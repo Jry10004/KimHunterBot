@@ -22,5 +22,21 @@
     "price": 1500000,
     "level": 50,
     "enhanceLevel": 0
+  },
+  {
+    "emblemName": "정확한 사격수",
+    "category": "archer",
+    "purchaseDate": "2025-07-16T16:22:58.555Z",
+    "price": 3000000,
+    "level": 65,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "전설의 명궁",
+    "category": "archer",
+    "purchaseDate": "2025-07-17T02:14:12.217Z",
+    "price": 10000000,
+    "level": 80,
+    "enhanceLevel": 11
   }
 ]

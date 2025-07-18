@@ -77,6 +77,9 @@ stockSchema.index({ currentPrice: -1 });
 stockSchema.index({ dailyChangePercent: -1 });
 stockSchema.index({ volume: -1 });
 
+// 자동 인덱스 생성 비활성화
+stockSchema.set('autoIndex', false);
+
 // 시가총액 계산
 stockSchema.virtual('calculatedMarketCap').get(function() {
     return this.currentPrice * this.shares;

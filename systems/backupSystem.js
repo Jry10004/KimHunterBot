@@ -88,9 +88,22 @@ class BackupSystem {
             // );
             const transactionData = []; // 임시
 
-            // 6. 프리런치 이벤트 데이터 백업
+            // 6. 프리런치 이벤트 데이터 백업 (파일이 있는 경우만)
             console.log('🎮 프리런치 이벤트 데이터 백업 중...');
-            const prelaunchData = require('../prelaunchEventData.json');
+            let prelaunchData = {};
+            try {
+                // 파일이 존재하는지 확인
+                const prelaunchPath = path.join(__dirname, '..', 'prelaunchEventData.json');
+                if (fs.existsSync(prelaunchPath)) {
+                    prelaunchData = require(prelaunchPath);
+                } else {
+                    console.log('⚠️ prelaunchEventData.json 파일이 없어 건너뜁니다.');
+                }
+            } catch (error) {
+                console.log('⚠️ 프리런치 데이터 로드 실패, 빈 데이터로 대체');
+                prelaunchData = {};
+            }
+            
             await fs.writeFile(
                 path.join(backupFolder, 'prelaunchEvent.json'),
                 JSON.stringify(prelaunchData, null, 2),

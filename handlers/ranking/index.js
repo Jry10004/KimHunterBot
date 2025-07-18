@@ -468,9 +468,9 @@ async function showEnhanceRanking(interaction) {
             let maxEnhance = 0;
             let maxItem = null;
             
-            // 인벤토리에서 최고 강화 아이템 찾기
+            // 인벤토리에서 최고 강화 아이템 찾기 (태그가 있는 아이템 제외)
             for (const item of user.inventory || []) {
-                if (item && item.enhanceLevel > maxEnhance) {
+                if (item && !item.isEvent && !item.itemTag && item.enhanceLevel > maxEnhance) {
                     maxEnhance = item.enhanceLevel;
                     maxItem = item;
                 }
@@ -483,7 +483,7 @@ async function showEnhanceRanking(interaction) {
                     const equipped = user.equipment[slot];
                     if (equipped !== undefined && equipped !== null && equipped >= 0) {
                         const item = user.inventory?.[equipped];
-                        if (item && item.enhanceLevel > maxEnhance) {
+                        if (item && !item.isEvent && !item.itemTag && item.enhanceLevel > maxEnhance) {
                             maxEnhance = item.enhanceLevel;
                             maxItem = item;
                         }
@@ -498,7 +498,7 @@ async function showEnhanceRanking(interaction) {
                     const equipped = user.accessories[slot];
                     if (equipped !== undefined && equipped !== null && equipped >= 0) {
                         const item = user.inventory?.[equipped];
-                        if (item && item.enhanceLevel > maxEnhance) {
+                        if (item && !item.isEvent && !item.itemTag && item.enhanceLevel > maxEnhance) {
                             maxEnhance = item.enhanceLevel;
                             maxItem = item;
                         }
@@ -521,9 +521,13 @@ async function showEnhanceRanking(interaction) {
         enhanceData.sort((a, b) => b.enhancement - a.enhancement);
         const top10 = enhanceData.slice(0, 10);
         
-        const rankingData = top10.map(data => ({
-            text: `**${data.user.nickname || '알 수 없음'}** - ${data.item.name} +${data.enhancement}`
-        }));
+        const { ENHANCE_SYSTEM } = require('../enhance/enhanceSystem');
+        const rankingData = top10.map(data => {
+            const rankName = ENHANCE_SYSTEM.rankNames[data.enhancement] || '알 수 없는 랭크';
+            return {
+                text: `**${data.user.nickname || '알 수 없음'}** - ${data.item.name} [${rankName}]`
+            };
+        });
         
         // 현재 유저 순위
         const currentUser = await User.findOne({ discordId: interaction.user.id });
@@ -532,7 +536,9 @@ async function showEnhanceRanking(interaction) {
             const userIndex = enhanceData.findIndex(d => d.user.discordId === currentUser.discordId);
             if (userIndex !== -1) {
                 const userData = enhanceData[userIndex];
-                userRank = `**${userIndex + 1}위** - ${userData.item.name} +${userData.enhancement}`;
+                const { ENHANCE_SYSTEM } = require('../enhance/enhanceSystem');
+                const rankName = ENHANCE_SYSTEM.rankNames[userData.enhancement] || '알 수 없는 랭크';
+                userRank = `**${userIndex + 1}위** - ${userData.item.name} [${rankName}]`;
             }
         }
         

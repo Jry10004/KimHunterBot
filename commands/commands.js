@@ -709,16 +709,59 @@ const productionCommands = [
                 type: 3,
                 required: true,
                 choices: [
-                    { name: '👺 고블린 족장', value: 'goblin_chief' },
-                    { name: '💀 해골 왕', value: 'skeleton_king' },
-                    { name: '🗡️ 그림자 암살자', value: 'shadow_assassin' },
-                    { name: '👹 데몬 로드', value: 'demon_lord' },
-                    { name: '🗿 고대 골렘', value: 'ancient_golem' },
-                    { name: '🐉 서리 드래곤', value: 'frost_dragon' },
-                    { name: '🔥 화염 엘리멘탈', value: 'fire_elemental' }
+                    // 초급 보스 (일부)
+                    { name: '🟢 슬라임 킹 (Lv.10)', value: 'slime_king' },
+                    { name: '🐺 광포한 늑대 (Lv.15)', value: 'mad_wolf' },
+                    { name: '👺 고블린 족장 (Lv.20)', value: 'goblin_chief' },
+                    { name: '💀 해골 왕 (Lv.30)', value: 'skeleton_king' },
+                    { name: '🌳 타락한 나무정령 (Lv.40)', value: 'corrupted_treant' },
+                    { name: '❄️ 얼음 거인 (Lv.50)', value: 'ice_giant' },
+                    { name: '🗡️ 그림자 암살자 (Lv.60)', value: 'shadow_assassin' },
+                    { name: '⚡ 폭풍의 정령 (Lv.80)', value: 'storm_elemental' },
+                    { name: '🔥 화염 드레이크 (Lv.85)', value: 'flame_drake' },
+                    { name: '👹 데몬 로드 (Lv.100)', value: 'demon_lord' },
+                    { name: '🐲 용의 수호자 (Lv.100)', value: 'dragon_guardian' },
+                    // 중급 보스 (일부)
+                    { name: '🐉 서리 드래곤 (Lv.110)', value: 'frost_dragon' },
+                    { name: '🔥 화염 엘리멘탈 (Lv.120)', value: 'fire_elemental_lord' },
+                    { name: '⚡ 번개 타이탄 (Lv.130)', value: 'lightning_titan' },
+                    { name: '⚔️ 암흑 기사단장 (Lv.150)', value: 'dark_knight_commander' },
+                    // 상급 보스 (일부)
+                    { name: '🐉 고대 용왕 (Lv.210)', value: 'ancient_dragon_king' },
+                    { name: '⚖️ 천계의 심판관 (Lv.220)', value: 'celestial_judge' },
+                    { name: '💫 원소의 대정령 (Lv.240)', value: 'elemental_overlord' },
+                    { name: '🌀 혼돈의 화신 (Lv.250)', value: 'chaos_incarnate' },
+                    // 최상급 보스 (일부)
+                    { name: '😇 타락한 천사장 (Lv.260)', value: 'fallen_archangel' },
+                    { name: '🗿 고대 신의 화신 (Lv.270)', value: 'ancient_god_avatar' },
+                    { name: '🌌 차원의 파괴자 (Lv.280)', value: 'dimension_destroyer' },
+                    { name: '☄️ 종말의 예언자 (Lv.290)', value: 'apocalypse_prophet' },
+                    { name: '⚡ 창조와 파괴의 신 (Lv.300)', value: 'creation_destruction_god' }
                 ]
             }
         ]
+    },
+    {
+        name: '댕댕이벤트',
+        description: '댕댕봇 목걸이 도둑 잡기 이벤트 관리 (관리자 전용)',
+        type: 1,
+        options: [
+            {
+                name: '시작',
+                description: '이벤트를 시작합니다',
+                type: 1
+            },
+            {
+                name: '종료',
+                description: '다음 보스 처치 시 이벤트를 종료합니다',
+                type: 1
+            }
+        ]
+    },
+    {
+        name: '댕댕테스트',
+        description: '댕댕봇 목걸이 이벤트 테스트 (관리자 전용)',
+        type: 1
     },
     {
         name: '보스디버그',

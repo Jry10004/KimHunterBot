@@ -190,6 +190,9 @@ const userArtifactsSchema = new mongoose.Schema({
 userArtifactsSchema.index({ 'statistics.totalEarnings': -1 });
 userArtifactsSchema.index({ 'statistics.totalArtifactsFound': -1 });
 
+// 자동 인덱스 생성 비활성화
+userArtifactsSchema.set('autoIndex', false);
+
 // 곡괭이 업그레이드 메서드
 userArtifactsSchema.methods.upgradePickaxe = function(pickaxeType) {
     const pickaxe = this.pickaxes[pickaxeType];

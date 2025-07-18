@@ -14,6 +14,12 @@ async function handleCharacterInteraction(interaction) {
     if (customId === 'profile') {
         return await showProfile(interaction);
     }
+    else if (customId === 'profile_page_1') {
+        return await showProfile(interaction, 1);
+    }
+    else if (customId === 'profile_page_2') {
+        return await showProfile(interaction, 2);
+    }
     
     // 인벤토리 관련
     else if (customId === 'inventory') {
@@ -23,16 +29,50 @@ async function handleCharacterInteraction(interaction) {
         const page = parseInt(customId.split('_')[2]);
         return await showInventory(interaction, page);
     }
+    else if (customId === 'inventory_item_select') {
+        // 아이템 선택 시 바로 상세보기
+        const selectedIndex = parseInt(interaction.values[0]);
+        return await showItemDetail(interaction, selectedIndex);
+    }
+    else if (customId === 'inventory_sort') {
+        return await showInventory(interaction, 1, 'sorted');
+    }
     
     // 스탯 관련
     else if (customId === 'stat_distribution') {
         return await showStatDistribution(interaction);
     }
-    else if (customId.startsWith('stat_')) {
-        const stat = customId.split('_')[1];
-        const amount = parseInt(customId.split('_')[2]);
-        const { handleStatIncrease } = require('./statDistribution');
-        return await handleStatIncrease(interaction, stat, amount);
+    else if (customId === 'stat_add_custom') {
+        console.log('[Character Handler] stat_add_custom 버튼 클릭됨');
+        const { showCustomStatModal } = require('./statDistribution');
+        console.log('[Character Handler] showCustomStatModal 함수 호출 시작');
+        return await showCustomStatModal(interaction);
+    }
+    else if (customId.startsWith('stat_add_')) {
+        const statName = customId.replace('stat_add_', '');
+        const { addStatPoint } = require('./statDistribution');
+        return await addStatPoint(interaction, statName);
+    }
+    else if (customId === 'stat_custom_modal') {
+        console.log('[Character Handler] stat_custom_modal 모달 제출 처리 시작');
+        const { handleCustomStatDistribution } = require('./statDistribution');
+        return await handleCustomStatDistribution(interaction);
+    }
+    else if (customId.startsWith('stat_custom_')) {
+        console.log('[Character Handler] 커스텀 스탯 버튼 처리:', customId);
+        const { handleCustomStatButton } = require('./statDistribution');
+        return await handleCustomStatButton(interaction, customId);
+    }
+    else if (customId === 'stat_reset') {
+        const { showStatResetConfirm } = require('./statDistribution');
+        return await showStatResetConfirm(interaction);
+    }
+    else if (customId === 'stat_reset_confirm') {
+        const { executeStatReset } = require('./statDistribution');
+        return await executeStatReset(interaction);
+    }
+    else if (customId === 'stat_reset_cancel') {
+        return await showStatDistribution(interaction);
     }
     
     // 장비 관련
@@ -76,9 +116,25 @@ async function handleCharacterInteraction(interaction) {
         console.log('[Character Handler] equip_slot_select 처리 시작');
         const slot = interaction.values[0];
         console.log('[Character Handler] 선택된 슬롯:', slot);
+        
+        // 악세서리 카테고리인 경우
+        if (slot === 'accessory_category') {
+            const { showAccessorySlots } = require('./equipment');
+            return await showAccessorySlots(interaction);
+        }
+        
         const { showEquippableItems } = require('./equipment');
         const result = await showEquippableItems(interaction, slot);
         console.log('[Character Handler] equip_slot_select 처리 완료');
+        return result;
+    }
+    else if (customId === 'accessory_slot_select') {
+        console.log('[Character Handler] accessory_slot_select 처리 시작');
+        const slot = interaction.values[0];
+        console.log('[Character Handler] 선택된 악세서리 슬롯:', slot);
+        const { showEquippableItems } = require('./equipment');
+        const result = await showEquippableItems(interaction, slot, 1, true);
+        console.log('[Character Handler] accessory_slot_select 처리 완료');
         return result;
     }
     else if (customId.startsWith('equip_page_')) {
@@ -97,9 +153,9 @@ async function handleCharacterInteraction(interaction) {
         return await showEmblem(interaction);
     }
     else if (customId === 'emblem_shop') {
-        const { showEmblemShop } = require('../../systems/emblemShop');
+        const { showPersonalEmblemShop } = require('../../systems/emblemShop');
         const user = await getUser(interaction.user.id);
-        return await showEmblemShop(interaction, user);
+        return await showPersonalEmblemShop(interaction, user);
     }
     else if (customId.startsWith('buy_emblem_')) {
         return await handleEmblemPurchase(interaction);
@@ -110,7 +166,9 @@ async function handleCharacterInteraction(interaction) {
     }
     else if (customId === 'emblem_evolve') {
         // 엠블럼 진화는 구매로 처리됨
-        return await showEmblemShop(interaction);
+        const { showPersonalEmblemShop } = require('../../systems/emblemShop');
+        const user = await getUser(interaction.user.id);
+        return await showPersonalEmblemShop(interaction, user);
     }
     else if (customId === 'emblem_enhance') {
         const { showEmblemEnhance } = require('./emblem');
@@ -254,6 +312,16 @@ async function handleCharacterInteraction(interaction) {
         const { equipItemFromInventory } = require('./inventory');
         const itemIndex = parseInt(customId.split('_')[2]);
         return await equipItemFromInventory(interaction, itemIndex);
+    }
+    else if (customId.startsWith('item_sell_')) {
+        const { sellItem } = require('./inventory');
+        const itemIndex = parseInt(customId.split('_')[2]);
+        return await sellItem(interaction, itemIndex);
+    }
+    else if (customId.startsWith('item_use_')) {
+        const { useItem } = require('./itemUsage');
+        const itemIndex = parseInt(customId.split('_')[2]);
+        return await useItem(interaction, itemIndex);
     }
     else if (customId === 'inventory_back') {
         return await showInventory(interaction);

@@ -1,0 +1,43 @@
+{
+  "puppyNecklaceEvent": {
+    "active": true,
+    "currentBoss": {
+      "name": "베테랑 도둑 요리",
+      "maxHp": 25063,
+      "currentHp": 25063,
+      "attack": 140,
+      "defense": 70,
+      "tier": "mid",
+      "startTime": "2025-07-18T22:49:25.293Z",
+      "bossNumber": 13,
+      "basedOnPower": 8424,
+      "powerThresholds": {
+        "high": 9020,
+        "mid": 5655
+      }
+    },
+    "participants": {
+      "424480594542592009": {
+        "attacks": 3,
+        "totalDamage": 8743
+      },
+      "590922222361903135": {
+        "attacks": 3,
+        "totalDamage": 8806
+      },
+      "592659577384730645": {
+        "attacks": 2,
+        "totalDamage": 11968
+      },
+      "364197967114272769": {
+        "attacks": 8,
+        "totalDamage": 2008
+      }
+    },
+    "bossStartTime": 1752878965293,
+    "eventChannel": "1386447256408035399",
+    "eventEndRequested": false,
+    "bossCount": 13,
+    "totalBossesDefeated": 0
+  }
+}

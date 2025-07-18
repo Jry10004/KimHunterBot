@@ -2,16 +2,17 @@
 const BOSS_SYSTEM = {
     // 보스 목록
     bosses: [
-        // 초급 보스 (레벨 10-30)
+        // ========== 초급 보스 (레벨 1-100) ==========
+        // 입문자 보스 (Lv.1-20)
         {
-            id: 'goblin_chief',
-            name: '고블린 족장',
-            emoji: '👺',
-            level: 20,
-            hp: 60000,
-            requiredLevel: 10,
-            attack: 300,
-            defense: 160,
+            id: 'slime_king',
+            name: '슬라임 킹',
+            emoji: '🟢',
+            level: 10,
+            hp: 50000,
+            requiredLevel: 1,
+            attack: 200,
+            defense: 100,
             rewards: {
                 exp: 10000,
                 gold: 100000,

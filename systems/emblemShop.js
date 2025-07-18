@@ -83,7 +83,7 @@ function loadMessageIds() {
             Object.entries(data).forEach(([channelId, messageId]) => {
                 permanentMessageIds.set(channelId, messageId);
             });
-            console.log('✅ 엠블럼 상점 메시지 ID 로드 완료');
+            // console.log('✅ 엠블럼 상점 메시지 ID 로드 완료');
         }
     } catch (error) {
         console.error('엠블럼 상점 메시지 ID 로드 실패:', error);
@@ -184,7 +184,7 @@ async function initializeEmblemShop(client, channelId, forceNew = false) {
         }
         
         // 봇이 메시지 전송 권한이 있는지 확인
-        if (!channel.permissionsFor(client.user).has(['SendMessages', 'ViewChannel'])) {
+        if (channel.type === 0 && !channel.permissionsFor(client.user)?.has(['SendMessages', 'ViewChannel'])) {
             console.error(`채널 ${channelId}에 메시지 전송 권한이 없습니다.`);
             return null;
         }
@@ -261,10 +261,27 @@ async function initializeEmblemShop(client, channelId, forceNew = false) {
 
 // Initialize emblem shops in all designated channels
 async function initializeAllEmblemShops(client) {
-    const emblemChannelIds = ['1381614153399140412', '1388182808895291422'];
+    const emblemChannelIds = []; // 엠블럼 상점 채널을 엠블럼 메뉴로 이동
     
     for (const channelId of emblemChannelIds) {
-        await initializeEmblemShop(client, channelId);
+        try {
+            // 채널 접근 권한 확인
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+            if (!channel) {
+                console.log(`⚠️ 채널 ${channelId}에 접근할 수 없습니다. 건너뜁니다.`);
+                continue;
+            }
+            
+            // 봇이 메시지를 보낼 권한이 있는지 확인
+            if (channel.type === 0 && !channel.permissionsFor(client.user)?.has(['ViewChannel', 'SendMessages'])) {
+                console.log(`⚠️ 채널 ${channel.name}에 메시지 전송 권한이 없습니다. 건너뜁니다.`);
+                continue;
+            }
+            
+            await initializeEmblemShop(client, channelId);
+        } catch (error) {
+            console.error(`채널 ${channelId} 초기화 중 오류:`, error);
+        }
     }
 }
 
@@ -305,11 +322,25 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
 
         const category = EMBLEMS[selectedCategory];
         
+        // 카테고리가 유효하지 않은 경우 처리
+        if (!category) {
+            console.error(`[엠블럼 상점] 유효하지 않은 카테고리: ${selectedCategory}`);
+            await interaction.editReply({ 
+                content: '❌ 유효하지 않은 카테고리입니다. 다시 선택해주세요.', 
+                embeds: [],
+                components: []
+            });
+            return;
+        }
+        
         // 유저의 현재 엠블럼 상태 확인
         let userStatus = '';
         if (user.emblem) {
+            // 강화 수치 제거하고 기본 엠블럼 이름만 추출
+            const baseEmblemName = user.emblem.replace(/\s*\+\d+$/, '');
+            
             const currentType = Object.keys(EMBLEMS).find(type => 
-                EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+                EMBLEMS[type].emblems.some(e => e.name === baseEmblemName)
             );
             
             if (currentType && currentType !== selectedCategory) {
@@ -335,7 +366,9 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
 
         // Add fields for each emblem in the category
         category.emblems.forEach((emblem, index) => {
-            const isOwned = user.emblem === emblem.name;
+            // 강화 수치 제거하고 비교
+            const baseUserEmblem = user.emblem ? user.emblem.replace(/\s*\+\d+$/, '') : '';
+            const isOwned = baseUserEmblem === emblem.name;
             const levelReq = user.level >= emblem.level;
             const goldReq = user.gold >= emblem.price;
             
@@ -352,13 +385,14 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
                     // 첫 구매는 첫 번째 엠블럼만 가능
                     status = index === 0 ? ' ✅ 구매 가능' : ' ⏸️ 이전 단계 필요';
                 } else {
+                    const baseUserEmblem = user.emblem.replace(/\s*\+\d+$/, '');
                     const currentType = Object.keys(EMBLEMS).find(type => 
-                        EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+                        EMBLEMS[type].emblems.some(e => e.name === baseUserEmblem)
                     );
                     if (currentType !== selectedCategory) {
                         status = ' 🚫 다른 계열';
                     } else {
-                        const currentIndex = category.emblems.findIndex(e => e.name === user.emblem);
+                        const currentIndex = category.emblems.findIndex(e => e.name === baseUserEmblem);
                         status = index === currentIndex + 1 ? ' ✅ 업그레이드 가능' : ' ⏸️ 순서대로 진행';
                     }
                 }
@@ -376,12 +410,13 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
         
         if (user.emblem) {
             // Check if user can upgrade
+            const baseUserEmblem = user.emblem.replace(/\s*\+\d+$/, '');
             const currentType = Object.keys(EMBLEMS).find(type => 
-                EMBLEMS[type].emblems.some(e => e.name === user.emblem)
+                EMBLEMS[type].emblems.some(e => e.name === baseUserEmblem)
             );
             
             if (currentType === selectedCategory) {
-                const currentIndex = category.emblems.findIndex(e => e.name === user.emblem);
+                const currentIndex = category.emblems.findIndex(e => e.name === baseUserEmblem);
                 if (currentIndex < category.emblems.length - 1) {
                     const nextEmblem = category.emblems[currentIndex + 1];
                     if (user.level >= nextEmblem.level && user.gold >= nextEmblem.price) {
@@ -528,6 +563,17 @@ async function handleEmblemShopInteraction(interaction, getUser, saveUser) {
     }
 }
 
+// 개인 엠블럼 상점 표시 함수
+async function showPersonalEmblemShop(interaction, user) {
+    const embed = createEmblemShopEmbed(user);
+    const selectMenu = createEmblemSelectMenu();
+    
+    await interaction.editReply({
+        embeds: [embed],
+        components: [selectMenu]
+    });
+}
+
 module.exports = {
     EMBLEMS,
     createEmblemShopEmbed,
@@ -535,5 +581,6 @@ module.exports = {
     initializeEmblemShop,
     initializeAllEmblemShops,
     handleEmblemShopInteraction,
+    showPersonalEmblemShop,
     permanentMessageIds
 };

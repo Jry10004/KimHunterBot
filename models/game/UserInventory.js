@@ -97,6 +97,9 @@ userInventorySchema.index({ discordId: 1 });
 userInventorySchema.index({ 'inventory.itemId': 1 });
 userInventorySchema.index({ 'inventory.equipped': 1 });
 
+// 자동 인덱스 생성 비활성화
+userInventorySchema.set('autoIndex', false);
+
 // 가상 필드: 현재 사용 중인 인벤토리 슬롯 수
 userInventorySchema.virtual('usedSlots').get(function() {
     return this.inventory.length;

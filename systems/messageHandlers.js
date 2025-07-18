@@ -2,7 +2,6 @@
 const { EmbedBuilder } = require('discord.js');
 const path = require('path');
 const antiMacro = require('./antiMacro');
-const dogBotHostageSystem = require('./dogBotHostageSystem');
 
 // 인기도 업데이트 함수 (외부에서 주입)
 let updatePopularityFunction = null;
@@ -126,13 +125,10 @@ async function sendPenaltyNotification(message, userId, penalty) {
     }
 }
 
-// 매크로 검증 및 댕댕봇 답변 처리
+// 매크로 검증 처리
 async function handleMacroVerificationMessage(message) {
     // 봇 메시지 무시
     if (message.author.bot) return;
-    
-    // 댕댕봇 인질 시스템 응답 처리
-    await dogBotHostageSystem.handleMessage(message);
     
     // 모든 메시지에 대해 로그
     console.log(`[messageCreate] 메시지 받음 - 유저: ${message.author.id} (${message.author.username}), 내용: ${message.content}, 채널타입: ${message.channel.type}`);
@@ -229,10 +225,6 @@ async function handleMacroVerificationMessage(message) {
             return;
         }
     }
-    
-    // 댕댕봇 답변 처리
-    const { checkDogBotAnswer } = require('../handlers/events');
-    await checkDogBotAnswer(message);
 }
 
 module.exports = {

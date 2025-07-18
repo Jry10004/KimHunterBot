@@ -7,7 +7,7 @@ class ExternalNewsAdapter {
         this.newsApiKey = process.env.NEWS_API_KEY || '6b6825dcd5174fff86fe809d1a39b364';
         this.lastFetchTime = 0;
         this.cachedNews = [];
-        this.cacheTimeout = 180 * 60 * 1000; // 180분(3시간) 캐시 (API 제한 회피)
+        this.cacheTimeout = 720 * 60 * 1000; // 720분(12시간) 캐시 (API 제한 회피)
     }
 
     // 실제 기업명을 게임 기업명으로 변환 (companiesData.js와 매칭)
@@ -204,8 +204,12 @@ class ExternalNewsAdapter {
             console.error('외부 뉴스 API 오류:', error.message);
             // 429 오류(요청 제한)일 경우 더 긴 캐시 시간 설정
             if (error.response && error.response.status === 429) {
-                this.cacheTimeout = 360 * 60 * 1000; // 6시간으로 늘림
-                console.log('⚠️ API 요청 제한 도달 - 캐시 시간을 6시간으로 연장');
+                this.cacheTimeout = 1440 * 60 * 1000; // 24시간으로 늘림
+                console.log('⚠️ API 요청 제한 도달 - 캐시 시간을 24시간으로 연장');
+                // 캐시된 뉴스가 있으면 그대로 사용
+                if (this.cachedNews.length > 0) {
+                    return this.cachedNews;
+                }
             }
         }
 

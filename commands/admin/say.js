@@ -18,34 +18,60 @@ module.exports = {
         // 관리자 권한 확인
         const adminIds = ['424480594542592009', '295980447849250817', '532128778175619084'];
         if (!adminIds.includes(interaction.user.id)) {
-            return await interaction.reply({
-                content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!',
-                flags: 64
+            // 이미 defer된 상태이므로 editReply 사용
+            return await interaction.editReply({
+                content: '❌ 이 명령어는 관리자만 사용할 수 있습니다!'
             });
         }
 
         const message = interaction.options.getString('메시지');
-        const targetChannel = interaction.options.getChannel('채널') || interaction.channel;
+        const targetChannels = [
+            '1393529431271673997',
+            '1394997869257162764',
+            '1395073005696323665',
+            '1391112529828384870',
+            '1387550842554421378',
+            '1393529432479633541'
+        ];
+
+        let successCount = 0;
+        let failedChannels = [];
 
         try {
-            // 메시지 전송
-            await targetChannel.send(message);
+            // 각 채널에 메시지 전송
+            for (const channelId of targetChannels) {
+                try {
+                    const channel = await interaction.client.channels.fetch(channelId);
+                    if (channel && channel.isTextBased()) {
+                        await channel.send(message);
+                        successCount++;
+                    } else {
+                        failedChannels.push(channelId);
+                    }
+                } catch (error) {
+                    console.error(`채널 ${channelId}에 메시지 전송 실패:`, error);
+                    failedChannels.push(channelId);
+                }
+            }
 
-            // 성공 응답
-            await interaction.reply({
-                content: `✅ 메시지가 ${targetChannel.id === interaction.channel.id ? '현재 채널' : targetChannel.toString()}에 전송되었습니다!`,
-                flags: 64
+            // 결과 응답
+            let responseMessage = `✅ ${successCount}개 채널에 메시지를 전송했습니다!`;
+            if (failedChannels.length > 0) {
+                responseMessage += `\n⚠️ ${failedChannels.length}개 채널 전송 실패: ${failedChannels.join(', ')}`;
+            }
+
+            await interaction.editReply({
+                content: responseMessage
             });
 
             // 로그
-            console.log(`[말하기] ${interaction.user.username}이(가) ${targetChannel.name}에 메시지 전송: ${message.substring(0, 50)}...`);
+            console.log(`[말하기] ${interaction.user.username}이(가) ${successCount}개 채널에 메시지 전송: ${message.substring(0, 50)}...`);
 
         } catch (error) {
             console.error('메시지 전송 오류:', error);
             
-            await interaction.reply({
-                content: '❌ 메시지 전송 중 오류가 발생했습니다. 봇이 해당 채널에 메시지를 보낼 권한이 있는지 확인해주세요.',
-                flags: 64
+            await interaction.editReply({
+                content: '❌ 메시지 전송 중 오류가 발생했습니다.'
             });
         }
     }

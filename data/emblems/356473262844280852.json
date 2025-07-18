@@ -6,5 +6,37 @@
     "price": 300000,
     "level": 20,
     "enhanceLevel": 0
+  },
+  {
+    "emblemName": "튼튼한 기사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-16T23:22:11.316Z",
+    "price": 500000,
+    "level": 35,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "용맹한 검사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-17T06:34:20.889Z",
+    "price": 1500000,
+    "level": 50,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "맹렬한 전사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-17T07:48:36.492Z",
+    "price": 3000000,
+    "level": 65,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "전설의 기사",
+    "category": "warrior",
+    "purchaseDate": "2025-07-17T07:48:48.643Z",
+    "price": 10000000,
+    "level": 80,
+    "enhanceLevel": 0
   }
 ]

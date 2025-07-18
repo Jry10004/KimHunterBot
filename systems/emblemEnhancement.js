@@ -124,23 +124,23 @@ const FAIL_PENALTIES = {
 const EMBLEM_ENHANCE_STATS = {
     warrior: {
         name: '전사',
-        stats: { strength: 0.5, vitality: 0.3 }  // 0.7 → 0.5, 0.4 → 0.3
+        stats: { strength: 2, vitality: 1 }  // 레벨당 주스탯 2, 부스탯 1
     },
     archer: {
         name: '궁수',
-        stats: { agility: 0.5, luck: 0.3 }
+        stats: { agility: 2, luck: 1 }
     },
     defender: {
         name: '수호자',
-        stats: { vitality: 0.5, strength: 0.3 }  // 0.6 → 0.5, 0.2 → 0.3
+        stats: { vitality: 2, strength: 1 }
     },
-    wizard: {
+    mage: {
         name: '마법사',
-        stats: { intelligence: 0.5, luck: 0.3 }  // 0.6 → 0.5, 0.2 → 0.3
+        stats: { intelligence: 2, luck: 1 }
     },
     rogue: {
         name: '도적',
-        stats: { agility: 0.4, luck: 0.4 }
+        stats: { agility: 1.5, luck: 1.5 }  // 도적은 두 스탯 균등하게
     }
 };
 
@@ -180,7 +180,20 @@ function createEmblemEnhanceEmbed(user, emblemType) {
     // 현재 추가 스탯 계산
     const currentStats = [];
     for (const [stat, value] of Object.entries(jobData.stats)) {
-        const statValue = Math.floor(value * enhanceData.level);
+        let statValue = Math.floor(value * enhanceData.level);
+        
+        // 10, 20, 30 등 특정 구간 보너스
+        if (enhanceData.level >= 10) statValue += 5;
+        if (enhanceData.level >= 20) statValue += 10;
+        if (enhanceData.level >= 30) statValue += 15;
+        if (enhanceData.level >= 40) statValue += 20;
+        if (enhanceData.level >= 50) statValue += 30;
+        if (enhanceData.level >= 60) statValue += 40;
+        if (enhanceData.level >= 70) statValue += 50;
+        if (enhanceData.level >= 80) statValue += 60;
+        if (enhanceData.level >= 90) statValue += 70;
+        if (enhanceData.level >= 100) statValue += 100;
+        
         if (statValue > 0) {
             const statNames = {
                 strength: '💪 힘',
@@ -219,7 +232,7 @@ function createEmblemEnhanceEmbed(user, emblemType) {
                 name: '💎 엠블럼강화조각', 
                 value: [
                     `필요: **1개**`,
-                    `보유: **${user.items?.emblemEnhanceStone || 0}개**`
+                    `보유: **${(user.items?.emblemEnhanceStone || 0).toFixed(1)}개**`
                 ].join('\n'),
                 inline: true
             }

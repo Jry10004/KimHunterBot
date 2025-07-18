@@ -12,6 +12,18 @@ async function getUser(discordId) {
     }
 }
 
+// 사용자 정보 저장하기
+async function saveUser(user) {
+    try {
+        if (!user) return false;
+        await user.save();
+        return true;
+    } catch (error) {
+        console.error('사용자 저장 오류:', error);
+        return false;
+    }
+}
+
 // 관리자 확인
 const ADMIN_IDS = [
     '424480594542592009',   // 요리
@@ -90,6 +102,7 @@ function calculateCombatPower(user) {
 
 module.exports = {
     getUser,
+    saveUser,
     isAdmin,
     ADMIN_IDS,
     formatNumber,

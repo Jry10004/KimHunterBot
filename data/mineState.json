@@ -3,44 +3,51 @@
     [
       "beginner",
       {
-        "openedAt": 1752679174181,
-        "closesAt": 1752765574181,
+        "openedAt": 1752879372191,
+        "closesAt": 1752965772191,
         "event": null,
         "visitors": []
-      }
-    ],
-    [
-      "deepDark",
-      {
-        "openedAt": 1752678003145,
-        "closesAt": 1752679800145,
-        "event": null,
-        "visitors": [
-          "356473262844280852"
-        ],
-        "closingWarned": true
       }
     ],
     [
       "ancient",
       {
-        "openedAt": 1752678903240,
-        "closesAt": 1752680703240,
+        "openedAt": 1752878476222,
+        "closesAt": 1752880276222,
         "event": null,
         "visitors": []
+      }
+    ],
+    [
+      "celestial",
+      {
+        "openedAt": 1752879020094,
+        "closesAt": 1752880220094,
+        "event": null,
+        "visitors": []
+      }
+    ],
+    [
+      "legendary",
+      {
+        "openedAt": 1752879552209,
+        "closesAt": 1752880152209,
+        "event": "special",
+        "visitors": [],
+        "closingWarned": true
       }
     ]
   ],
   "lastRandomOpen": [
     [
       "ancient",
-      1752678903240
+      1752878476222
     ],
     [
       "celestial",
-      1752678003145
+      1752879020094
     ]
   ],
   "dailyEntries": [],
-  "savedAt": 1752679472353
+  "savedAt": 1752879670670
 }

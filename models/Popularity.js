@@ -62,4 +62,7 @@ const popularitySchema = new mongoose.Schema({
 // 복합 인덱스
 popularitySchema.index({ weeklyLikes: -1, totalLikes: -1 });
 
+// 자동 인덱스 생성 비활성화
+popularitySchema.set('autoIndex', false);
+
 module.exports = mongoose.model('Popularity', popularitySchema);

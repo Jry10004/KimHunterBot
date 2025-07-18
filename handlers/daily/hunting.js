@@ -194,10 +194,6 @@ async function showHuntingMenu(interaction, page = 0) {
                 .setLabel('🏆 토너먼트')
                 .setStyle(ButtonStyle.Success)
                 .setDisabled(false), // 테스트를 위해 임시로 항상 활성화
-            new ButtonBuilder()
-                .setCustomId('fishing_cast')
-                .setLabel('🎣 낚시')
-                .setStyle(ButtonStyle.Primary),
             // new ButtonBuilder()
             //     .setCustomId('material_crafting')
             //     .setLabel('🔨 재료 제작')

@@ -191,6 +191,9 @@ class RandomItemGenerator {
             item.stats[opt.key] = opt.value;
         });
         
+        // baseStats 복사본 저장 (강화 시 원본 보존용)
+        item.baseStats = { ...item.stats };
+        
         // 특수 조합 스탯 추가
         if (specialCombo && specialCombo.stats) {
             item.specialStats = specialCombo.stats;
@@ -502,6 +505,9 @@ class RandomItemGenerator {
         options.forEach(opt => {
             item.stats[opt.key] = opt.value;
         });
+        
+        // baseStats 복사본 저장 (강화 시 원본 보존용)
+        item.baseStats = { ...item.stats };
 
         // 특수 조합 스탯 추가
         if (specialCombo && specialCombo.stats) {
@@ -721,6 +727,9 @@ class RandomItemGenerator {
         options.forEach(opt => {
             item.stats[opt.key] = opt.value;
         });
+        
+        // baseStats 복사본 저장 (강화 시 원본 보존용)
+        item.baseStats = { ...item.stats };
         
         return item;
     }

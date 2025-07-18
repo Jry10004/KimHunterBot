@@ -2,6 +2,7 @@
 const axios = require('axios');
 const { updateCompanyPrice, getCompanyById } = require('../data/companiesData');
 const newsSystem = require('./newsSystem');
+const NewsAPI = require('../services/api/NewsAPI');
 
 class RealStockSync {
     constructor() {
@@ -139,51 +140,44 @@ class RealStockSync {
         try {
             const allArticles = [];
             
+            // NewsAPI 서비스를 사용하여 뉴스 가져오기
             // 비즈니스 뉴스
-            const businessResponse = await axios.get('https://newsapi.org/v2/top-headlines', {
-                params: {
-                    country: 'kr',
-                    category: 'business',
-                    apiKey: this.apiKey,
-                    pageSize: 10
-                }
+            const businessResponse = await NewsAPI.getTopHeadlines({
+                country: 'kr',
+                category: 'business',
+                pageSize: 10
             });
             
-            if (businessResponse.data.articles) {
-                allArticles.push(...businessResponse.data.articles);
+            if (businessResponse.articles) {
+                allArticles.push(...businessResponse.articles);
             }
             
             // 일반 뉴스 (범죄, 스캔들, 사건사고 포함)
-            const generalResponse = await axios.get('https://newsapi.org/v2/top-headlines', {
-                params: {
-                    country: 'kr',
-                    category: 'general',
-                    apiKey: this.apiKey,
-                    pageSize: 5
-                }
+            const generalResponse = await NewsAPI.getTopHeadlines({
+                country: 'kr',
+                category: 'general',
+                pageSize: 5
             });
             
-            if (generalResponse.data.articles) {
-                allArticles.push(...generalResponse.data.articles);
+            if (generalResponse.articles) {
+                allArticles.push(...generalResponse.articles);
             }
             
             // 엔터테인먼트 뉴스
-            const entertainmentResponse = await axios.get('https://newsapi.org/v2/top-headlines', {
-                params: {
-                    country: 'kr',
-                    category: 'entertainment',
-                    apiKey: this.apiKey,
-                    pageSize: 5
-                }
+            const entertainmentResponse = await NewsAPI.getTopHeadlines({
+                country: 'kr',
+                category: 'entertainment',
+                pageSize: 5
             });
             
-            if (entertainmentResponse.data.articles) {
-                allArticles.push(...entertainmentResponse.data.articles);
+            if (entertainmentResponse.articles) {
+                allArticles.push(...entertainmentResponse.articles);
             }
 
             return allArticles;
         } catch (error) {
             console.error('비즈니스 뉴스 가져오기 실패:', error.message);
+            // NewsAPI 자체 캐시와 모의 뉴스 시스템을 사용하므로 추가 처리 불필요
         }
 
         return [];

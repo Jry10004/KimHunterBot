@@ -371,14 +371,35 @@ class EnhancedErrorHandler {
         process.on('uncaughtException', async (error) => {
             error.customType = ErrorTypes.SYSTEM;
             
+            console.error('🚨 Uncaught Exception:', error);
+            console.error('Stack:', error.stack);
+            
             await this.handleError(error, {
                 type: 'uncaughtException'
             });
             
-            // 심각한 에러의 경우 안전하게 종료
+            // 심각한 에러의 경우에도 종료하지 않고 계속 실행
+            // 단, 메모리 누수를 방지하기 위해 타이머/인터벌 정리
             if (this.detectSeverity(error, ErrorTypes.SYSTEM) === ErrorSeverity.CRITICAL) {
-                console.error('🚨 Critical error detected. Shutting down safely...');
-                process.exit(1);
+                console.error('🚨 Critical error detected. Attempting to recover...');
+                
+                // 목걸이 이벤트 타이머 정리
+                try {
+                    const { eventState } = require('../handlers/events/puppyNecklaceEvent');
+                    if (eventState.intervalId) {
+                        clearInterval(eventState.intervalId);
+                        eventState.intervalId = null;
+                    }
+                    if (eventState.updateIntervalId) {
+                        clearInterval(eventState.updateIntervalId);
+                        eventState.updateIntervalId = null;
+                    }
+                } catch (e) {
+                    console.error('Failed to clear event timers:', e);
+                }
+                
+                // 강제 종료 대신 경고만 표시
+                console.error('⚠️ Bot is continuing despite critical error. Manual restart may be required.');
             }
         });
 

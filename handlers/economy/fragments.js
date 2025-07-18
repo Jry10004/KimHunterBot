@@ -6,10 +6,20 @@ const MissionHelper = require('../../utils/missionHelper');
 // 에너지 조각 시스템 상수
 const ENERGY_FRAGMENT_SYSTEM = {
     MINE_COST: 10000, // 10,000골드로 변경
-    MINE_COOLDOWN: 5000, // 5초 (테스트 기간)
+    MINE_COOLDOWN: 1000, // 1초로 변경
+    DAILY_MINE_LIMIT: 20, // 일일 채굴 제한
+    MINE_RECHARGE_TIME: 30 * 60 * 1000, // 30분마다 1회 충전
     DAILY_FUSION_LIMIT: 20,
     FUSION_REQUIRED: 2, // 3개에서 2개로 변경
     ATTACK_BONUS_PER_LEVEL: 1, // 레벨당 공격력 +1
+    FUSION_BONUS_MULTIPLIER: { // 높은 레벨 조각 추가 보너스
+        1: 1.0,   // Lv.1-25: 기본
+        26: 1.2,  // Lv.26-50: 20% 추가
+        51: 1.5,  // Lv.51-75: 50% 추가
+        76: 2.0,  // Lv.76-99: 100% 추가
+        100: 3.0  // Lv.100: 200% 추가
+    },
+    FAILURE_STACK_REQUIRED: 20, // 실패 스택 20개 시 100% 성공
     SUCCESS_RATES: {
         '1-25': 95,
         '26-50': 75,
@@ -59,7 +69,8 @@ function getFusionSuccessRate(level) {
 
 // 에너지 조각 메인 메뉴
 async function showFragmentMenu(interaction) {
-    const user = await getUser(interaction.user.id);
+    // 항상 최신 데이터를 가져오도록 수정
+    const user = await User.findOne({ discordId: interaction.user.id });
     if (!user || !user.registered) {
         return await interaction.reply({ 
             content: '먼저 회원가입을 해주세요! `/회원가입` 명령어를 사용하세요.', 
@@ -67,23 +78,57 @@ async function showFragmentMenu(interaction) {
         });
     }
 
-    // 일일 융합 초기화
+    // 일일 데이터 초기화
     const today = new Date().toDateString();
+    const now = Date.now();
+    
     if (!user.energyFragments) {
         user.energyFragments = {
             fragments: new Map(),
             dailyFusions: 0,
             dailyFusionDate: today,
+            dailyMines: 20,
+            dailyMineDate: today,
+            lastMineRecharge: now,
             failureStack: 0,
             lastMine: 0
         };
     }
     
+    // dailyMines가 undefined 또는 null일 경우 초기화
+    if (user.energyFragments.dailyMines === undefined || user.energyFragments.dailyMines === null) {
+        user.energyFragments.dailyMines = 20;
+        user.energyFragments.dailyMineDate = today;
+        user.energyFragments.lastMineRecharge = now;
+    }
+    
+    // 일일 채굴/융합 횟수 초기화
+    if (user.energyFragments.dailyMineDate !== today) {
+        user.energyFragments.dailyMines = 20;
+        user.energyFragments.dailyMineDate = today;
+        user.energyFragments.lastMineRecharge = now;
+    }
+    
     if (user.energyFragments.dailyFusionDate !== today) {
         user.energyFragments.dailyFusions = 0;
         user.energyFragments.dailyFusionDate = today;
-        await user.save();
     }
+    
+    // 30분마다 채굴 횟수 1회 충전 (최대 20회)
+    if (user.energyFragments.lastMineRecharge && user.energyFragments.dailyMines < 20) {
+        const timeSinceRecharge = now - new Date(user.energyFragments.lastMineRecharge).getTime();
+        const rechargeCount = Math.floor(timeSinceRecharge / ENERGY_FRAGMENT_SYSTEM.MINE_RECHARGE_TIME);
+        
+        if (rechargeCount > 0) {
+            const previousMines = user.energyFragments.dailyMines;
+            user.energyFragments.dailyMines = Math.min(20, user.energyFragments.dailyMines + rechargeCount);
+            // 충전된 만큼의 시간만 업데이트
+            user.energyFragments.lastMineRecharge = new Date(new Date(user.energyFragments.lastMineRecharge).getTime() + (rechargeCount * ENERGY_FRAGMENT_SYSTEM.MINE_RECHARGE_TIME));
+            console.log(`[조각 충전] ${interaction.user.username}: ${previousMines} → ${user.energyFragments.dailyMines} (충전: +${rechargeCount})`);
+        }
+    }
+    
+    await user.save();
 
     const fragments = user.energyFragments?.fragments || new Map();
     let fragmentText = '';
@@ -99,8 +144,19 @@ async function showFragmentMenu(interaction) {
             if (count > 0) {
                 const tier = getFragmentTier(level);
                 const info = getFragmentInfo(tier);
-                const attackBonus = parseInt(level) * ENERGY_FRAGMENT_SYSTEM.ATTACK_BONUS_PER_LEVEL * count;
-                fragmentText += `${info.emoji} Lv.${level} - ${count}개 (공격력 +${attackBonus})\n`;
+                
+                // 융합 보너스 적용
+                let multiplier = 1.0;
+                if (parseInt(level) >= 76) multiplier = ENERGY_FRAGMENT_SYSTEM.FUSION_BONUS_MULTIPLIER[76];
+                else if (parseInt(level) >= 51) multiplier = ENERGY_FRAGMENT_SYSTEM.FUSION_BONUS_MULTIPLIER[51];
+                else if (parseInt(level) >= 26) multiplier = ENERGY_FRAGMENT_SYSTEM.FUSION_BONUS_MULTIPLIER[26];
+                else multiplier = ENERGY_FRAGMENT_SYSTEM.FUSION_BONUS_MULTIPLIER[1];
+                
+                const baseAttack = parseInt(level) * ENERGY_FRAGMENT_SYSTEM.ATTACK_BONUS_PER_LEVEL * count;
+                const attackBonus = Math.floor(baseAttack * multiplier);
+                const bonusText = multiplier > 1.0 ? ` (x${multiplier})` : '';
+                
+                fragmentText += `${info.emoji} Lv.${level} - ${count}개 (공격력 +${attackBonus}${bonusText})\n`;
                 totalFragments += count;
                 totalAttackBonus += attackBonus;
             }
@@ -110,13 +166,17 @@ async function showFragmentMenu(interaction) {
     const embed = new EmbedBuilder()
         .setColor('#9b59b6')
         .setTitle('💎 에너지 조각 시스템')
-        .setDescription('2개의 같은 레벨 조각을 융합하여 다음 레벨 조각을 만드세요!\n레벨이 오를수록 공격력이 증가합니다! (+1/레벨)')
+        .setDescription('2개의 같은 레벨 조각을 융합하여 다음 레벨 조각을 만드세요!\n레벨이 오를수록 공격력이 증가합니다! (+1/레벨)\n💡 높은 레벨 조각은 추가 보너스가 있습니다! (Lv.26+: x1.2, Lv.51+: x1.5, Lv.76+: x2.0)')
         .addFields(
             { name: '📊 보유 조각', value: fragmentText.trim() || '없음', inline: false },
             { name: '💎 총 조각', value: `${totalFragments}개`, inline: true },
             { name: '⚔️ 총 공격력 보너스', value: `+${totalAttackBonus}`, inline: true },
+            { name: '⛏️ 채굴 가능', value: `${user.energyFragments?.dailyMines || 0}/20회`, inline: true },
             { name: '🔄 일일 융합', value: `${user.energyFragments?.dailyFusions || 0}/${ENERGY_FRAGMENT_SYSTEM.DAILY_FUSION_LIMIT}회`, inline: true },
-            { name: '📈 실패 스택', value: `${user.energyFragments?.failureStack || 0}/20`, inline: true }
+            { name: '📈 실패 스택', value: `${user.energyFragments?.failureStack || 0}/20`, inline: true },
+            { name: '⏰ 다음 충전', value: (user.energyFragments?.dailyMines || 0) < 20 && user.energyFragments?.lastMineRecharge ? 
+                `<t:${Math.floor((new Date(user.energyFragments.lastMineRecharge).getTime() + ENERGY_FRAGMENT_SYSTEM.MINE_RECHARGE_TIME) / 1000)}:R>` : 
+                '충전 완료', inline: true }
         )
         .setFooter({ text: '💡 Lv.100 조각은 특별한 아이템으로 교환할 수 있습니다!' });
 
@@ -166,27 +226,83 @@ async function showFragmentMenu(interaction) {
 // 채굴 실행
 async function executeFragmentMining(interaction) {
     const user = await getUser(interaction.user.id);
+    const today = new Date().toDateString();
+    const now = Date.now();
+    
+    // 일일 채굴 횟수 초기화 체크
+    if (user.energyFragments.dailyMineDate !== today) {
+        user.energyFragments.dailyMines = 20;
+        user.energyFragments.dailyMineDate = today;
+        user.energyFragments.lastMineRecharge = now;
+        await user.save();
+    }
+    
+    // 30분마다 채굴 횟수 1회 충전
+    if (user.energyFragments.lastMineRecharge) {
+        const timeSinceRecharge = now - new Date(user.energyFragments.lastMineRecharge).getTime();
+        const rechargeCount = Math.floor(timeSinceRecharge / ENERGY_FRAGMENT_SYSTEM.MINE_RECHARGE_TIME);
+        
+        if (rechargeCount > 0) {
+            user.energyFragments.dailyMines = Math.min(20, user.energyFragments.dailyMines + rechargeCount);
+            user.energyFragments.lastMineRecharge = new Date(now);
+            await user.save();
+        }
+    }
+    
+    // 채굴 횟수 체크
+    if (user.energyFragments.dailyMines <= 0) {
+        const nextRecharge = new Date(user.energyFragments.lastMineRecharge).getTime() + ENERGY_FRAGMENT_SYSTEM.MINE_RECHARGE_TIME;
+        const nextRechargeTime = Math.floor(nextRecharge / 1000);
+        
+        if (interaction.deferred || interaction.replied) {
+            return await interaction.editReply({ 
+                content: `⛏️ 채굴 횟수를 모두 사용했습니다!\n⏰ 다음 충전: <t:${nextRechargeTime}:R>`, 
+                embeds: [],
+                components: []
+            });
+        } else {
+            return await interaction.reply({ 
+                content: `⛏️ 채굴 횟수를 모두 사용했습니다!\n⏰ 다음 충전: <t:${nextRechargeTime}:R>`, 
+                flags: 64 
+            });
+        }
+    }
     
     // 쿨타임 체크
-    const now = Date.now();
     const lastMine = user.energyFragments?.lastMine || 0;
     const timeSinceLastMine = now - lastMine;
     
     if (timeSinceLastMine < ENERGY_FRAGMENT_SYSTEM.MINE_COOLDOWN) {
         const cooldownRemaining = ENERGY_FRAGMENT_SYSTEM.MINE_COOLDOWN - timeSinceLastMine;
         const remainingSeconds = Math.ceil(cooldownRemaining / 1000);
-        return await interaction.reply({ 
-            content: `⏰ 채굴 쿨타임이 ${remainingSeconds}초 남았습니다!`, 
-            flags: 64 
-        });
+        if (interaction.deferred || interaction.replied) {
+            return await interaction.editReply({ 
+                content: `⏰ 채굴 쿨타임이 ${remainingSeconds}초 남았습니다!`, 
+                embeds: [],
+                components: []
+            });
+        } else {
+            return await interaction.reply({ 
+                content: `⏰ 채굴 쿨타임이 ${remainingSeconds}초 남았습니다!`, 
+                flags: 64 
+            });
+        }
     }
     
     // 골드 체크
     if (user.gold < ENERGY_FRAGMENT_SYSTEM.MINE_COST) {
-        return await interaction.reply({ 
-            content: `💸 골드가 부족합니다! 필요: ${ENERGY_FRAGMENT_SYSTEM.MINE_COST}G, 보유: ${user.gold}G`, 
-            flags: 64 
-        });
+        if (interaction.deferred || interaction.replied) {
+            return await interaction.editReply({ 
+                content: `💸 골드가 부족합니다! 필요: ${ENERGY_FRAGMENT_SYSTEM.MINE_COST}G, 보유: ${user.gold}G`, 
+                embeds: [],
+                components: []
+            });
+        } else {
+            return await interaction.reply({ 
+                content: `💸 골드가 부족합니다! 필요: ${ENERGY_FRAGMENT_SYSTEM.MINE_COST}G, 보유: ${user.gold}G`, 
+                flags: 64 
+            });
+        }
     }
     
     // 채굴 실행
@@ -206,20 +322,28 @@ async function executeFragmentMining(interaction) {
     const totalMined = minedFragments + bonusFragments;
     
     // 데이터 업데이트
-    await User.updateOne(
-        { discordId: interaction.user.id },
-        {
-            $inc: { 
-                gold: -ENERGY_FRAGMENT_SYSTEM.MINE_COST,
-                [`energyFragments.fragments.1`]: totalMined,
-                'energyFragments.totalMined': totalMined
-            },
-            $set: { 'energyFragments.lastMine': now }
-        }
-    );
+    const updateData = {
+        $inc: { 
+            gold: -ENERGY_FRAGMENT_SYSTEM.MINE_COST,
+            [`energyFragments.fragments.1`]: totalMined,
+            'energyFragments.totalMined': totalMined,
+            'energyFragments.dailyMines': -1
+        },
+        $set: { 'energyFragments.lastMine': now }
+    };
+    
+    // 채굴 횟수가 1에서 0이 될 때 충전 타이머 시작
+    if (user.energyFragments.dailyMines === 1) {
+        updateData.$set['energyFragments.lastMineRecharge'] = now;
+    }
+    
+    await User.updateOne({ discordId: interaction.user.id }, updateData);
     
     // 미션 진행도 업데이트
     await MissionHelper.updateEnergyMining(interaction.user.id);
+    
+    // 업데이트된 유저 데이터 가져오기
+    const updatedUser = await User.findOne({ discordId: interaction.user.id });
     
     const embed = new EmbedBuilder()
         .setColor('#2ecc71')
@@ -228,7 +352,8 @@ async function executeFragmentMining(interaction) {
         .addFields(
             { name: '💎 채굴량', value: `${minedFragments}개${bonusFragments > 0 ? ` (+${bonusFragments} 보너스!)` : ''}`, inline: true },
             { name: '💰 사용 골드', value: `${ENERGY_FRAGMENT_SYSTEM.MINE_COST}G`, inline: true },
-            { name: '⏱️ 다음 채굴', value: '5초 후', inline: true }
+            { name: '⛏️ 남은 횟수', value: `${updatedUser.energyFragments.dailyMines}/20회`, inline: true },
+            { name: '⏱️ 다음 채굴', value: '1초 후', inline: true }
         );
     
     if (bonusFragments > 0) {
@@ -244,24 +369,38 @@ async function executeFragmentMining(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    return await interaction.reply({
-        embeds: [embed],
-        components: [buttons],
-        flags: 64
-    });
+    if (interaction.deferred || interaction.replied) {
+        return await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    } else {
+        return await interaction.reply({
+            embeds: [embed],
+            components: [buttons],
+            flags: 64
+        });
+    }
 }
 
 // 자동 융합 실행
 async function executeAutoFusion(interaction) {
     const user = await getUser(interaction.user.id);
     
+    // 일일 융합 초기화 체크
+    const today = new Date().toDateString();
+    if (user.energyFragments.dailyFusionDate !== today) {
+        user.energyFragments.dailyFusions = 0;
+        user.energyFragments.dailyFusionDate = today;
+        await user.save();
+    }
+    
     // 융합권 체크
     const hasTicket = false; // 실제 구현시 융합권 체크 로직 추가
     
     if (!hasTicket && user.energyFragments.dailyFusions >= ENERGY_FRAGMENT_SYSTEM.DAILY_FUSION_LIMIT) {
-        return await interaction.reply({ 
-            content: `🚫 오늘의 융합 횟수를 모두 사용했습니다! (${ENERGY_FRAGMENT_SYSTEM.DAILY_FUSION_LIMIT}/20회)\n💡 내일 다시 시도하거나 융합권을 사용하세요!`, 
-            flags: 64 
+        return await interaction.editReply({ 
+            content: `🚫 오늘의 융합 횟수를 모두 사용했습니다! (${user.energyFragments.dailyFusions}/${ENERGY_FRAGMENT_SYSTEM.DAILY_FUSION_LIMIT}회)\n💡 내일 다시 시도하거나 융합권을 사용하세요!`
         });
     }
     
@@ -354,11 +493,13 @@ async function executeAutoFusion(interaction) {
         { $inc: { 'energyFragments.dailyFusions': fusionsPerformed } }
     );
     
+    // 업데이트된 유저 데이터 다시 가져오기
+    const updatedUser = await getUser(interaction.user.id);
+    
     // 결과 표시
     if (fusionResults.length === 0) {
-        return await interaction.reply({ 
-            content: '🚫 융합 가능한 조각이 없습니다! (3개 이상 필요)', 
-            flags: 64 
+        return await interaction.editReply({ 
+            content: '🚫 융합 가능한 조각이 없습니다! (같은 레벨 조각 2개 이상 필요)'
         });
     }
     
@@ -374,7 +515,7 @@ async function executeAutoFusion(interaction) {
                 inline: false 
             }
         )
-        .setFooter({ text: `남은 일일 융합: ${ENERGY_FRAGMENT_SYSTEM.DAILY_FUSION_LIMIT - user.energyFragments.dailyFusions - fusionsPerformed}회` });
+        .setFooter({ text: `남은 일일 융합: ${ENERGY_FRAGMENT_SYSTEM.DAILY_FUSION_LIMIT - updatedUser.energyFragments.dailyFusions}회` });
     
     const buttons = new ActionRowBuilder()
         .addComponents(
@@ -415,10 +556,9 @@ async function executeAutoFusion(interaction) {
     }
     
     // 개인 응답
-    await interaction.reply({
+    await interaction.editReply({
         embeds: [embed],
-        components: [buttons],
-        flags: 64
+        components: [buttons]
     });
     
     // 공개 메시지 발송
@@ -488,10 +628,17 @@ async function showFragmentExchange(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
     
-    return await interaction.update({
-        embeds: [embed],
-        components: [buttons]
-    });
+    if (interaction.deferred || interaction.replied) {
+        return await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    } else {
+        return await interaction.update({
+            embeds: [embed],
+            components: [buttons]
+        });
+    }
 }
 
 // 조각 랭킹 표시

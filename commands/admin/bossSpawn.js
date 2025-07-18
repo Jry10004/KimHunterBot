@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const worldBossSystem = require('../../systems/worldBossSystem');
-const BOSS_SYSTEM = require('../../data/bossSystem');
+const BOSS_SYSTEM_SEASON2 = require('../../data/bossSystemSeason2');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,13 +11,34 @@ module.exports = {
                 .setDescription('소환할 보스를 선택하세요')
                 .setRequired(true)
                 .addChoices(
-                    { name: '👺 고블린 족장', value: 'goblin_chief' },
-                    { name: '💀 해골 왕', value: 'skeleton_king' },
-                    { name: '🗡️ 그림자 암살자', value: 'shadow_assassin' },
-                    { name: '👹 데몬 로드', value: 'demon_lord' },
-                    { name: '🗿 고대 골렘', value: 'ancient_golem' },
-                    { name: '🐉 서리 드래곤', value: 'frost_dragon' },
-                    { name: '🔥 화염 엘리멘탈', value: 'fire_elemental' }
+                    // 초급 보스 (일부)
+                    { name: '🟢 슬라임 킹 (Lv.10)', value: 'slime_king' },
+                    { name: '🐺 광포한 늑대 (Lv.15)', value: 'mad_wolf' },
+                    { name: '👺 고블린 족장 (Lv.20)', value: 'goblin_chief' },
+                    { name: '💀 해골 왕 (Lv.30)', value: 'skeleton_king' },
+                    { name: '🌳 타락한 나무정령 (Lv.40)', value: 'corrupted_treant' },
+                    { name: '❄️ 얼음 거인 (Lv.50)', value: 'ice_giant' },
+                    { name: '🗡️ 그림자 암살자 (Lv.60)', value: 'shadow_assassin' },
+                    { name: '⚡ 폭풍의 정령 (Lv.80)', value: 'storm_elemental' },
+                    { name: '🔥 화염 드레이크 (Lv.85)', value: 'flame_drake' },
+                    { name: '👹 데몬 로드 (Lv.100)', value: 'demon_lord' },
+                    { name: '🐲 용의 수호자 (Lv.100)', value: 'dragon_guardian' },
+                    // 중급 보스 (일부)
+                    { name: '🐉 서리 드래곤 (Lv.110)', value: 'frost_dragon' },
+                    { name: '🔥 화염 엘리멘탈 (Lv.120)', value: 'fire_elemental_lord' },
+                    { name: '⚡ 번개 타이탄 (Lv.130)', value: 'lightning_titan' },
+                    { name: '⚔️ 암흑 기사단장 (Lv.150)', value: 'dark_knight_commander' },
+                    // 상급 보스 (일부)
+                    { name: '🐉 고대 용왕 (Lv.210)', value: 'ancient_dragon_king' },
+                    { name: '⚖️ 천계의 심판관 (Lv.220)', value: 'celestial_judge' },
+                    { name: '💫 원소의 대정령 (Lv.240)', value: 'elemental_overlord' },
+                    { name: '🌀 혼돈의 화신 (Lv.250)', value: 'chaos_incarnate' },
+                    // 최상급 보스 (일부)
+                    { name: '😇 타락한 천사장 (Lv.260)', value: 'fallen_archangel' },
+                    { name: '🗿 고대 신의 화신 (Lv.270)', value: 'ancient_god_avatar' },
+                    { name: '🌌 차원의 파괴자 (Lv.280)', value: 'dimension_destroyer' },
+                    { name: '☄️ 종말의 예언자 (Lv.290)', value: 'apocalypse_prophet' },
+                    { name: '⚡ 창조와 파괴의 신 (Lv.300)', value: 'creation_destruction_god' }
                 )
         ),
     
@@ -44,7 +65,7 @@ module.exports = {
         }
 
         const selectedBossId = interaction.options.getString('보스');
-        const bossData = BOSS_SYSTEM.bosses.find(boss => boss.id === selectedBossId);
+        const bossData = BOSS_SYSTEM_SEASON2.bosses.find(boss => boss.id === selectedBossId);
 
         if (!bossData) {
             return interaction.editReply({
@@ -60,9 +81,17 @@ module.exports = {
             );
 
             if (!raidChannel) {
-                return interaction.editReply({
-                    content: '❌ 레이드 채널을 찾을 수 없습니다. 레이드/보스 채널을 먼저 생성해주세요.'
-                });
+                // 기본 채널 ID 사용
+                const defaultChannelId = BOSS_SYSTEM_SEASON2.settings.channelId;
+                const defaultChannel = interaction.client.channels.cache.get(defaultChannelId);
+                
+                if (!defaultChannel) {
+                    return interaction.editReply({
+                        content: '❌ 레이드 채널을 찾을 수 없습니다. 레이드/보스 채널을 먼저 생성해주세요.'
+                    });
+                }
+                
+                raidChannel = defaultChannel;
             }
 
             // 선택한 보스로 강제 설정
@@ -70,12 +99,12 @@ module.exports = {
             worldBossSystem.READY_PARTICIPANTS.clear(); // 준비 상태 초기화
             
             // 기존 시스템과 동일한 임베드 형식 사용
+            const spawnMessage = bossData.spawnMessage || '거대한 그림자가 나타났습니다!\n서둘러 파티를 구성하여 토벌하세요!';
             const embed = new EmbedBuilder()
                 .setColor('#FF0000')
                 .setTitle('⚔️ 보스 레이드 ⚔️')
                 .setDescription(`# ${bossData.emoji} **${bossData.name}**\n\n` +
-                    `**거대한 그림자가 나타났습니다!**\n` +
-                    `서둘러 파티를 구성하여 토벌하세요!\n\n` +
+                    `**${spawnMessage}**\n\n` +
                     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
                 .addFields(
                     { 
@@ -90,7 +119,7 @@ module.exports = {
                     },
                     {
                         name: '🎁 보상',
-                        value: `\`\`\`1등: 엠블럼강화조각 3개\n2등: 엠블럼강화조각 2개\n3등: 엠블럼강화조각 1개\n골드 & 경험치\`\`\``,
+                        value: `\`\`\`1등: 엠블럼강화조각 3개\n2등: 엠블럼강화조각 2개\n3등: 엠블럼강화조각 1개\n4등 이하: 엠블럼강화조각 0.5개\n전원: 골드 ${bossData.rewards.gold.toLocaleString()}\n경험치 ${bossData.rewards.exp.toLocaleString()}\`\`\``,
                         inline: true
                     },
                     {
@@ -131,27 +160,36 @@ module.exports = {
                 );
 
             const message = await raidChannel.send({
-                content: '@everyone',
                 embeds: [embed],
                 components: [row]
             });
 
             worldBossSystem.activeWorldBoss.messageId = message.id;
             worldBossSystem.lastSpawnTime = Date.now();
+            
+            // 보스 상태 저장
+            await worldBossSystem.saveLastSpawnTime();
 
             await interaction.editReply({
                 content: `✅ **${bossData.name}**이(가) 성공적으로 소환되었습니다!\n📍 채널: ${raidChannel}`
             });
 
-            // 자동 시작 타이머 설정
-            if (worldBossSystem.AUTO_START_TIMER) {
-                clearTimeout(worldBossSystem.AUTO_START_TIMER);
-            }
-            worldBossSystem.AUTO_START_TIMER = setTimeout(() => {
-                if (worldBossSystem.READY_PARTICIPANTS.size >= worldBossSystem.MIN_PARTICIPANTS) {
-                    worldBossSystem.startBossBattle(interaction.client);
+            // 30분 후 자동으로 보스 떠남 (참가자가 없을 경우)
+            // 최소 5분은 대기하도록 수정
+            worldBossSystem.activeWorldBoss.timeoutId = setTimeout(async () => {
+                console.log('[BossSpawn] 30분 타임아웃 체크 - 참가자 수:', worldBossSystem.activeWorldBoss?.participants?.length || 0);
+                if (worldBossSystem.activeWorldBoss && worldBossSystem.activeWorldBoss.participants.length === 0) {
+                    const timeSinceSpawn = Date.now() - worldBossSystem.activeWorldBoss.startTime;
+                    console.log('[BossSpawn] 소환 후 경과 시간:', Math.floor(timeSinceSpawn / 60000), '분');
+                    // 최소 5분(300000ms) 이상 지났을 때만 despawn
+                    if (timeSinceSpawn >= 300000) {
+                        console.log('[BossSpawn] 5분 이상 경과, 보스 제거');
+                        await worldBossSystem.despawnBoss(interaction.client, '시간이 초과되어 보스가 떠났습니다.');
+                    } else {
+                        console.log('[BossSpawn] 아직 5분 미만, 보스 유지');
+                    }
                 }
-            }, worldBossSystem.READY_TIMEOUT);
+            }, 30 * 60 * 1000); // 30분
 
         } catch (error) {
             console.error('보스 소환 오류:', error);

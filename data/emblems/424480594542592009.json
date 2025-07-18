@@ -14,5 +14,13 @@
     "price": 300000,
     "level": 20,
     "enhanceLevel": 1
+  },
+  {
+    "emblemName": "운 좋은 도둑",
+    "category": "rogue",
+    "purchaseDate": "2025-07-17T00:35:31.105Z",
+    "price": 500000,
+    "level": 35,
+    "enhanceLevel": 10
   }
 ]

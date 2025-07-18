@@ -2825,8 +2825,8 @@ const EMBLEMS = {
     }
 };
 
-// 엠블럼 채널 ID
-const EMBLEM_CHANNEL_ID = '1381614153399140412';
+// 엠블럼 채널 ID (ready 이벤트에서 설정됨)
+let EMBLEM_CHANNEL_ID = null;
 
 // 유저 칭호 가져오기 함수
 function getUserTitle(user) {
@@ -4509,6 +4509,12 @@ client.once('ready', async () => {
             console.log(`개발 채널들: ${DEV_CHANNEL_IDS.join(', ')}`);
         }
         
+        // 엠블럼 채널 ID 설정 - 환경변수에서 가져오기
+        EMBLEM_CHANNEL_ID = process.env.EMBLEM_CHANNEL_ID || null;
+        if (!EMBLEM_CHANNEL_ID) {
+            console.log('⚠️ EMBLEM_CHANNEL_ID가 환경변수에 설정되지 않았습니다. 엠블럼 시스템이 비활성화됩니다.');
+        }
+        
         // 게임 결과 매니저 초기화
         gameResultManager.initialize(client);
         
@@ -4602,6 +4608,14 @@ client.once('ready', async () => {
         const { fishingManager } = require('./systems/fishingSystemNew');
         fishingManager.setClient(client);
         console.log('🎣 낚시 시스템 활성화 (50종 물고기)');
+        
+        // puppyNecklaceEvent 상태 복원
+        const { loadEventState, restoreEventTimers } = require('./handlers/events/puppyNecklaceEvent');
+        const eventRestored = await loadEventState();
+        if (eventRestored) {
+            await restoreEventTimers(client);
+            console.log('🎪 puppyNecklaceEvent 상태가 복원되었습니다.');
+        }
         
         // 댕댕봇 이벤트 완전 제거 (더 이상 필요 없음)
 
@@ -4702,6 +4716,11 @@ client.once('ready', async () => {
         const realStockSync = require('./systems/realStockSync');
         realStockSync.start();
         console.log('📈 실시간 주식 동기화 시작');
+        
+        // 자동 마이그레이션 시스템 초기화
+        const autoMigrationSystem = require('./systems/autoMigration');
+        autoMigrationSystem.initialize(client);
+        console.log('🔄 자동 마이그레이션 시스템 초기화 완료');
     } catch (error) {
         console.error('봇 초기화 중 오류 발생:', error);
     }
@@ -4710,20 +4729,31 @@ client.once('ready', async () => {
 // 엠블럼 시스템 초기화 함수
 async function initializeEmblemSystem() {
     try {
+        // EMBLEM_CHANNEL_ID가 설정되지 않았으면 건너뛰기
+        if (!EMBLEM_CHANNEL_ID) {
+            console.log('⚠️ 엠블럼 채널 ID가 설정되지 않았습니다. 엠블럼 시스템을 건너뜁니다.');
+            return;
+        }
+        
         // 채널 접근 권한 확인
         let channel;
         try {
             channel = await client.channels.fetch(EMBLEM_CHANNEL_ID);
         } catch (error) {
-            if (error.code === 50001) {
-                console.log('🚫 엠블럼 채널 접근 권한이 없습니다. 엠블럼 시스템을 건너뜁니다.');
+            // 권한 없음 또는 채널을 찾을 수 없는 경우
+            if (error.code === 50001 || error.code === 10003 || error.code === 10008) {
+                console.log('🚫 엠블럼 채널에 접근할 수 없습니다. 엠블럼 시스템을 건너뜁니다.');
+                EMBLEM_CHANNEL_ID = null; // 채널 ID 무효화
                 return;
             }
-            throw error;
+            console.error('엠블럼 채널 확인 중 오류:', error.message);
+            EMBLEM_CHANNEL_ID = null; // 채널 ID 무효화
+            return;
         }
 
         if (!channel) {
-            console.log('엠블럼 채널을 찾을 수 없습니다.');
+            console.log('⚠️ 엠블럼 채널을 찾을 수 없습니다. 엠블럼 시스템을 건너뜁니다.');
+            EMBLEM_CHANNEL_ID = null; // 채널 ID 무효화
             return;
         }
 
@@ -4804,7 +4834,20 @@ async function initializeEmblemSystem() {
     console.log('✅ RPS 멀티플레이어 세션 초기화 완료');
 }
 
-client.login(TOKEN);
+// 크래시 추적을 위한 로그
+process.on('beforeExit', (code) => {
+    console.log('🚨 Process beforeExit event with code:', code);
+});
+
+process.on('exit', (code) => {
+    console.log('🚨 Process exit event with code:', code);
+});
+
+// 봇 로그인
+client.login(TOKEN).catch(error => {
+    console.error('🚨 Failed to login:', error);
+    process.exit(1);
+});
 
 // 프로세스 종료 시 데이터 저장
 process.on('SIGINT', () => {

@@ -6,7 +6,7 @@ class NewsAPI extends BaseAPIClient {
         super({
             baseURL: 'https://newsapi.org/v2',
             timeout: 10000,
-            cacheTimeout: 10 * 60 * 1000, // 10분 캐시
+            cacheTimeout: 720 * 60 * 1000, // 12시간 캐시 (API 제한 회피)
             headers: {
                 'X-Api-Key': process.env.NEWS_API_KEY || ''
             }
@@ -39,6 +39,10 @@ class NewsAPI extends BaseAPIClient {
             return this.formatNewsResponse(response);
         } catch (error) {
             console.error('헤드라인 가져오기 실패:', error.message);
+            // 429 에러(요청 제한)일 경우 캐시 시간 연장
+            if (error.response && error.response.status === 429) {
+                console.log('⚠️ 뉴스 API 요청 제한 도달');
+            }
             return this.generateMockNews('headlines', options);
         }
     }
@@ -65,6 +69,10 @@ class NewsAPI extends BaseAPIClient {
             return this.formatNewsResponse(response);
         } catch (error) {
             console.error('뉴스 검색 실패:', error.message);
+            // 429 에러(요청 제한)일 경우 캐시 시간 연장
+            if (error.response && error.response.status === 429) {
+                console.log('⚠️ 뉴스 API 요청 제한 도달');
+            }
             return this.generateMockNews('search', { query, ...options });
         }
     }

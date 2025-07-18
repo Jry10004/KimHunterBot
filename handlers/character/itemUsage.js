@@ -285,7 +285,7 @@ async function applyItemEffect(user, item) {
             
             return { 
                 success: true, 
-                message: `엠블럼 강화석 ${effect.emblemEnhance}개를 획득했습니다!\n엠블럼 강화 메뉴에서 사용할 수 있습니다.` 
+                message: `엠블럼 강화석 ${effect.emblemEnhance.toFixed ? effect.emblemEnhance.toFixed(1) : effect.emblemEnhance}개를 획득했습니다!\n엠블럼 강화 메뉴에서 사용할 수 있습니다.` 
             };
         }
         

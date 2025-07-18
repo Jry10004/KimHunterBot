@@ -63,8 +63,10 @@ function calculateDamage(attacker, defender, options = {}) {
         // 전사: 힘 기반
         baseDamage += totalStats.strength * 2;
     } else if (emblemType.includes('궁수') || emblemType.includes('archer')) {
-        // 궁수: 민첩 기반 (2 -> 2.2 상향)
-        baseDamage += totalStats.agility * 2.2;
+        // 궁수: 민첩 기반 (2.2 -> 2.5 상향)
+        baseDamage += totalStats.agility * 2.5;
+        // 궁수는 행운도 약간 반영 (행운 보너스 추가)
+        baseDamage += totalStats.luck * 0.5;
     } else if (emblemType.includes('마법사') || emblemType.includes('wizard') || emblemType.includes('mage')) {
         // 마법사: 지능 기반
         baseDamage += totalStats.intelligence * 2;
@@ -97,10 +99,12 @@ function calculateDamage(attacker, defender, options = {}) {
         synergyBonus += 0.1 * Math.floor(synergyLevel); // 50마다 10% 추가 데미지
     }
     
-    // 궁수 시너지: 민첩+행운
-    if (totalStats.agility >= 40 && totalStats.luck >= 40) {
-        const synergyLevel = Math.min(totalStats.agility, totalStats.luck) / 40;
-        synergyBonus += 0.08 * Math.floor(synergyLevel); // 40마다 8% 추가 데미지
+    // 궁수 시너지: 민첩+행운 (조건 완화 및 보너스 증가)
+    if (emblemType.includes('궁수') || emblemType.includes('archer')) {
+        if (totalStats.agility >= 30 && totalStats.luck >= 30) {
+            const synergyLevel = Math.min(totalStats.agility, totalStats.luck) / 30;
+            synergyBonus += 0.12 * Math.floor(synergyLevel); // 30마다 12% 추가 데미지 (상향)
+        }
     }
     
     // 마법사 시너지: 지능+민첩
@@ -145,12 +149,22 @@ function calculateDamage(attacker, defender, options = {}) {
         // 방어 관통: 체력의 8%
         armorPenetration += totalStats.vitality * 0.08;
     } else if (emblemType.includes('궁수') || emblemType.includes('archer')) {
-        // 궁수: 35% 확률로 2연타 공격 (30% -> 35%)
-        doubleHitChance = 0.35;
-        // 궁수: 크리티컬 확률 기본 +18% (15% -> 18%)
-        baseCritBonus = 0.18;
-        // 치명타 데미지 증가: 민첩의 2% (1.5% -> 2%)
-        critDamageMultiplier += totalStats.agility * 0.02;
+        // 궁수: 40% 확률로 2연타 공격 (35% -> 40%)
+        doubleHitChance = 0.40;
+        // 궁수: 크리티컬 확률 기본 +20% (18% -> 20%)
+        baseCritBonus = 0.20;
+        // 치명타 데미지 증가: 민첩의 2.5% (2% -> 2.5%)
+        critDamageMultiplier += totalStats.agility * 0.025;
+        
+        // 보스전 특화: 약점 조준 - 보스나 고레벨 몬스터에게 30% 추가 데미지
+        if (defender.level >= 100 || defender.hp >= 50000) {
+            classBonus *= 1.3;
+        }
+        
+        // 정밀 사격: 15% 확률로 방어 무시
+        if (Math.random() < 0.15) {
+            ignoreDefense = true;
+        }
     } else if (emblemType.includes('마법사') || emblemType.includes('wizard') || emblemType.includes('mage')) {
         // 마법사: 원소 데미지 (지능의 25%를 추가 원소 데미지로)
         elementalDamage = totalStats.intelligence * 0.25;
@@ -426,6 +440,27 @@ function calculateThiefDodgeCounter(attacker, defender) {
     return { hasCounter: false, counterDamage: 0 };
 }
 
+// 궁수 보스전 회피 시스템
+function calculateArcherBossDodge(defender, attacker) {
+    if (!defender.emblem) return 0;
+    
+    const emblemType = defender.emblem.toLowerCase();
+    if (emblemType.includes('궁수') || emblemType.includes('archer')) {
+        // 보스나 고레벨 몬스터의 공격에 대해 추가 회피율
+        if (attacker.level >= 100 || attacker.hp >= 50000) {
+            const totalAgility = (defender.stats?.agility || 10) + (defender.equipmentStats?.agility || 0);
+            
+            // 민첩 기반 추가 회피율 (민첩 100당 10%)
+            const agilityDodgeBonus = (totalAgility / 100) * 0.1;
+            
+            // 기본 보스전 회피 보너스 15% + 민첩 보너스
+            return Math.min(0.25, 0.15 + agilityDodgeBonus); // 최대 25% 추가 회피
+        }
+    }
+    
+    return 0;
+}
+
 module.exports = {
     calculateDamage,
     calculatePvPDamage,
@@ -438,5 +473,6 @@ module.exports = {
     calculateDefenderShield,
     calculateDefenderDamageReduction,
     calculateDefenderCounterAttack,
-    calculateThiefDodgeCounter
+    calculateThiefDodgeCounter,
+    calculateArcherBossDodge
 };

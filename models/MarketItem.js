@@ -90,10 +90,13 @@ const marketItemSchema = new mongoose.Schema({
 });
 
 // 인덱스 생성
-marketItemSchema.index({ itemId: 1 });
+// itemId는 unique: true로 이미 인덱스 생성됨, 중복 생성 제거
 marketItemSchema.index({ itemType: 1, category: 1 });
 marketItemSchema.index({ currentPrice: -1 });
 marketItemSchema.index({ 'dailyStats.changePercent': -1 });
+
+// 기존 인덱스와 충돌 방지
+marketItemSchema.set('autoIndex', false);
 
 // 가격 업데이트 메서드
 marketItemSchema.methods.updatePrice = async function(newPrice, volume = 0) {

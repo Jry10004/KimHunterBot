@@ -74,10 +74,6 @@ async function showAdminMenu(interaction) {
             new ButtonBuilder()
                 .setCustomId('admin_equipment_system')
                 .setLabel('⚔️ 장비 생성 시스템')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('admin_bulk_menu')
-                .setLabel('📦 전체 보상 시스템')
                 .setStyle(ButtonStyle.Success)
         );
 

@@ -53,6 +53,48 @@ async function showStatDistribution(interaction) {
         (currentStats.vitality - 10) +
         (currentStats.luck - 10);
     
+    // 사용자의 직업(엠블럼) 확인하여 주스텟 결정
+    const { EMBLEMS } = require('../../systems/emblemShop');
+    const userEmblem = user.emblem?.replace(/\s*\+\d+$/, ''); // 강화 레벨 제거
+    let userMainStat = null;
+    let emblemType = null;
+    
+    // 엠블럼 타입 찾기
+    if (userEmblem) {
+        // 직접 직업 키워드로 확인
+        if (userEmblem.includes('전사') || userEmblem.includes('기사') || userEmblem.includes('검사')) {
+            emblemType = 'warrior';
+        } else if (userEmblem.includes('궁수') || userEmblem.includes('사냥꾼') || userEmblem.includes('사수') || userEmblem.includes('사격수') || userEmblem.includes('명궁')) {
+            emblemType = 'archer';
+        } else if (userEmblem.includes('마법사') || userEmblem.includes('술사') || userEmblem.includes('현자') || userEmblem.includes('아크메이지')) {
+            emblemType = 'wizard';
+        } else if (userEmblem.includes('도적') || userEmblem.includes('도둑') || userEmblem.includes('닌자') || userEmblem.includes('행운아')) {
+            emblemType = 'rogue';
+        } else if (userEmblem.includes('수호자') || userEmblem.includes('방패병') || userEmblem.includes('파수꾼') || userEmblem.includes('철벽')) {
+            emblemType = 'defender';
+        } else {
+            // EMBLEMS에서 찾기
+            for (const [type, data] of Object.entries(EMBLEMS)) {
+                if (data.emblems.some(e => e.name === userEmblem)) {
+                    emblemType = type;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 직업별 주스텟 매핑
+    const mainStatByType = {
+        'warrior': 'strength',    // 전사 - 힘
+        'archer': 'agility',      // 궁수 - 민첩  
+        'wizard': 'intelligence', // 마법사 - 지능
+        'mage': 'intelligence',   // 마법사 - 지능
+        'rogue': 'luck',         // 도적 - 행운
+        'defender': 'vitality'    // 수호자 - 체력
+    };
+    
+    userMainStat = mainStatByType[emblemType] || null;
+    
     // 스탯 포인트가 없고 분배된 포인트도 없으면 메뉴 표시 안 함
     if ((!user.statPoints || user.statPoints === 0) && distributedPoints === 0) {
         return await interaction.editReply({
@@ -70,27 +112,27 @@ async function showStatDistribution(interaction) {
             : `사용 가능한 스탯 포인트: **0점**\n\n스탯 초기화를 통해 분배된 포인트를 회수할 수 있습니다.`)
         .addFields(
             { 
-                name: '💪 힘 (STR)', 
+                name: `💪 힘 (STR)${userMainStat === 'strength' ? ' ⭐' : ''}`, 
                 value: `현재: **${currentStats.strength}**\n⚔️ 전사 주스탯\n물리 공격력 증가`, 
                 inline: true 
             },
             { 
-                name: '🏃 민첩 (AGI)', 
+                name: `🏃 민첩 (AGI)${userMainStat === 'agility' ? ' ⭐' : ''}`, 
                 value: `현재: **${currentStats.agility}**\n🏹 궁수 주스탯\n치명타 및 회피율 증가`, 
                 inline: true 
             },
             { 
-                name: '🧠 지능 (INT)', 
+                name: `🧠 지능 (INT)${userMainStat === 'intelligence' ? ' ⭐' : ''}`, 
                 value: `현재: **${currentStats.intelligence}**\n🧙 마법사 주스탯\n마법 공격력 증가`, 
                 inline: true 
             },
             { 
-                name: '❤️ 체력 (VIT)', 
+                name: `❤️ 체력 (VIT)${userMainStat === 'vitality' ? ' ⭐' : ''}`, 
                 value: `현재: **${currentStats.vitality}**\n🛡️ 수호자 주스탯\n최대 HP 및 방어력 증가`, 
                 inline: true 
             },
             { 
-                name: '🍀 행운 (LUK)', 
+                name: `🍀 행운 (LUK)${userMainStat === 'luck' ? ' ⭐' : ''}`, 
                 value: `현재: **${currentStats.luck}**\n🗡️ 도적 주스탯\n크리티컬 및 강화 성공률 증가`, 
                 inline: true 
             }
@@ -220,6 +262,12 @@ async function addStatPoint(interaction, statName) {
     // 스탯 포인트 분배
     user.stats[statName]++;
     user.statPoints--;
+    
+    // distributedStats 업데이트
+    if (!user.distributedStats) {
+        user.distributedStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
+    }
+    user.distributedStats[statName] = (user.distributedStats[statName] || 0) + 1;
 
     // 전투력 재계산
     const { calculateCombatPower } = require('../common/combatPower');
@@ -236,100 +284,197 @@ async function addStatPoint(interaction, statName) {
     return await showStatDistribution(interaction);
 }
 
-// 커스텀 스탯 분배 모달
+// 커스텀 스탯 분배 - 버튼 방식으로 변경
 async function showCustomStatModal(interaction) {
-    console.log('[CustomStatModal] Called - Deferred:', interaction.deferred, 'Replied:', interaction.replied);
+    console.log('[CustomStatModal] Called - Using button interface instead of modal');
+    
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[CustomStatModal] Interaction expired');
+            return;
+        }
+        console.error('[CustomStatModal] Defer error:', error);
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
-        return await interaction.reply({ 
+        return await interaction.followUp({ 
             content: '먼저 회원가입을 해주세요!',
             flags: 64
         });
     }
     
     if (!user.statPoints || user.statPoints <= 0) {
-        return await interaction.reply({ 
+        return await interaction.followUp({ 
             content: '❌ 사용 가능한 스탯 포인트가 없습니다!',
             flags: 64
         });
     }
-
-    const modal = new ModalBuilder()
-        .setCustomId('stat_custom_modal')
-        .setTitle('🎯 커스텀 스탯 분배');
-
-    const strengthInput = new TextInputBuilder()
-        .setCustomId('stat_custom_strength')
-        .setLabel('💪 힘에 추가할 포인트')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0')
-        .setRequired(false)
-        .setValue('0');
-
-    const agilityInput = new TextInputBuilder()
-        .setCustomId('stat_custom_agility')
-        .setLabel('🏃 민첩에 추가할 포인트')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0')
-        .setRequired(false)
-        .setValue('0');
-
-    const intelligenceInput = new TextInputBuilder()
-        .setCustomId('stat_custom_intelligence')
-        .setLabel('🧠 지능에 추가할 포인트')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0')
-        .setRequired(false)
-        .setValue('0');
-
-    const vitalityInput = new TextInputBuilder()
-        .setCustomId('stat_custom_vitality')
-        .setLabel('❤️ 체력에 추가할 포인트')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0')
-        .setRequired(false)
-        .setValue('0');
-
-    const luckInput = new TextInputBuilder()
-        .setCustomId('stat_custom_luck')
-        .setLabel(`🍀 행운에 추가할 포인트 (보유: ${user.statPoints}점)`)
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0')
-        .setRequired(false)
-        .setValue('0');
-
-    modal.addComponents(
-        new ActionRowBuilder().addComponents(strengthInput),
-        new ActionRowBuilder().addComponents(agilityInput),
-        new ActionRowBuilder().addComponents(intelligenceInput),
-        new ActionRowBuilder().addComponents(vitalityInput),
-        new ActionRowBuilder().addComponents(luckInput)
-    );
-
-    try {
-        console.log('[CustomStatModal] Attempting to show modal...');
-        await interaction.showModal(modal);
-        console.log('[CustomStatModal] Modal shown successfully!');
-    } catch (error) {
-        console.error('[CustomStatModal] Error showing modal:', error);
-        console.error('[CustomStatModal] Error code:', error.code);
-        console.error('[CustomStatModal] Error message:', error.message);
-        
-        // 에러 발생 시 팔로우업으로 응답
-        try {
-            await interaction.reply({ 
-                content: '❌ 모달을 표시하는 중 오류가 발생했습니다. 다시 시도해주세요.',
-                flags: 64
-            });
-        } catch (replyError) {
-            console.error('[CustomStatModal] Reply error:', replyError);
+    
+    // 사용자의 직업(엠블럼) 확인하여 주스텟 결정
+    const { EMBLEMS } = require('../../systems/emblemShop');
+    const userEmblem = user.emblem?.replace(/\s*\+\d+$/, ''); // 강화 레벨 제거
+    let userMainStat = null;
+    let emblemType = null;
+    
+    // 엠블럼 타입 찾기
+    if (userEmblem) {
+        // 직접 직업 키워드로 확인
+        if (userEmblem.includes('전사') || userEmblem.includes('기사') || userEmblem.includes('검사')) {
+            emblemType = 'warrior';
+        } else if (userEmblem.includes('궁수') || userEmblem.includes('사냥꾼') || userEmblem.includes('사수') || userEmblem.includes('사격수') || userEmblem.includes('명궁')) {
+            emblemType = 'archer';
+        } else if (userEmblem.includes('마법사') || userEmblem.includes('술사') || userEmblem.includes('현자') || userEmblem.includes('아크메이지')) {
+            emblemType = 'wizard';
+        } else if (userEmblem.includes('도적') || userEmblem.includes('도둑') || userEmblem.includes('닌자') || userEmblem.includes('행운아')) {
+            emblemType = 'rogue';
+        } else if (userEmblem.includes('수호자') || userEmblem.includes('방패병') || userEmblem.includes('파수꾼') || userEmblem.includes('철벽')) {
+            emblemType = 'defender';
+        } else {
+            // EMBLEMS에서 찾기
+            for (const [type, data] of Object.entries(EMBLEMS)) {
+                if (data.emblems.some(e => e.name === userEmblem)) {
+                    emblemType = type;
+                    break;
+                }
+            }
         }
     }
+    
+    // 직업별 주스텟 매핑
+    const mainStatByType = {
+        'warrior': 'strength',    // 전사 - 힘
+        'archer': 'agility',      // 궁수 - 민첩  
+        'wizard': 'intelligence', // 마법사 - 지능
+        'mage': 'intelligence',   // 마법사 - 지능
+        'rogue': 'luck',         // 도적 - 행운
+        'defender': 'vitality'    // 수호자 - 체력
+    };
+    
+    userMainStat = mainStatByType[emblemType] || null;
+
+    // 커스텀 분배 UI를 버튼으로 구성
+    const embed = new EmbedBuilder()
+        .setColor('#9b59b6')
+        .setTitle('🎯 커스텀 스탯 분배')
+        .setDescription(`보유 포인트: **${user.statPoints}점**\n\n각 스탯에 원하는 만큼 포인트를 분배하세요.`)
+        .addFields([
+            { name: `💪 힘${userMainStat === 'strength' ? ' ⭐' : ''}`, value: `현재: ${user.stats?.strength || 10}`, inline: true },
+            { name: `🏃 민첩${userMainStat === 'agility' ? ' ⭐' : ''}`, value: `현재: ${user.stats?.agility || 10}`, inline: true },
+            { name: `🧠 지능${userMainStat === 'intelligence' ? ' ⭐' : ''}`, value: `현재: ${user.stats?.intelligence || 10}`, inline: true },
+            { name: `❤️ 체력${userMainStat === 'vitality' ? ' ⭐' : ''}`, value: `현재: ${user.stats?.vitality || 10}`, inline: true },
+            { name: `🍀 행운${userMainStat === 'luck' ? ' ⭐' : ''}`, value: `현재: ${user.stats?.luck || 10}`, inline: true }
+        ])
+        .setFooter({ text: '원하는 스탯에 5포인트 또는 10포인트씩 추가할 수 있습니다.' });
+
+    // 5포인트 추가 버튼들
+    const fivePointButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('stat_custom_strength_5')
+                .setLabel('💪 +5')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(user.statPoints < 5),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_agility_5')
+                .setLabel('🏃 +5')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(user.statPoints < 5),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_intelligence_5')
+                .setLabel('🧠 +5')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(user.statPoints < 5),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_vitality_5')
+                .setLabel('❤️ +5')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(user.statPoints < 5),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_luck_5')
+                .setLabel('🍀 +5')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(user.statPoints < 5)
+        );
+
+    // 10포인트 추가 버튼들
+    const tenPointButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('stat_custom_strength_10')
+                .setLabel('💪 +10')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(user.statPoints < 10),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_agility_10')
+                .setLabel('🏃 +10')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(user.statPoints < 10),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_intelligence_10')
+                .setLabel('🧠 +10')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(user.statPoints < 10),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_vitality_10')
+                .setLabel('❤️ +10')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(user.statPoints < 10),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_luck_10')
+                .setLabel('🍀 +10')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(user.statPoints < 10)
+        );
+
+    // 모든 포인트 분배 버튼
+    const allPointButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('stat_custom_all_strength')
+                .setLabel(`💪 ALL (${user.statPoints})`)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_all_agility')
+                .setLabel(`🏃 ALL (${user.statPoints})`)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_all_intelligence')
+                .setLabel(`🧠 ALL (${user.statPoints})`)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_all_vitality')
+                .setLabel(`❤️ ALL (${user.statPoints})`)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('stat_custom_all_luck')
+                .setLabel(`🍀 ALL (${user.statPoints})`)
+                .setStyle(ButtonStyle.Danger)
+        );
+
+    const backButton = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('stat_distribution')
+                .setLabel('🔙 돌아가기')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+    return await interaction.editReply({
+        embeds: [embed],
+        components: [fivePointButtons, tenPointButtons, allPointButtons, backButton]
+    });
 }
 
 // 커스텀 스탯 분배 처리
 async function handleCustomStatDistribution(interaction) {
+    console.log('[CustomStat] handleCustomStatDistribution 호출됨');
+    
     // 먼저 defer 처리
     try {
         if (!interaction.deferred && !interaction.replied) {
@@ -397,6 +542,16 @@ async function handleCustomStatDistribution(interaction) {
     user.stats.vitality += vitality;
     user.stats.luck += luck;
     user.statPoints -= totalPoints;
+    
+    // distributedStats 업데이트
+    if (!user.distributedStats) {
+        user.distributedStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
+    }
+    user.distributedStats.strength = (user.distributedStats.strength || 0) + strength;
+    user.distributedStats.agility = (user.distributedStats.agility || 0) + agility;
+    user.distributedStats.intelligence = (user.distributedStats.intelligence || 0) + intelligence;
+    user.distributedStats.vitality = (user.distributedStats.vitality || 0) + vitality;
+    user.distributedStats.luck = (user.distributedStats.luck || 0) + luck;
 
     // 전투력 재계산
     const { calculateCombatPower } = require('../common/combatPower');
@@ -411,6 +566,32 @@ async function handleCustomStatDistribution(interaction) {
 
     // 남은 포인트가 있으면 스탯 분배 화면을 팔로우업으로 표시
     if (user.statPoints > 0) {
+        // 사용자의 직업(엠블럼) 확인하여 주스텟 결정
+        const { EMBLEMS } = require('../../systems/emblemShop');
+        const userEmblem = user.emblem?.replace(/\s*\+\d+$/, ''); // 강화 레벨 제거
+        let userMainStat = null;
+        let emblemType = null;
+        
+        // 엠블럼 타입 찾기
+        for (const [type, data] of Object.entries(EMBLEMS)) {
+            if (data.emblems.some(e => e.name === userEmblem)) {
+                emblemType = type;
+                break;
+            }
+        }
+        
+        // 직업별 주스텟 매핑
+        const mainStatByType = {
+            'warrior': 'strength',    // 전사 - 힘
+            'archer': 'agility',      // 궁수 - 민첩  
+            'wizard': 'intelligence', // 마법사 - 지능
+            'mage': 'intelligence',   // 마법사 - 지능
+            'rogue': 'luck',         // 도적 - 행운
+            'defender': 'vitality'    // 수호자 - 체력
+        };
+        
+        userMainStat = mainStatByType[emblemType] || null;
+        
         // 스탯 분배 화면 다시 표시
         const statEmbed = new EmbedBuilder()
             .setColor('#9b59b6')
@@ -418,27 +599,27 @@ async function handleCustomStatDistribution(interaction) {
             .setDescription(`사용 가능한 스탯 포인트: **${user.statPoints}점**\n\n각 스탯을 클릭하여 포인트를 분배하세요!`)
             .addFields(
                 { 
-                    name: '💪 힘 (STR)', 
+                    name: `💪 힘 (STR)${userMainStat === 'strength' ? ' ⭐' : ''}`, 
                     value: `현재: **${user.stats.strength}**\n⚔️ 전사 주스탯\n물리 공격력 증가`, 
                     inline: true 
                 },
                 { 
-                    name: '🏃 민첩 (AGI)', 
+                    name: `🏃 민첩 (AGI)${userMainStat === 'agility' ? ' ⭐' : ''}`, 
                     value: `현재: **${user.stats.agility}**\n🏹 궁수 주스탯\n치명타 및 회피율 증가`, 
                     inline: true 
                 },
                 { 
-                    name: '🧠 지능 (INT)', 
+                    name: `🧠 지능 (INT)${userMainStat === 'intelligence' ? ' ⭐' : ''}`, 
                     value: `현재: **${user.stats.intelligence}**\n🧙 마법사 주스탯\n마법 공격력 증가`, 
                     inline: true 
                 },
                 { 
-                    name: '❤️ 체력 (VIT)', 
+                    name: `❤️ 체력 (VIT)${userMainStat === 'vitality' ? ' ⭐' : ''}`, 
                     value: `현재: **${user.stats.vitality}**\n🛡️ 수호자 주스탯\n최대 HP 및 방어력 증가`, 
                     inline: true 
                 },
                 { 
-                    name: '🍀 행운 (LUK)', 
+                    name: `🍀 행운 (LUK)${userMainStat === 'luck' ? ' ⭐' : ''}`, 
                     value: `현재: **${user.stats.luck}**\n🗡️ 도적 주스탯\n크리티컬 및 강화 성공률 증가`, 
                     inline: true 
                 }
@@ -637,6 +818,15 @@ async function executeStatReset(interaction) {
         luck: 10
     };
     
+    // distributedStats 초기화
+    user.distributedStats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        luck: 0
+    };
+    
     // 엠블럼 강화 스탯 재적용
     if (user.emblem && user.emblemEnhancement) {
         const { EMBLEMS } = require('../../systems/emblemShop');
@@ -680,11 +870,128 @@ async function executeStatReset(interaction) {
     return await showStatDistribution(interaction);
 }
 
+// 커스텀 스탯 버튼 처리
+async function handleCustomStatButton(interaction, customId) {
+    // Safe defer handling
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        if (error.code === 10062) {
+            console.log('[CustomStatButton] Interaction expired');
+            return;
+        }
+        console.error('[CustomStatButton] Defer error:', error);
+    }
+    
+    const user = await getUser(interaction.user.id);
+    if (!user || !user.registered) {
+        return await interaction.followUp({ 
+            content: '먼저 회원가입을 해주세요!',
+            flags: 64
+        });
+    }
+    
+    // customId 파싱: stat_custom_[amount]_[stat] 또는 stat_custom_all_[stat]
+    const parts = customId.split('_');
+    let stat, amount;
+    
+    if (parts[2] === 'all') {
+        // stat_custom_all_[stat] 형식
+        amount = 'all';
+        stat = parts[3];
+    } else {
+        // stat_custom_[stat]_[amount] 형식
+        stat = parts[2];
+        amount = parts[3];
+    }
+    
+    const statMap = {
+        'strength': 'strength',
+        'agility': 'agility',
+        'intelligence': 'intelligence',
+        'vitality': 'vitality',
+        'luck': 'luck'
+    };
+    
+    const statNames = {
+        strength: '💪 힘',
+        agility: '🏃 민첩',
+        intelligence: '🧠 지능',
+        vitality: '❤️ 체력',
+        luck: '🍀 행운'
+    };
+    
+    if (!statMap[stat]) {
+        return await interaction.followUp({
+            content: '❌ 올바르지 않은 스탯입니다!',
+            flags: 64
+        });
+    }
+    
+    let pointsToAdd = 0;
+    if (amount === '5') {
+        pointsToAdd = 5;
+    } else if (amount === '10') {
+        pointsToAdd = 10;
+    } else if (amount === 'all') {
+        pointsToAdd = user.statPoints;
+    }
+    
+    if (pointsToAdd === 0 || pointsToAdd > user.statPoints) {
+        return await interaction.followUp({
+            content: '❌ 포인트가 부족합니다!',
+            flags: 64
+        });
+    }
+    
+    // 스탯 초기화
+    if (!user.stats) {
+        user.stats = {
+            strength: 10,
+            agility: 10,
+            intelligence: 10,
+            vitality: 10,
+            luck: 10
+        };
+    }
+    
+    // 스탯 적용
+    user.stats[statMap[stat]] += pointsToAdd;
+    user.statPoints -= pointsToAdd;
+    
+    // distributedStats 업데이트
+    if (!user.distributedStats) {
+        user.distributedStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
+    }
+    user.distributedStats[statMap[stat]] = (user.distributedStats[statMap[stat]] || 0) + pointsToAdd;
+    
+    // 전투력 재계산
+    const { calculateCombatPower } = require('../common/combatPower');
+    user.combatPower = calculateCombatPower(user);
+    
+    await user.save();
+    
+    await interaction.followUp({
+        content: `✅ ${statNames[statMap[stat]]}에 ${pointsToAdd}포인트를 추가했습니다! (현재: ${user.stats[statMap[stat]]})`,
+        flags: 64
+    });
+    
+    // 포인트가 남아있으면 커스텀 분배 화면 유지, 없으면 메인 스탯 화면으로
+    if (user.statPoints > 0) {
+        return await showCustomStatModal(interaction);
+    } else {
+        return await showStatDistribution(interaction);
+    }
+}
+
 module.exports = {
     showStatDistribution,
     addStatPoint,
     showCustomStatModal,
     handleCustomStatDistribution,
+    handleCustomStatButton,
     showStatResetConfirm,
     executeStatReset
 };

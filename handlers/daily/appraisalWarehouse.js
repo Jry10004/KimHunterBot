@@ -407,7 +407,7 @@ async function withdrawFromWarehouse(interaction) {
 
 // 증서 발행
 async function showCertificates(interaction) {
-    await interaction.deferUpdate();
+    // interactionHandler에서 이미 defer 처리됨
     
     const user = await getUser(interaction.user.id);
     const warehouseItems = user.appraisalWarehouse.items;

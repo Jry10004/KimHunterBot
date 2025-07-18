@@ -1,0 +1,101 @@
+{
+  "timestamp": "2025-07-17T23:39:16.792Z",
+  "totalUsers": 9,
+  "totalFragments": 1243,
+  "totalAttackBonus": 1353,
+  "users": [
+    {
+      "userId": "424480594542592009",
+      "nickname": "요리",
+      "fragments": {
+        "Lv.1": 2,
+        "Lv.4": 1,
+        "Lv.6": 1
+      },
+      "totalFragments": 4,
+      "attackBonus": 12
+    },
+    {
+      "userId": "554235989103607818",
+      "nickname": "위너",
+      "fragments": {
+        "Lv.1": 1
+      },
+      "totalFragments": 1,
+      "attackBonus": 1
+    },
+    {
+      "userId": "295980447849250817",
+      "nickname": "하연",
+      "fragments": {
+        "Lv.2": 1,
+        "Lv.3": 1,
+        "Lv.6": 1
+      },
+      "totalFragments": 3,
+      "attackBonus": 11
+    },
+    {
+      "userId": "592659577384730645",
+      "nickname": "인프",
+      "fragments": {
+        "Lv.1": 5,
+        "Lv.3": 1
+      },
+      "totalFragments": 6,
+      "attackBonus": 8
+    },
+    {
+      "userId": "364197967114272769",
+      "nickname": "선규",
+      "fragments": {
+        "Lv.1": 6,
+        "Lv.2": 5,
+        "Lv.3": 5
+      },
+      "totalFragments": 16,
+      "attackBonus": 31
+    },
+    {
+      "userId": "590922222361903135",
+      "nickname": "또마",
+      "fragments": {
+        "Lv.1": 7
+      },
+      "totalFragments": 7,
+      "attackBonus": 7
+    },
+    {
+      "userId": "278153008930619392",
+      "nickname": "백레오",
+      "fragments": {
+        "Lv.1": 715,
+        "Lv.2": 16,
+        "Lv.3": 1
+      },
+      "totalFragments": 732,
+      "attackBonus": 750
+    },
+    {
+      "userId": "276322011549007872",
+      "nickname": "최힙찔",
+      "fragments": {
+        "Lv.1": 60,
+        "Lv.2": 20
+      },
+      "totalFragments": 80,
+      "attackBonus": 100
+    },
+    {
+      "userId": "356473262844280852",
+      "nickname": "감자",
+      "fragments": {
+        "Lv.1": 356,
+        "Lv.2": 37,
+        "Lv.3": 1
+      },
+      "totalFragments": 394,
+      "attackBonus": 433
+    }
+  ]
+}

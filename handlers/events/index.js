@@ -6,12 +6,13 @@
 //     savePrelaunchData 
 // } = require('./prelaunchEvent');
 
-const {
-    scheduleDogBotEvent,
-    rememberDogChannel,
-    checkDogBotAnswer,
-    triggerDogBotEvent
-} = require('./dogBotEvent');
+// 댕댕봇 이벤트 삭제됨
+// const {
+//     scheduleDogBotEvent,
+//     rememberDogChannel,
+//     checkDogBotAnswer,
+//     triggerDogBotEvent
+// } = require('./dogBotEvent');
 
 // 이벤트 인터랙션 핸들러
 async function handleEventInteraction(interaction) {
@@ -50,10 +51,10 @@ function initializeAllEvents(client) {
 
 module.exports = {
     handleEventInteraction,
-    initializeAllEvents,
+    initializeAllEvents
     // loadPrelaunchData,  // 사전강화 이벤트 종료
     // savePrelaunchData,  // 사전강화 이벤트 종료
-    checkDogBotAnswer,
-    rememberDogChannel,
-    triggerDogBotEvent
+    // checkDogBotAnswer,  // 댕댕봇 이벤트 삭제됨
+    // rememberDogChannel,  // 댕댕봇 이벤트 삭제됨
+    // triggerDogBotEvent  // 댕댕봇 이벤트 삭제됨
 };

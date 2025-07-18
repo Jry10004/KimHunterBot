@@ -14,8 +14,45 @@ const User = require('../models/User');
 // 처리 중인 인터랙션 추적 (전역으로 관리)
 const processingInteractions = new Map();
 
+// 30초마다 오래된 엔트리 정리
+let cleanupInterval = null;
+const startCleanupInterval = () => {
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+    }
+    
+    cleanupInterval = setInterval(() => {
+        try {
+            const now = Date.now();
+            for (const [id, timestamp] of processingInteractions.entries()) {
+                if (now - timestamp > 30000) { // 30초 이상 지난 엔트리 삭제
+                    processingInteractions.delete(id);
+                }
+            }
+        } catch (error) {
+            console.error('[Handler Router] Cleanup interval error:', error);
+        }
+    }, 30000);
+};
+
+// 안전하게 인터벌 시작
+startCleanupInterval();
+
+// 프로세스 종료 시 인터벌 정리
+process.on('exit', () => {
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+    }
+});
+
 // 메인 인터랙션 라우터
 async function handleInteraction(interaction) {
+    // Modal Submit은 별도 처리
+    if (interaction.isModalSubmit?.()) {
+        console.log('[Handler Router] Redirecting modal submit to handleModalSubmit');
+        return await handleModalSubmit(interaction);
+    }
+    
     // 중복 방지를 위한 고유 키 생성
     const uniqueKey = `${interaction.id}_${Date.now()}`;
     
@@ -25,13 +62,13 @@ async function handleInteraction(interaction) {
         return;
     }
     
-    // 처리 중 표시
-    processingInteractions.set(interaction.id, true);
+    // 처리 중 표시 (타임스탬프 저장)
+    processingInteractions.set(interaction.id, Date.now());
     
-    // 1초 후 자동 삭제
+    // 3초 후 자동 삭제
     setTimeout(() => {
         processingInteractions.delete(interaction.id);
-    }, 1000);
+    }, 3000);
     if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit() && !interaction.isUserSelectMenu()) {
         return;
     }
@@ -45,6 +82,7 @@ async function handleInteraction(interaction) {
 
     // 모달 처리
     if (interaction.isModalSubmit()) {
+        console.log('[Handler Router] Modal submit 처리 전 - customId:', customId);
         return await handleModalSubmit(interaction);
     }
     
@@ -59,6 +97,31 @@ async function handleInteraction(interaction) {
     else if (customId.startsWith('verify_email_')) {
         const registerCommand = require('../commands/utility/register');
         return await registerCommand.handleVerification(interaction);
+    }
+    
+    // 관리자 장비 시스템은 최우선 처리 (캐릭터 핸들러보다 먼저)
+    else if (customId.startsWith('admin_equip_')) {
+        console.log('[Handler Router] Routing to admin equipment system:', customId);
+        if (!isAdmin(interaction.user.id)) {
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    return await interaction.reply({ 
+                        content: '❌ 관리자만 접근할 수 있습니다!', 
+                        flags: 64 
+                    });
+                } else if (interaction.deferred) {
+                    return await interaction.editReply({ 
+                        content: '❌ 관리자만 접근할 수 있습니다!'
+                    });
+                }
+            } catch (error) {
+                if (error.code !== 10062 && error.code !== 40060) {
+                    console.error('[Handler Router] Admin check reply error:', error);
+                }
+            }
+            return;
+        }
+        return await handleAdminInteraction(interaction);
     }
     
     // 엠블럼 상점 특별 처리
@@ -102,7 +165,8 @@ async function handleInteraction(interaction) {
     else if (customId === 'shop_slot_select' || customId === 'shop_refresh' || customId.startsWith('shop_refresh') || 
         customId.startsWith('shop_continue') || customId.startsWith('shop_back') ||
         customId.startsWith('gacha_single_') || customId.startsWith('gacha_multi_') ||
-        customId.startsWith('retry_multi_') || customId === 'save_all_temp' ||
+        customId.startsWith('gacha_hundred_') || customId.startsWith('retry_multi_') ||
+        customId.startsWith('retry_hundred_') || customId === 'save_all_temp' ||
         customId === 'sell_menu' || customId === 'sell_selected' || customId === 'sell_all_trash' ||
         customId === 'sell_temp_items' || customId.startsWith('item_sell_') ||
         customId === 'sell_prev' || customId === 'sell_next' || customId === 'sell_item_select' ||
@@ -117,7 +181,12 @@ async function handleInteraction(interaction) {
         customId === 'execute_sell_cart' || customId === 'sell_menu' ||
         customId === 'continue_sell' || customId === 'sell_single_temp' ||
         customId.startsWith('sell_current_item_') || customId === 'sell_all_multi_temp' ||
-        customId === 'save_all_multi_temp') {
+        customId === 'save_all_multi_temp' || customId === 'view_hundred_items' ||
+        customId === 'hundred_prev' || customId === 'hundred_next' || customId === 'hundred_close' ||
+        customId === 'view_legendary_items' || customId === 'legendary_prev' || 
+        customId === 'legendary_next' || customId === 'back_to_hundred_summary' ||
+        // 카트 판매 관련 - sell_mode_cart만 여기서 처리, 나머지는 컬렉터에서 처리
+        customId === 'sell_mode_cart') {
         const { handleShopInteraction } = require('../systems/shop');
         const { getUser } = require('./common/utils');
         const User = require('../models/User');
@@ -152,11 +221,20 @@ async function handleInteraction(interaction) {
         return await handleShopInteraction(interaction, getUser, saveUser);
     }
     
-    // 캐릭터 관련 처리
-    else if (customId.includes('profile') || customId.includes('inventory') || 
+    // 낚시 관련 처리 (경제 시스템) - 캐릭터보다 먼저 체크
+    else if (customId.includes('fishing_')) {
+        const { handleFishingInteraction } = require('./economy/fishing');
+        const { getUser } = require('./common/utils');
+        const user = await getUser(interaction.user.id);
+        return await handleFishingInteraction(interaction, user);
+    }
+    
+    // 캐릭터 관련 처리 (exercise_inventory 제외)
+    else if ((customId.includes('profile') || (customId.includes('inventory') && !customId.includes('exercise_inventory')) || 
         customId === 'equipment' || (customId.includes('emblem') && !customId.includes('admin_emblem')) ||
         customId.includes('stat_') || customId === 'stat_distribution' ||
         customId === 'equip_category' || customId === 'equip_slot_select' ||
+        customId === 'accessory_slot_select' ||
         customId.startsWith('equip_item_') || customId === 'optimize_equipment' ||
         customId === 'unequip_all' || customId.startsWith('item_') ||
         customId === 'emblem' || customId === 'emblem_shop' || customId === 'emblem_enhance' ||
@@ -165,7 +243,7 @@ async function handleInteraction(interaction) {
         customId.startsWith('buy_emblem_') || customId === 'emblem_shop_category' ||
         customId === 'emblem_shop_refresh' || customId === 'emblem_shop_back' ||
         customId.startsWith('equipment_') || customId.startsWith('equip_page_') ||
-        customId.startsWith('unequip_')) {
+        customId.startsWith('unequip_')) && !customId.includes('fishing_')) {
         return await handleCharacterInteraction(interaction);
     }
     
@@ -175,15 +253,32 @@ async function handleInteraction(interaction) {
         const pvpSystem = require('../systems/pvpSystem').getInstance();
         const user = await User.findOne({ discordId: interaction.user.id });
         if (!user) {
-            return await interaction.reply({ 
-                content: '❌ 회원가입이 필요합니다!', 
-                flags: 64 
-            });
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    return await interaction.reply({ 
+                        content: '❌ 회원가입이 필요합니다!', 
+                        flags: 64 
+                    });
+                } else if (interaction.deferred) {
+                    return await interaction.editReply({ 
+                        content: '❌ 회원가입이 필요합니다!'
+                    });
+                }
+            } catch (error) {
+                if (error.code !== 10062 && error.code !== 40060) {
+                    console.error('[Handler Router] PVP user check error:', error);
+                }
+            }
+            return;
         }
         
         // 먼저 버튼 응답 처리
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.deferUpdate().catch(console.error);
+            await interaction.deferUpdate().catch(error => {
+                if (error.code !== 10062 && error.code !== 40060) {
+                    console.error('[Handler Router] PVP defer error:', error);
+                }
+            });
         }
         
         // 대기실 생성
@@ -247,22 +342,12 @@ async function handleInteraction(interaction) {
         return await handlePVPInteraction(interaction);
     }
     
-    // 경제 관련 처리
-    else if (customId.includes('stock') || customId.includes('artifact') ||
-             customId.includes('fragment') || customId.includes('shop') ||
-             customId === 'stocks' || customId === 'artifacts' || 
-             customId === 'fragments' || customId.includes('exploration') ||
-             customId.startsWith('random_') || customId === 'sector_select' ||
-             customId.includes('mine_') ||
-             // 새로운 판매 시스템 추가
-             customId.includes('sell_mode_') || customId.includes('sell_grade_') ||
-             customId.includes('grade_sell_') || customId.includes('quick_sell_') || 
-             customId === 'sell_menu_back' || customId === 'sell_menu_return' || 
-             customId === 'grade_sell_menu' || customId.includes('confirm_grade_sell_') ||
-             customId.includes('quick_sell_page_') ||
-             // 멀티 가챠 페이지네이션 추가
-             customId === 'multi_next' || customId === 'multi_prev') {
-        return await handleEconomyInteraction(interaction);
+    // 관리자 관련 처리 (경제보다 먼저 체크)
+    else if (customId.includes('admin')) {
+        console.log('[Handlers/Index] Admin interaction detected:', customId);
+        const result = await handleAdminInteraction(interaction);
+        console.log('[Handlers/Index] Admin interaction completed');
+        return result;
     }
     
     // 보스 레이드 관련 처리
@@ -314,8 +399,8 @@ async function handleInteraction(interaction) {
         return await handleRankingInteraction(interaction);
     }
     
-    // 일일 활동 관련 처리
-    else if (customId.includes('attendance') || customId.includes('hunting') ||
+    // 일일 활동 관련 처리 (exercise_gym_shop과 exercise_inventory 포함)
+    else if (customId === 'exercise_gym_shop' || customId.includes('attendance') || customId.includes('hunting') ||
              customId.includes('exercise') || customId.includes('quest') ||
              customId === 'work' || customId === 'daily' ||
              customId.includes('claim_daily') || customId.includes('hunt_area') ||
@@ -326,27 +411,33 @@ async function handleInteraction(interaction) {
              customId.includes('strategy') || customId.includes('market_') || 
              customId === 'market_prices' || customId === 'market_type_select' ||
              customId === 'market_category_select' || customId.includes('daily_missions') ||
-             customId.includes('weekly_missions') || customId.includes('mission_reward')) {
+             customId.includes('weekly_missions') || customId.includes('mission_reward') ||
+             customId.includes('locker_')) {
+        console.log('[Handler Router] Routing to daily handler for customId:', customId);
         return await handleDailyInteraction(interaction);
     }
     
-    // 관리자 관련 처리
-    else if (customId.includes('admin')) {
-        console.log('[Handlers/Index] Admin interaction detected:', customId);
-        const result = await handleAdminInteraction(interaction);
-        console.log('[Handlers/Index] Admin interaction completed');
-        return result;
+    // 경제 관련 처리 (daily 핸들러 이후에 처리)
+    else if (customId.includes('stock') || customId.includes('artifact') ||
+             customId.includes('fragment') || customId.includes('shop') ||
+             customId === 'stocks' || customId === 'artifacts' || 
+             customId === 'fragments' || customId.includes('exploration') ||
+             customId.startsWith('random_') || customId === 'sector_select' ||
+             customId.includes('mine_') ||
+             // 새로운 판매 시스템 추가
+             customId.includes('sell_mode_') || customId.includes('sell_grade_') ||
+             customId.includes('grade_sell_') || customId.includes('quick_sell_') || 
+             customId === 'sell_menu_back' || customId === 'sell_menu_return' || 
+             customId === 'grade_sell_menu' || customId.includes('confirm_grade_sell_') ||
+             customId.includes('quick_sell_page_') ||
+             // 멀티 가챠 페이지네이션 추가
+             customId === 'multi_next' || customId === 'multi_prev') {
+        return await handleEconomyInteraction(interaction);
     }
     
     // 이벤트 관련 처리
     else if (customId.includes('event')) {
         return await handleEventInteraction(interaction);
-    }
-    
-    // 댕댕봇 구출 이벤트 처리
-    else if (customId.includes('dogbot_')) {
-        const { handleDogBotRescueInteraction } = require('./dogBotRescueHandler');
-        return await handleDogBotRescueInteraction(interaction);
     }
     
     // 베팅 관련 처리
@@ -357,13 +448,6 @@ async function handleInteraction(interaction) {
         return await handleBettingInteraction(interaction, user);
     }
     
-    // 낚시 관련 처리 (경제 시스템)
-    else if (customId.includes('fishing_')) {
-        const { handleFishingInteraction } = require('./economy/fishing');
-        const { getUser } = require('./common/utils');
-        const user = await getUser(interaction.user.id);
-        return await handleFishingInteraction(interaction, user);
-    }
     
     // 재료 제작 관련 처리 (비활성화)
     // else if (customId === 'material_crafting' || customId.includes('crafting_')) {
@@ -505,6 +589,7 @@ async function handleModalSubmit(interaction) {
     
     // 캐릭터 모달 (스탯 분배)
     else if (customId === 'stat_custom_modal') {
+        console.log('[handleModalSubmit] stat_custom_modal 처리 시작');
         return await handleCharacterInteraction(interaction);
     }
     
@@ -546,6 +631,8 @@ async function handleSelectMenu(interaction) {
     
     // 메인 메뉴
     if (customId === 'main_menu') {
+        console.log(`[Main Menu] Selected value: ${value}`);
+        
         // 각 카테고리로 라우팅
         if (value === 'profile' || value === 'inventory' || 
             value === 'equipment' || value === 'emblem') {
@@ -580,9 +667,11 @@ async function handleSelectMenu(interaction) {
             return await handleDailyInteraction(interaction);
         }
         else if (value === 'fishing') {
+            console.log('[Handler Router] Processing fishing menu selection');
             const { handleFishingInteraction } = require('./economy/fishing');
             const { getUser } = require('./common/utils');
             const user = await getUser(interaction.user.id);
+            console.log('[Handler Router] User data retrieved for fishing:', user ? 'Found' : 'Not Found');
             interaction.customId = 'fishing_menu';
             return await handleFishingInteraction(interaction, user);
         }
@@ -615,7 +704,7 @@ async function handleSelectMenu(interaction) {
         return await handleDailyInteraction(interaction);
     }
     else if (customId === 'equip_slot_select' || customId.startsWith('equip_item_') ||
-             customId === 'inventory_item_select') {
+             customId === 'inventory_item_select' || customId === 'accessory_slot_select') {
         return await handleCharacterInteraction(interaction);
     }
 }

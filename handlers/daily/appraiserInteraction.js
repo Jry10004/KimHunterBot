@@ -317,9 +317,21 @@ async function sellItems(interaction) {
 
 // 판매 실행
 async function executeSell(interaction, selectedIndices, sellAll = false) {
-    await interaction.deferUpdate();
+    try {
+        await interaction.deferUpdate();
+    } catch (err) {
+        console.error('[executeSell] deferUpdate 오류:', err);
+    }
     
     const user = await getUser(interaction.user.id);
+    if (!user || !user.inventory) {
+        return await interaction.editReply({
+            content: '❌ 인벤토리를 찾을 수 없습니다.',
+            embeds: [],
+            components: []
+        });
+    }
+    
     const materials = user.inventory.filter((item, index) => {
         if (item && item.type === 'material') {
             // 인덱스 저장
@@ -333,7 +345,15 @@ async function executeSell(interaction, selectedIndices, sellAll = false) {
     if (sellAll) {
         itemsToSell = materials;
     } else {
-        itemsToSell = selectedIndices.map(index => materials[parseInt(index)]).filter(item => item);
+        // selectedIndices는 materials 배열의 인덱스이므로, 
+        // 각 아이템의 실제 inventory 인덱스는 이미 _inventoryIndex에 저장되어 있음
+        itemsToSell = selectedIndices.map(index => {
+            const materialIndex = parseInt(index);
+            if (materialIndex >= 0 && materialIndex < materials.length) {
+                return materials[materialIndex];
+            }
+            return null;
+        }).filter(item => item);
     }
     
     if (itemsToSell.length === 0) {
@@ -356,6 +376,8 @@ async function executeSell(interaction, selectedIndices, sellAll = false) {
         const quantity = item.quantity || 1;
         const itemTotal = currentPrice * quantity;
         totalGold += itemTotal;
+        
+        console.log(`[감정소 판매] ${item.name} x${quantity} = ${itemTotal}G, inventoryIndex: ${item._inventoryIndex}`);
         
         sellDetails.push({
             name: item.name || '알 수 없는 아이템',
@@ -381,9 +403,19 @@ async function executeSell(interaction, selectedIndices, sellAll = false) {
     });
     
     // 인벤토리에서 제거 (인덱스 역순으로 정렬하여 제거)
-    itemsToRemove.sort((a, b) => b - a);
-    for (const index of itemsToRemove) {
-        user.inventory.splice(index, 1);
+    // 중복 제거 및 유효성 검사
+    const uniqueIndices = [...new Set(itemsToRemove)].filter(index => 
+        typeof index === 'number' && index >= 0 && index < user.inventory.length
+    );
+    
+    uniqueIndices.sort((a, b) => b - a);
+    
+    for (const index of uniqueIndices) {
+        // 해당 인덱스의 아이템이 실제로 판매하려는 아이템인지 재확인
+        const itemAtIndex = user.inventory[index];
+        if (itemAtIndex && itemAtIndex.type === 'material') {
+            user.inventory.splice(index, 1);
+        }
     }
     
     // 골드 지급

@@ -7,6 +7,16 @@ const User = require('../models/User');
 const InventoryManager = require('../utils/inventoryManager');
 const ShopTransactionManager = require('../utils/shopTransactionManager');
 
+// 희귀도 이모지 정의
+const RARITY_EMOJIS = {
+    legendary: '🟠',
+    unique: '🟣',
+    epic: '🔴',
+    rare: '🔵',
+    normal: '🟢',
+    trash: '⚪'
+};
+
 // 상점 메시지 ID 저장
 const permanentMessageIds = new Map();
 const MESSAGE_IDS_FILE = path.join(__dirname, '..', 'data', 'shopMessages.json');
@@ -16,15 +26,47 @@ const tempItems = new Map(); // userId -> [items]
 const TEMP_ITEMS_FILE = path.join(__dirname, '..', 'data', 'tempItems.json');
 
 // 뽑기 처리 중인 유저 추적 (중복 클릭 방지)
-const gachaInProgress = new Set();
+const gachaInProgress = new Map(); // Set 대신 Map으로 변경하여 타임스탬프 저장
 
-// 5분마다 자동으로 막힌 뽑기 상태 정리
+// 메시지별 뽑기 상태 관리 (동일 메시지에서 중복 실행 방지)
+const messageGachaState = new Map(); // messageId -> { userId, slot, timestamp }
+
+// 100회 뽑기 임시 데이터 저장소
+const hundredGachaTempData = new Map();
+
+// 1분마다 자동으로 막힌 뽑기 상태 정리 (5분 -> 1분으로 단축)
 setInterval(() => {
+    const now = Date.now();
+    let cleared = 0;
+    
+    // 일반 뽑기 상태 정리
     if (gachaInProgress.size > 0) {
-        console.log(`[GachaCleanup] 막힌 뽑기 상태 정리 - 현재 ${gachaInProgress.size}개`);
-        gachaInProgress.clear();
+        const timeout = 60000; // 60초
+        
+        for (const [key, timestamp] of gachaInProgress.entries()) {
+            if (now - timestamp > timeout) {
+                gachaInProgress.delete(key);
+                cleared++;
+            }
+        }
     }
-}, 300000);
+    
+    // 메시지별 뽑기 상태 정리
+    if (messageGachaState.size > 0) {
+        const messageTimeout = 120000; // 2분
+        
+        for (const [messageId, state] of messageGachaState.entries()) {
+            if (now - state.timestamp > messageTimeout) {
+                messageGachaState.delete(messageId);
+                cleared++;
+            }
+        }
+    }
+    
+    if (cleared > 0) {
+        console.log(`[GachaCleanup] 만료된 뽑기 상태 ${cleared}개 정리`);
+    }
+}, 60000); // 1분마다 실행
 
 // 부위별 이모지
 const SLOT_EMOJIS = {
@@ -48,28 +90,44 @@ const SLOT_NAMES = {
     accessory: '장신구'
 };
 
-// 레벨별 확률 테이블 - 30% 너프 적용
+// 스탯 이모지
+const STAT_EMOJIS = {
+    attack: '⚔️',
+    defense: '🛡️',
+    hp: '❤️',
+    agility: '💨',
+    accuracy: '🎯',
+    evasion: '🌀',
+    criticalRate: '💥',
+    criticalDamage: '⚡',
+    luck: '🍀',
+    lifesteal: '🩸',
+    exp: '✨',
+    gold: '💰'
+};
+
+// 레벨별 확률 테이블 - 100회 뽑기를 위한 추가 너프 적용 (전설/유니크 25% 추가 감소)
 const LEVEL_RATES = {
-    1: { legendary: 0.0007, unique: 0.007, epic: 0.035, rare: 0.15, normal: 0.7573, trash: 0.05 },
-    2: { legendary: 0.0014, unique: 0.0105, epic: 0.042, rare: 0.16, normal: 0.7361, trash: 0.05 },
-    3: { legendary: 0.0021, unique: 0.014, epic: 0.049, rare: 0.17, normal: 0.7149, trash: 0.05 },
-    4: { legendary: 0.0028, unique: 0.0175, epic: 0.0525, rare: 0.185, normal: 0.6922, trash: 0.05 },
-    5: { legendary: 0.0035, unique: 0.021, epic: 0.056, rare: 0.20, normal: 0.6695, trash: 0.05 },
-    6: { legendary: 0.0042, unique: 0.0245, epic: 0.063, rare: 0.21, normal: 0.6483, trash: 0.05 },
-    7: { legendary: 0.0049, unique: 0.028, epic: 0.07, rare: 0.22, normal: 0.6271, trash: 0.05 },
-    8: { legendary: 0.0056, unique: 0.0315, epic: 0.077, rare: 0.23, normal: 0.6059, trash: 0.05 },
-    9: { legendary: 0.0063, unique: 0.0336, epic: 0.0805, rare: 0.24, normal: 0.5896, trash: 0.05 },
-    10: { legendary: 0.007, unique: 0.035, epic: 0.084, rare: 0.25, normal: 0.574, trash: 0.05 },
-    11: { legendary: 0.0084, unique: 0.042, epic: 0.091, rare: 0.26, normal: 0.5586, trash: 0.04 },
-    12: { legendary: 0.0098, unique: 0.049, epic: 0.098, rare: 0.27, normal: 0.5432, trash: 0.04 },
-    13: { legendary: 0.0112, unique: 0.056, epic: 0.105, rare: 0.28, normal: 0.5278, trash: 0.03 },
-    14: { legendary: 0.0126, unique: 0.063, epic: 0.112, rare: 0.29, normal: 0.5124, trash: 0.03 },
-    15: { legendary: 0.014, unique: 0.07, epic: 0.126, rare: 0.30, normal: 0.47, trash: 0.02 },
-    16: { legendary: 0.0175, unique: 0.084, epic: 0.14, rare: 0.31, normal: 0.4485, trash: 0.02 },
-    17: { legendary: 0.021, unique: 0.098, epic: 0.147, rare: 0.32, normal: 0.413, trash: 0.01 },
-    18: { legendary: 0.0245, unique: 0.112, epic: 0.154, rare: 0.33, normal: 0.3785, trash: 0.01 },
-    19: { legendary: 0.028, unique: 0.126, epic: 0.161, rare: 0.34, normal: 0.344, trash: 0.01 },
-    20: { legendary: 0.035, unique: 0.14, epic: 0.175, rare: 0.35, normal: 0.29, trash: 0.01 }
+    1: { legendary: 0.0005, unique: 0.0053, epic: 0.035, rare: 0.15, normal: 0.7592, trash: 0.05 },
+    2: { legendary: 0.001, unique: 0.0079, epic: 0.042, rare: 0.16, normal: 0.7391, trash: 0.05 },
+    3: { legendary: 0.0016, unique: 0.0105, epic: 0.049, rare: 0.17, normal: 0.7189, trash: 0.05 },
+    4: { legendary: 0.0021, unique: 0.0131, epic: 0.0525, rare: 0.185, normal: 0.6973, trash: 0.05 },
+    5: { legendary: 0.0026, unique: 0.0158, epic: 0.056, rare: 0.20, normal: 0.6756, trash: 0.05 },
+    6: { legendary: 0.0032, unique: 0.0184, epic: 0.063, rare: 0.21, normal: 0.6554, trash: 0.05 },
+    7: { legendary: 0.0037, unique: 0.021, epic: 0.07, rare: 0.22, normal: 0.6353, trash: 0.05 },
+    8: { legendary: 0.0042, unique: 0.0236, epic: 0.077, rare: 0.23, normal: 0.6152, trash: 0.05 },
+    9: { legendary: 0.0047, unique: 0.0252, epic: 0.0805, rare: 0.24, normal: 0.5996, trash: 0.05 },
+    10: { legendary: 0.0053, unique: 0.0263, epic: 0.084, rare: 0.25, normal: 0.5844, trash: 0.05 },
+    11: { legendary: 0.0063, unique: 0.0315, epic: 0.091, rare: 0.26, normal: 0.5712, trash: 0.04 },
+    12: { legendary: 0.0074, unique: 0.0368, epic: 0.098, rare: 0.27, normal: 0.5578, trash: 0.04 },
+    13: { legendary: 0.0084, unique: 0.042, epic: 0.105, rare: 0.28, normal: 0.5446, trash: 0.03 },
+    14: { legendary: 0.0095, unique: 0.0473, epic: 0.112, rare: 0.29, normal: 0.5312, trash: 0.03 },
+    15: { legendary: 0.0105, unique: 0.0525, epic: 0.126, rare: 0.30, normal: 0.491, trash: 0.02 },
+    16: { legendary: 0.0131, unique: 0.063, epic: 0.14, rare: 0.31, normal: 0.4719, trash: 0.02 },
+    17: { legendary: 0.0158, unique: 0.0735, epic: 0.147, rare: 0.32, normal: 0.4427, trash: 0.01 },
+    18: { legendary: 0.0184, unique: 0.084, epic: 0.154, rare: 0.33, normal: 0.4136, trash: 0.01 },
+    19: { legendary: 0.021, unique: 0.0945, epic: 0.161, rare: 0.34, normal: 0.3835, trash: 0.01 },
+    20: { legendary: 0.0263, unique: 0.105, epic: 0.175, rare: 0.35, normal: 0.3387, trash: 0.01 }
 };
 
 // 레벨업 필요 경험치 계산
@@ -208,7 +266,7 @@ function createShopEmbed(user) {
         .setDescription(
             '**천장 시스템 기반 장비 상점**\n' +
             '뽑기를 할수록 상점 레벨이 오르고 좋은 아이템 확률이 증가합니다!\n\n' +
-            '💰 **가격**: 10,000 골드 / 1회 | 90,000 골드 / 10회 (10% 할인)\n' +
+            '💰 **가격**: 100,000 골드 / 10회 | 900,000 골드 / 100회 (10% 할인)\n' +
             `💵 **보유 골드**: ${user.gold.toLocaleString()} 골드\n\n` +
             '**📊 상점 레벨 현황**'
         );
@@ -355,6 +413,7 @@ function generateItemWithPity(slot, slotData, user) {
         console.log(`- 점수: ${item.score}`);
         console.log(`- 가격: ${item.price}`);
         console.log(`- 판매가: ${item.sellPrice}`);
+        console.log(`- 스탯:`, JSON.stringify(item.stats, null, 2));
         console.log(`-------------------`);
         
         return item;
@@ -545,7 +604,7 @@ async function handleShopInteraction(interaction, getUser, saveUser) {
         const userId = interaction.user.id;
         const keysToRemove = [];
         
-        for (const key of gachaInProgress) {
+        for (const [key, timestamp] of gachaInProgress) {
             if (key.startsWith(userId)) {
                 keysToRemove.push(key);
             }
@@ -653,6 +712,92 @@ async function handleShopInteraction(interaction, getUser, saveUser) {
         return;
     }
     
+    // 100회 뽑기 처리
+    if (interaction.customId.startsWith('gacha_hundred_')) {
+        await handleHundredGacha(interaction, getUser, saveUser);
+        return;
+    }
+    
+    // 다시 100회 뽑기 처리
+    if (interaction.customId.startsWith('retry_hundred_')) {
+        await handleHundredGacha(interaction, getUser, saveUser);
+        return;
+    }
+    
+    // 전설 아이템 보기 처리
+    if (interaction.customId === 'view_legendary_items') {
+        console.log('[Shop] view_legendary_items 버튼 처리 시작');
+        
+        // 메시지에서 저장된 데이터 가져오기
+        const messageData = interaction.message?.hundred_gacha_data;
+        if (!messageData) {
+            console.log('[Shop] 메시지 데이터 없음, 전역 데이터 확인');
+            // 전역 임시 저장소에서 가져오기
+            const tempKey = `hundred_${interaction.user.id}`;
+            const tempData = hundredGachaTempData.get(tempKey);
+            if (tempData) {
+                const { items, user, selectedSlot } = tempData;
+                const legendaryItems = items.filter(item => item.rarity === 'legendary');
+                if (legendaryItems.length > 0) {
+                    await showLegendaryItemDetail(interaction, legendaryItems, 0, user, selectedSlot);
+                }
+            }
+        } else {
+            const { items, user, selectedSlot } = messageData;
+            const legendaryItems = items.filter(item => item.rarity === 'legendary');
+            if (legendaryItems.length > 0) {
+                await showLegendaryItemDetail(interaction, legendaryItems, 0, user, selectedSlot);
+            }
+        }
+        return;
+    }
+    
+    // 전설 아이템 네비게이션
+    if (interaction.customId === 'legendary_prev' || interaction.customId === 'legendary_next') {
+        console.log('[Shop] 전설 아이템 네비게이션:', interaction.customId);
+        // 네비게이션 처리는 showLegendaryItemDetail 내부 collector에서 처리
+        return;
+    }
+    
+    // 100회 아이템 목록 보기
+    if (interaction.customId === 'view_hundred_items') {
+        console.log('[Shop] view_hundred_items 버튼 처리 시작');
+        
+        // 전역 임시 저장소에서 가져오기
+        const tempKey = `hundred_${interaction.user.id}`;
+        const tempData = hundredGachaTempData.get(tempKey);
+        if (tempData) {
+            const { items } = tempData;
+            let currentPage = 0;
+            const itemsPerPage = 10;
+            const totalPages = Math.ceil(items.length / itemsPerPage);
+            
+            await showHundredItemsPage(interaction, items, currentPage, itemsPerPage, totalPages);
+        } else {
+            // 데이터가 없으면 오류 메시지
+            console.log('[Shop] 100뽑기 임시 데이터를 찾을 수 없음');
+            await interaction.editReply({
+                content: '⚠️ 아이템 목록을 찾을 수 없습니다. 다시 뽑기를 시도해주세요.',
+                embeds: [],
+                components: []
+            });
+        }
+        return;
+    }
+    
+    // 100회 아이템 네비게이션
+    if (interaction.customId === 'hundred_prev' || interaction.customId === 'hundred_next' || interaction.customId === 'hundred_close') {
+        // collector에서 처리
+        return;
+    }
+    
+    // 상점으로 돌아가기 (100회 뽑기에서)
+    if (interaction.customId === 'shop_refresh' && hundredGachaTempData.has(`hundred_${interaction.user.id}`)) {
+        const user = await getUser(interaction.user.id);
+        await showShop(interaction, user);
+        return;
+    }
+    
     // 임시 아이템 저장
     if (interaction.customId === 'save_all_temp') {
         await interaction.deferUpdate();
@@ -703,9 +848,9 @@ async function handleShopInteraction(interaction, getUser, saveUser) {
         if (!interaction.deferred && !interaction.replied) {
             await interaction.deferUpdate();
         }
-        // 기존 카트 판매 모드로 전환
+        // 카트 판매 모드로 전환
         const user = await getUser(interaction.user.id);
-        await showSellMenu(interaction, user, getUser, saveUser);
+        await showCartSellMode(interaction, user, getUser, saveUser);
         return;
     }
     
@@ -792,7 +937,7 @@ async function initializeShop(client, channelId, forceNew = false) {
             return null;
         }
         
-        if (!channel.permissionsFor(client.user).has(['SendMessages', 'ViewChannel'])) {
+        if (channel.type === 0 && !channel.permissionsFor(client.user)?.has(['SendMessages', 'ViewChannel'])) {
             console.error(`채널 ${channelId}에 메시지 전송 권한이 없습니다.`);
             return null;
         }
@@ -890,7 +1035,7 @@ async function showGachaOptions(interaction, user, selectedSlot) {
             },
             {
                 name: '💰 가격',
-                value: `1회: ${price.toLocaleString()}G\n10회: ${(price * 9).toLocaleString()}G (10% 할인)`,
+                value: `10회: 100,000G\n100회: 900,000G (10% 할인)`,
                 inline: true
             },
             {
@@ -903,15 +1048,15 @@ async function showGachaOptions(interaction, user, selectedSlot) {
     const buttons = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
-                .setCustomId(`gacha_single_${selectedSlot}_${user.discordId}`)
-                .setLabel(`1회 뽑기 (${price.toLocaleString()}G)`)
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(user.gold < price),
-            new ButtonBuilder()
                 .setCustomId(`gacha_multi_${selectedSlot}_${user.discordId}`)
-                .setLabel(`10회 뽑기 (${(price * 9).toLocaleString()}G)`)
+                .setLabel(`10회 뽑기 (100,000G)`)
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(user.gold < 100000),
+            new ButtonBuilder()
+                .setCustomId(`gacha_hundred_${selectedSlot}_${user.discordId}`)
+                .setLabel(`100회 뽑기 (900,000G)`)
                 .setStyle(ButtonStyle.Success)
-                .setDisabled(user.gold < price * 9),
+                .setDisabled(user.gold < 900000),
             new ButtonBuilder()
                 .setCustomId('shop_refresh')
                 .setLabel('뒤로')
@@ -946,12 +1091,43 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
         return;
     }
     
+    // 메시지 ID + 타임스탬프 기반으로 고유 키 생성 (같은 메시지에서도 여러 번 뽑기 가능)
+    const messageId = interaction.message?.id;
+    const uniqueGachaId = `${messageId}_${Date.now()}_${Math.random()}`;
+    if (messageId) {
+        const messageState = messageGachaState.get(uniqueGachaId);
+        // 동일한 고유 ID가 있는 경우만 차단 (실제로는 거의 발생하지 않음)
+        if (messageState && messageState.userId === interaction.user.id && 
+            messageState.slot === selectedSlot) {
+            console.log('[handleSingleGacha] 동일한 뽑기 ID 중복 실행 방지');
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({
+                        content: '⏳ 뽑기가 이미 진행 중입니다.',
+                        flags: 64
+                    });
+                }
+            } catch (e) {
+                console.error('[handleSingleGacha] 중복 알림 실패:', e);
+            }
+            return;
+        }
+        // 고유 ID로 상태 저장
+        messageGachaState.set(uniqueGachaId, {
+            userId: interaction.user.id,
+            slot: selectedSlot,
+            timestamp: Date.now()
+        });
+    }
+    
     // 중복 클릭 방지 - 슬롯별로 구분
     const gachaKey = `${targetUserId || interaction.user.id}_single_${selectedSlot}`;
     console.log(`[handleSingleGacha] 처리 시작 - 사용자: ${interaction.user.id}, 키: ${gachaKey}`);
-    console.log(`[handleSingleGacha] 현재 진행중인 뽑기:`, Array.from(gachaInProgress));
+    console.log(`[handleSingleGacha] 현재 진행중인 뽑기:`, Array.from(gachaInProgress.keys()));
     
-    if (gachaInProgress.has(gachaKey)) {
+    // 타임스탬프 확인 - 3초로 단축 (빠른 연속 클릭만 방지)
+    const existingTimestamp = gachaInProgress.get(gachaKey);
+    if (existingTimestamp && Date.now() - existingTimestamp < 3000) { // 3초 이내
         console.log('[handleSingleGacha] 이미 처리 중인 뽑기입니다.');
         try {
             if (!interaction.replied && !interaction.deferred) {
@@ -966,8 +1142,8 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
         return;
     }
     
-    // 처리 시작 표시
-    gachaInProgress.add(gachaKey);
+    // 처리 시작 표시 (타임스탬프 저장)
+    gachaInProgress.set(gachaKey, Date.now());
     
     // 15초 후 자동 해제 (안전장치) - 느린 네트워크 대응
     const cleanupTimeout = setTimeout(() => {
@@ -1053,7 +1229,7 @@ async function handleSingleGacha(interaction, getUser, saveUser) {
             .addFields(
                 {
                     name: '📊 능력치',
-                    value: formatItemStats(item.stats),
+                    value: formatItemStats(item.stats, user),
                     inline: true
                 },
                 {
@@ -1173,14 +1349,45 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
         return;
     }
     
+    // 메시지 ID + 타임스탬프 기반으로 고유 키 생성 (같은 메시지에서도 여러 번 뽑기 가능)
+    const messageId = interaction.message?.id;
+    const uniqueGachaId = `${messageId}_${Date.now()}_${Math.random()}`;
+    if (messageId) {
+        const messageState = messageGachaState.get(uniqueGachaId);
+        // 동일한 고유 ID가 있는 경우만 차단 (실제로는 거의 발생하지 않음)
+        if (messageState && messageState.userId === interaction.user.id && 
+            messageState.slot === selectedSlot) {
+            console.log('[handleMultiGacha] 동일한 뽑기 ID 중복 실행 방지');
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({
+                        content: '⏳ 뽑기가 이미 진행 중입니다.',
+                        flags: 64
+                    });
+                }
+            } catch (e) {
+                console.error('[handleMultiGacha] 중복 알림 실패:', e);
+            }
+            return;
+        }
+        // 고유 ID로 상태 저장
+        messageGachaState.set(uniqueGachaId, {
+            userId: interaction.user.id,
+            slot: selectedSlot,
+            timestamp: Date.now()
+        });
+    }
+    
     // 중복 클릭 방지 - 유저별 + 슬롯별로 유일한 키 사용
     const gachaKey = `${targetUserId || interaction.user.id}_multi_${selectedSlot}`;
     
     // 동일한 뽑기가 진행 중인지 확인
     console.log(`[handleMultiGacha] 처리 시작 - 사용자: ${interaction.user.id}, 키: ${gachaKey}`);
-    console.log(`[handleMultiGacha] 현재 진행중인 뽑기:`, Array.from(gachaInProgress));
+    console.log(`[handleMultiGacha] 현재 진행중인 뽑기:`, Array.from(gachaInProgress.keys()));
     
-    if (gachaInProgress.has(gachaKey)) {
+    // 타임스탬프 확인 - 5초로 단축 (멀티 뽑기는 시간이 더 걸리므로)
+    const existingTimestamp = gachaInProgress.get(gachaKey);
+    if (existingTimestamp && Date.now() - existingTimestamp < 5000) { // 5초 이내
         console.log('[handleMultiGacha] 이미 처리 중인 뽑기입니다.');
         try {
             if (!interaction.replied && !interaction.deferred) {
@@ -1204,8 +1411,8 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
         return;
     }
     
-    // 처리 시작 표시
-    gachaInProgress.add(gachaKey);
+    // 처리 시작 표시 (타임스탬프 저장)
+    gachaInProgress.set(gachaKey, Date.now());
     
     // 45초 후 자동 해제 (안전장치) - 10회 뽑기는 시간이 더 걸림
     const cleanupTimeout = setTimeout(() => {
@@ -1324,7 +1531,8 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
     
     // 이미 트랜잭션에서 처리됨
     
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // 애니메이션 시간 단축 (3초 -> 1.5초)
+    await new Promise(resolve => setTimeout(resolve, 1500));
     
     // 희귀도별 정렬
     const rarityOrder = ['legendary', 'unique', 'epic', 'rare', 'normal', 'trash'];
@@ -1398,33 +1606,38 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
             return;
         } else if (i.customId === 'shop_refresh') {
             try {
-                // interaction이 이미 acknowledged된 경우를 처리
-                if (i.deferred || i.replied) {
-                    collector.stop();
-                    const User = require('../models/User');
-                    const updatedUser = await User.findOne({ discordId: user.discordId });
-                    const embed = createShopEmbed(updatedUser);
-                    const selectMenu = createSlotSelectMenu(updatedUser);
-                    await i.editReply({
-                        embeds: [embed],
-                        components: [selectMenu]
-                    });
-                } else {
-                    await i.deferUpdate();
-                    collector.stop();
-                    const User = require('../models/User');
-                    const updatedUser = await User.findOne({ discordId: user.discordId });
-                    const embed = createShopEmbed(updatedUser);
-                    const selectMenu = createSlotSelectMenu(updatedUser);
-                    await i.editReply({
-                        embeds: [embed],
-                        components: [selectMenu]
-                    });
-                }
+                // 컬렉터를 먼저 정지
+                collector.stop('shop_refresh');
+                
+                // InteractionHandler에서 이미 defer했으므로 바로 처리
+                const User = require('../models/User');
+                const updatedUser = await User.findOne({ discordId: user.discordId });
+                const embed = createShopEmbed(updatedUser);
+                const selectMenu = createSlotSelectMenu(updatedUser);
+                await i.editReply({
+                    embeds: [embed],
+                    components: [selectMenu]
+                });
             } catch (error) {
                 console.error('shop_refresh 처리 중 오류:', error);
-                if (!i.replied && !i.deferred) {
-                    await i.reply({ content: '❌ 오류가 발생했습니다.', flags: 64 });
+                // 에러가 났을 때만 대체 처리
+                if (error.code === 10062) {
+                    // Unknown interaction - 이미 만료됨
+                    try {
+                        const channel = i.channel || i.message?.channel;
+                        if (channel) {
+                            const User = require('../models/User');
+                            const updatedUser = await User.findOne({ discordId: user.discordId });
+                            const embed = createShopEmbed(updatedUser);
+                            const selectMenu = createSlotSelectMenu(updatedUser);
+                            await channel.send({
+                                embeds: [embed],
+                                components: [selectMenu]
+                            });
+                        }
+                    } catch (sendError) {
+                        console.error('대체 메시지 전송 실패:', sendError);
+                    }
                 }
             }
         }
@@ -1555,6 +1768,695 @@ async function handleMultiGacha(interaction, getUser, saveUser) {
     }
 }
 
+// 100회 뽑기 처리
+async function handleHundredGacha(interaction, getUser, saveUser) {
+    // retry_hundred인 경우와 일반 hundred gacha 구분
+    const isRetry = interaction.customId.startsWith('retry_hundred_');
+    
+    // customId 파싱 - gacha_hundred_weapon_123456789 또는 retry_hundred_weapon_123456789 형식
+    const parts = interaction.customId.split('_');
+    const selectedSlot = parts[2];
+    const targetUserId = parts[3];
+    
+    // 사용자 확인
+    if (targetUserId && targetUserId !== interaction.user.id) {
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ 다른 사람의 뽑기입니다!',
+                    flags: 64
+                });
+            }
+        } catch (e) {
+            console.error('[handleHundredGacha] 타인 접근 응답 실패:', e);
+        }
+        return;
+    }
+    
+    // 중복 클릭 방지
+    const gachaKey = `${targetUserId || interaction.user.id}_hundred_${selectedSlot}`;
+    
+    // 동일한 뽑기가 진행 중인지 확인
+    console.log(`[handleHundredGacha] 처리 시작 - 사용자: ${interaction.user.id}, 키: ${gachaKey}`);
+    
+    const existingTimestamp = gachaInProgress.get(gachaKey);
+    if (existingTimestamp && Date.now() - existingTimestamp < 10000) { // 10초 이내
+        console.log('[handleHundredGacha] 이미 처리 중인 뽑기입니다.');
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '⏳ 뽑기가 이미 진행 중입니다. 잠시 기다려주세요.',
+                    flags: 64
+                });
+            }
+        } catch (e) {
+            console.error('[handleHundredGacha] 중복 알림 실패:', e);
+        }
+        return;
+    }
+    
+    // 처리 시작 표시
+    gachaInProgress.set(gachaKey, Date.now());
+    
+    // 90초 후 자동 해제 (100회 뽑기는 시간이 오래 걸림)
+    const cleanupTimeout = setTimeout(() => {
+        if (gachaInProgress.has(gachaKey)) {
+            console.log(`[handleHundredGacha] 90초 경과 - 자동 해제: ${gachaKey}`);
+            gachaInProgress.delete(gachaKey);
+        }
+    }, 90000);
+    
+    try {
+        // defer 처리
+        let deferSuccess = false;
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                if (isRetry) {
+                    await interaction.deferUpdate();
+                } else {
+                    await interaction.deferReply();
+                }
+                deferSuccess = true;
+            }
+        } catch (error) {
+            console.error('[handleHundredGacha] defer 오류:', error);
+            return;
+        }
+        
+        // 트랜잭션 방식으로 처리
+        const result = await ShopTransactionManager.executeHundredGacha(
+            interaction.user.id,
+            selectedSlot,
+            generateItemWithPity
+        );
+        
+        if (!result.success) {
+            throw new Error(result.error || '100회 뽑기에 실패했습니다.');
+        }
+        
+        const { user, items, levelUps } = result;
+        
+        // 애니메이션
+        const rollingEmbed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🎰 100회 뽑기 중...')
+            .setDescription('잠시만 기다려주세요... (아이템 100개 생성 중)')
+            .setImage(GAME_GIFS.shop.gacha);
+        
+        try {
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({
+                    embeds: [rollingEmbed],
+                    components: []
+                });
+            }
+        } catch (replyError) {
+            console.error('[handleHundredGacha] 응답 전송 실패:', replyError);
+        }
+        
+        // 애니메이션 시간
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // 희귀도별 정렬 및 통계
+        const rarityOrder = ['legendary', 'unique', 'epic', 'rare', 'normal', 'trash'];
+        items.sort((a, b) => rarityOrder.indexOf(a.rarity) - rarityOrder.indexOf(b.rarity));
+        
+        // 희귀도별 카운트
+        const rarityCounts = {
+            legendary: 0,
+            unique: 0,
+            epic: 0,
+            rare: 0,
+            normal: 0,
+            trash: 0
+        };
+        
+        items.forEach(item => {
+            if (rarityCounts.hasOwnProperty(item.rarity)) {
+                rarityCounts[item.rarity]++;
+            }
+        });
+        
+        // 결과 요약 표시
+        const summaryEmbed = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('🎊 100회 뽑기 완료!')
+            .setDescription(`**${interaction.member.displayName}**님의 100회 뽑기 결과입니다.`)
+            .addFields(
+                {
+                    name: '📊 획득 아이템 통계',
+                    value: `🟠 전설: ${rarityCounts.legendary}개\n` +
+                           `🟣 유니크: ${rarityCounts.unique}개\n` +
+                           `🔴 에픽: ${rarityCounts.epic}개\n` +
+                           `🔵 레어: ${rarityCounts.rare}개\n` +
+                           `⚪ 일반: ${rarityCounts.normal}개\n` +
+                           `🟤 쓰레기: ${rarityCounts.trash}개`,
+                    inline: true
+                },
+                {
+                    name: '📈 상점 정보',
+                    value: `레벨: ${user.shopLevels[selectedSlot].level}${levelUps > 0 ? ` (+${levelUps})` : ''}\n` +
+                           `경험치: ${user.shopLevels[selectedSlot].exp}/${getRequiredExp(user.shopLevels[selectedSlot].level)}`,
+                    inline: true
+                }
+            )
+            .setFooter({ text: '모든 아이템이 인벤토리에 저장되었습니다!' })
+            .setTimestamp();
+        
+        // 전설 아이템이 있으면 전설 아이템 보기 버튼 추가
+        const legendaryItems = items.filter(item => item.rarity === 'legendary');
+        
+        const buttons = new ActionRowBuilder();
+        
+        if (legendaryItems.length > 0) {
+            buttons.addComponents(
+                new ButtonBuilder()
+                    .setCustomId('view_legendary_items')
+                    .setLabel(`🟠 전설 아이템 보기 (${legendaryItems.length}개)`)
+                    .setStyle(ButtonStyle.Danger)
+            );
+        }
+        
+        buttons.addComponents(
+            new ButtonBuilder()
+                .setCustomId('view_hundred_items')
+                .setLabel('📦 전체 목록')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`retry_hundred_${selectedSlot}_${user.discordId}`)
+                .setLabel('🎰 다시 100회 뽑기')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(user.gold < 900000),
+            new ButtonBuilder()
+                .setCustomId('shop_refresh')
+                .setLabel('🔙 상점으로')
+                .setStyle(ButtonStyle.Secondary)
+        );
+        
+        const reply = await interaction.editReply({
+            embeds: [summaryEmbed],
+            components: [buttons]
+        });
+        
+        // 메시지에 데이터 저장 (hundred_close 버튼에서 사용)
+        reply.hundred_gacha_data = { user, items, levelUps, selectedSlot };
+        
+        // 전역 임시 저장소에도 저장 (view_legendary_items에서 사용)
+        const tempKey = `hundred_${user.discordId}`;
+        hundredGachaTempData.set(tempKey, { user, items, levelUps, selectedSlot });
+        
+        // 5분 후 자동 삭제
+        setTimeout(() => {
+            hundredGachaTempData.delete(tempKey);
+        }, 300000);
+        
+        // 전설/유니크 아이템이 많으면 공지
+        if (rarityCounts.legendary >= 3 || rarityCounts.unique >= 5) {
+            const rareItems = items.filter(item => 
+                item.rarity === 'legendary' || item.rarity === 'unique'
+            );
+            
+            const announceEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🎊 100회 뽑기 대박!')
+                .setDescription(`**${interaction.member.displayName}**님이 100회 뽑기에서 대박이 났습니다!`)
+                .addFields({
+                    name: '✨ 획득한 희귀 아이템',
+                    value: `🟠 전설: ${rarityCounts.legendary}개\n🟣 유니크: ${rarityCounts.unique}개`,
+                    inline: false
+                })
+                .setFooter({ text: `${SLOT_NAMES[selectedSlot]} 상점` })
+                .setTimestamp();
+            
+            await interaction.followUp({
+                embeds: [announceEmbed]
+            });
+        }
+        
+        // 컬렉터는 사용하지 않음 - 모든 버튼 처리는 handleShopInteraction에서 직접 처리
+        // 처리 완료 후 진행 상태 삭제
+        gachaInProgress.delete(gachaKey);
+        
+    } catch (error) {
+        console.error('[handleHundredGacha] 처리 중 오류:', error);
+        gachaInProgress.delete(gachaKey);
+        if (typeof cleanupTimeout !== 'undefined') {
+            clearTimeout(cleanupTimeout);
+        }
+        
+        try {
+            const user = await getUser(interaction.user.id);
+            if (user && interaction.deferred || interaction.replied) {
+                await showGachaOptions(interaction, user, selectedSlot);
+            }
+        } catch (replyError) {
+            console.error('[handleHundredGacha] 응답 전송 실패:', replyError);
+        }
+    } finally {
+        if (typeof cleanupTimeout !== 'undefined') {
+            clearTimeout(cleanupTimeout);
+        }
+    }
+}
+
+// 전설 아이템 상세 표시 (10회 뽑기 스타일)
+async function showLegendaryItemDetail(interaction, legendaryItems, currentPage, user, selectedSlot) {
+    console.log('[showLegendaryItemDetail] 함수 시작');
+    console.log('[showLegendaryItemDetail] legendaryItems:', legendaryItems?.length);
+    console.log('[showLegendaryItemDetail] currentPage:', currentPage);
+    console.log('[showLegendaryItemDetail] selectedSlot:', selectedSlot);
+    
+    if (!legendaryItems || legendaryItems.length === 0 || currentPage >= legendaryItems.length) {
+        console.log('[showLegendaryItemDetail] 조건 미충족으로 종료');
+        return;
+    }
+    
+    const item = legendaryItems[currentPage];
+    const totalPages = legendaryItems.length;
+    
+    // 아이템 이름 분석
+    const nameParts = item.name.split(' ');
+    let prefix = nameParts[0] || '';
+    let adjective = nameParts[1] || '';
+    let itemName = nameParts.slice(2).join(' ') || '';
+    
+    // 10회 뽑기 스타일 임베드 생성
+    const detailEmbed = new EmbedBuilder()
+        .setColor(item.color || '#FFD700')
+        .setTitle(`⭐ ${item.rarity.toUpperCase()} 아이템 획득! (${currentPage + 1}/${totalPages})`)
+        .setDescription(`### ${item.emoji || SLOT_EMOJIS[item.type] || '🟠'} ${item.name}\n\n${item.description || '전설로만 전해지던 신화의 아이템입니다.'}\n\n✅ **인벤토리에 자동 저장되었습니다!**`);
+    
+    // 전설 아이템은 항상 jackpot GIF
+    detailEmbed.setImage(GAME_GIFS.shop.jackpot);
+    
+    // 아이템 구성
+    detailEmbed.addFields({
+        name: '아이템 구성',
+        value: `${getRarityEmoji(item.nameRarities?.prefix || item.rarity)} ${prefix} *(${item.nameRarities?.prefix || item.rarity})*\n` +
+               `${getRarityEmoji(item.nameRarities?.adjective || item.rarity)} ${adjective} *(${item.nameRarities?.adjective || item.rarity})*\n` +
+               `${getRarityEmoji(item.nameRarities?.itemName || item.rarity)} ${itemName} *(${item.nameRarities?.itemName || item.rarity})*`,
+        inline: false
+    });
+    
+    // 아이템 평가
+    const scoreBar = createProgressBar(item.score || 0, 100);
+    detailEmbed.addFields({
+        name: '⭐ 아이템 평가',
+        value: `${scoreBar} **${item.score || 0}점**\n${getScoreReaction(item.score || 0)}`,
+        inline: false
+    });
+    
+    // 전설 아이템 특별 설명
+    const epicDescription = getEpicItemDescription(item.rarity, item.score || 0);
+    if (epicDescription) {
+        detailEmbed.addFields({
+            name: '📜 특별한 설명',
+            value: `*"${epicDescription}"*`,
+            inline: false
+        });
+    }
+    
+    // 기본 정보와 주요 능력치 TOP 3
+    const sortedStats = Object.entries(item.stats || {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+    
+    // 마법사 엠블럼 확인
+    const isMage = user && user.emblem && (
+        user.emblem === '견습 마법사' || 
+        user.emblem === '원소 술사' ||
+        user.emblem === '신비한 현자' ||
+        user.emblem === '대마법사' ||
+        user.emblem === '전설의 아크메이지' ||
+        user.emblem.includes('마법사') ||
+        user.emblem.includes('아크메이지')
+    );
+    
+    let topStatsText = '';
+    sortedStats.forEach(([key, value]) => {
+        const statNames = {
+            attack: isMage ? '마력' : '공격력',
+            defense: '방어력',
+            strength: '힘',
+            agility: '민첩',
+            intelligence: '지능',
+            vitality: '체력',
+            luck: '행운',
+            hp: 'HP',
+            dodge: '회피',
+            accuracy: '명중률',
+            evasion: '회피율',
+            criticalRate: '치명타율',
+            criticalDamage: '치명타 피해',
+            lifesteal: '생명력 흡수'
+        };
+        topStatsText += `${statNames[key] || key}: +${value}\n`;
+    });
+    
+    detailEmbed.addFields(
+        {
+            name: '📊 기본 정보',
+            value: `종류: ${SLOT_NAMES[item.type]}\n가격: ${item.price ? item.price.toLocaleString() : '알 수 없음'} 💰\n판매가: ${item.sellPrice ? item.sellPrice.toLocaleString() : Math.floor((item.price || 10000) * 0.6).toLocaleString()} 💰`,
+            inline: true
+        },
+        {
+            name: '⚡ 주요 능력치 TOP 3',
+            value: topStatsText || '없음',
+            inline: true
+        }
+    );
+    
+    detailEmbed.setFooter({ 
+        text: `전설 아이템 ${currentPage + 1}/${totalPages} | ${SLOT_NAMES[selectedSlot]} 상점 Lv.${user.shopLevels[selectedSlot].level}` 
+    });
+    
+    // 버튼 생성
+    const buttons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('legendary_prev')
+                .setLabel('◀️ 이전')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(currentPage === 0),
+            new ButtonBuilder()
+                .setCustomId('legendary_next')
+                .setLabel('다음 ▶️')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(currentPage === totalPages - 1),
+            new ButtonBuilder()
+                .setCustomId('back_to_hundred_summary')
+                .setLabel('📊 요약으로')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('view_hundred_items')
+                .setLabel('📦 전체 목록')
+                .setStyle(ButtonStyle.Success)
+        );
+    
+    // interaction 상태 확인 후 적절한 응답 방식 선택
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+            embeds: [detailEmbed],
+            components: [buttons]
+        });
+    } else {
+        await interaction.reply({
+            embeds: [detailEmbed],
+            components: [buttons],
+            ephemeral: true
+        });
+    }
+    
+    // 컬렉터 설정
+    const collector = interaction.channel.createMessageComponentCollector({
+        filter: i => i.user.id === user.discordId,
+        time: 60000
+    });
+    
+    collector.on('collect', async (i) => {
+        try {
+            if (i.customId === 'legendary_prev' && currentPage > 0) {
+                collector.stop();
+                await showLegendaryItemDetail(i, legendaryItems, currentPage - 1, user, selectedSlot);
+            } else if (i.customId === 'legendary_next' && currentPage < totalPages - 1) {
+                collector.stop();
+                await showLegendaryItemDetail(i, legendaryItems, currentPage + 1, user, selectedSlot);
+            } else if (i.customId === 'back_to_hundred_summary') {
+                collector.stop();
+                // 요약 화면으로 돌아가기
+                
+                // 임시 데이터에서 요약 정보 가져오기
+                const tempKey = `hundred_${user.discordId}`;
+                const tempData = hundredGachaTempData.get(tempKey);
+                if (tempData) {
+                    const { items, levelUps } = tempData;
+                    
+                    // 희귀도별 카운트
+                    const rarityCount = {
+                        legendary: 0,
+                        unique: 0,
+                        epic: 0,
+                        rare: 0,
+                        normal: 0,
+                        trash: 0
+                    };
+                    
+                    items.forEach(item => {
+                        rarityCount[item.rarity] = (rarityCount[item.rarity] || 0) + 1;
+                    });
+                    
+                    const summaryEmbed = new EmbedBuilder()
+                        .setColor('#FFD700')
+                        .setTitle('🎊 100회 뽑기 완료!')
+                        .setDescription(`**${i.member.displayName}**님의 100회 뽑기 결과입니다.`)
+                        .addFields(
+                            {
+                                name: '📊 희귀도별 통계',
+                                value: `${RARITY_EMOJIS.legendary} 레전더리: **${rarityCount.legendary}개**\n` +
+                                       `${RARITY_EMOJIS.unique} 유니크: **${rarityCount.unique}개**\n` +
+                                       `${RARITY_EMOJIS.epic} 에픽: **${rarityCount.epic}개**\n` +
+                                       `${RARITY_EMOJIS.rare} 레어: **${rarityCount.rare}개**\n` +
+                                       `${RARITY_EMOJIS.normal} 일반: **${rarityCount.normal}개**\n` +
+                                       `${RARITY_EMOJIS.trash} 쓰레기: **${rarityCount.trash}개**`,
+                                inline: true
+                            }
+                        )
+                        .setFooter({ text: '모든 아이템이 인벤토리에 저장되었습니다!' })
+                        .setTimestamp();
+                    
+                    // 레벨업 정보 추가
+                    if (levelUps && levelUps.length > 0) {
+                        const levelUpInfo = levelUps.map(lu => 
+                            `레벨 ${lu.from} → ${lu.to} (+${lu.statPoints} 스탯 포인트)`
+                        ).join('\n');
+                        summaryEmbed.addFields({
+                            name: '🎉 레벨업!',
+                            value: levelUpInfo,
+                            inline: true
+                        });
+                    }
+                    
+                    const buttons = new ActionRowBuilder();
+                    
+                    // 레전더리 아이템 상세보기 버튼
+                    const legendaryItems = items.filter(item => item.rarity === 'legendary');
+                    if (legendaryItems.length > 0) {
+                        buttons.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('view_legendary_items')
+                                .setLabel(`🏆 레전더리 상세보기 (${legendaryItems.length}개)`)
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    }
+                    
+                    buttons.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('view_hundred_items')
+                            .setLabel('📦 전체 목록')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId(`retry_hundred_${selectedSlot}_${user.discordId}`)
+                            .setLabel('🎰 다시 100회 뽑기')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(user.gold < 900000),
+                        new ButtonBuilder()
+                            .setCustomId('shop_refresh')
+                            .setLabel('🔙 상점으로')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+                    
+                    await i.editReply({
+                        embeds: [summaryEmbed],
+                        components: [buttons]
+                    });
+                }
+            } else if (i.customId === 'view_hundred_items') {
+                // 전체 목록 보기
+                const tempKey = `hundred_${user.discordId}`;
+                const tempData = hundredGachaTempData.get(tempKey);
+                if (tempData) {
+                    const { items } = tempData;
+                    let currentPage = 0;
+                    const itemsPerPage = 10;
+                    const totalPages = Math.ceil(items.length / itemsPerPage);
+                    await showHundredItemsPage(i, items, currentPage, itemsPerPage, totalPages);
+                } else {
+                    await i.editReply({
+                        content: '⚠️ 아이템 목록을 찾을 수 없습니다.',
+                        embeds: [],
+                        components: []
+                    });
+                }
+                collector.stop();
+            }
+        } catch (error) {
+            console.error('[showLegendaryItemDetail] 컬렉터 오류:', error);
+        }
+    });
+}
+
+// 100회 아이템 목록 표시
+async function showHundredItemsPage(interaction, items, currentPage, itemsPerPage, totalPages) {
+    const startIdx = currentPage * itemsPerPage;
+    const endIdx = startIdx + itemsPerPage;
+    const pageItems = items.slice(startIdx, endIdx);
+    
+    const embed = new EmbedBuilder()
+        .setColor('#FFD700')
+        .setTitle(`📦 100회 뽑기 아이템 목록 (${currentPage + 1}/${totalPages})`)
+        .setDescription('획득한 아이템 목록입니다.')
+        .setFooter({ text: `전체 ${items.length}개 아이템 | 페이지 ${currentPage + 1}/${totalPages}` });
+    
+    pageItems.forEach((item, idx) => {
+        const num = startIdx + idx + 1;
+        embed.addFields({
+            name: `${num}. ${item.emoji || '⚪'} ${item.name}`,
+            value: `레어도: ${item.rarity} | 점수: ${item.score || 0}`,
+            inline: true
+        });
+    });
+    
+    const buttons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('hundred_prev')
+                .setLabel('◀️ 이전')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(currentPage === 0),
+            new ButtonBuilder()
+                .setCustomId('hundred_next')
+                .setLabel('다음 ▶️')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(currentPage === totalPages - 1),
+            new ButtonBuilder()
+                .setCustomId('hundred_close')
+                .setLabel('닫기')
+                .setStyle(ButtonStyle.Danger)
+        );
+    
+    await interaction.editReply({
+        embeds: [embed],
+        components: [buttons]
+    });
+    
+    // 페이지 네비게이션 컬렉터
+    const collector = interaction.channel.createMessageComponentCollector({
+        filter: i => i.user.id === interaction.user.id,
+        time: 60000
+    });
+    
+    collector.on('collect', async (i) => {
+        try {
+            await i.deferUpdate().catch(() => {});
+            
+            if (i.customId === 'hundred_prev' && currentPage > 0) {
+                await showHundredItemsPage(i, items, currentPage - 1, itemsPerPage, totalPages);
+                collector.stop();
+            } else if (i.customId === 'hundred_next' && currentPage < totalPages - 1) {
+                await showHundredItemsPage(i, items, currentPage + 1, itemsPerPage, totalPages);
+                collector.stop();
+            } else if (i.customId === 'hundred_close') {
+                collector.stop();
+                // 메인 화면으로 돌아가기
+                const tempKey = `hundred_${i.user.id}`;
+                const tempData = hundredGachaTempData.get(tempKey);
+                
+                if (tempData) {
+                    const { items, levelUps, selectedSlot } = tempData;
+                    const user = await User.findOne({ discordId: i.user.id });
+                    
+                    // 희귀도별 카운트
+                    const rarityCount = {
+                        legendary: 0,
+                        unique: 0,
+                        epic: 0,
+                        rare: 0,
+                        normal: 0,
+                        trash: 0
+                    };
+                    
+                    items.forEach(item => {
+                        rarityCount[item.rarity] = (rarityCount[item.rarity] || 0) + 1;
+                    });
+                    
+                    const summaryEmbed = new EmbedBuilder()
+                        .setColor('#FFD700')
+                        .setTitle('🎊 100회 뽑기 완료!')
+                        .setDescription(`**${i.member.displayName}**님의 100회 뽑기 결과입니다.`)
+                        .addFields(
+                            {
+                                name: '📊 희귀도별 통계',
+                                value: `${RARITY_EMOJIS.legendary} 레전더리: **${rarityCount.legendary}개**\n` +
+                                       `${RARITY_EMOJIS.unique} 유니크: **${rarityCount.unique}개**\n` +
+                                       `${RARITY_EMOJIS.epic} 에픽: **${rarityCount.epic}개**\n` +
+                                       `${RARITY_EMOJIS.rare} 레어: **${rarityCount.rare}개**\n` +
+                                       `${RARITY_EMOJIS.normal} 일반: **${rarityCount.normal}개**\n` +
+                                       `${RARITY_EMOJIS.trash} 쓰레기: **${rarityCount.trash}개**`,
+                                inline: true
+                            }
+                        )
+                        .setFooter({ text: '모든 아이템이 인벤토리에 저장되었습니다!' })
+                        .setTimestamp();
+                    
+                    // 레벨업 정보 추가
+                    if (levelUps && levelUps.length > 0) {
+                        const levelUpInfo = levelUps.map(lu => 
+                            `레벨 ${lu.from} → ${lu.to} (+${lu.statPoints} 스탯 포인트)`
+                        ).join('\n');
+                        summaryEmbed.addFields({
+                            name: '🎉 레벨업!',
+                            value: levelUpInfo,
+                            inline: true
+                        });
+                    }
+                    
+                    const buttons = new ActionRowBuilder();
+                    
+                    // 레전더리 아이템 상세보기 버튼
+                    const legendaryItems = items.filter(item => item.rarity === 'legendary');
+                    if (legendaryItems.length > 0) {
+                        buttons.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('view_legendary_items')
+                                .setLabel(`🏆 레전더리 상세보기 (${legendaryItems.length}개)`)
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    }
+                    
+                    buttons.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('view_hundred_items')
+                            .setLabel('📦 전체 목록')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId(`retry_hundred_${selectedSlot}_${user.discordId}`)
+                            .setLabel('🎰 다시 100회 뽑기')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(user.gold < 900000),
+                        new ButtonBuilder()
+                            .setCustomId('shop_refresh')
+                            .setLabel('🔙 상점으로')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+                    
+                    await i.editReply({
+                        embeds: [summaryEmbed],
+                        components: [buttons]
+                    });
+                } else {
+                    await i.editReply({
+                        content: '⚠️ 요약 정보를 찾을 수 없습니다.',
+                        embeds: [],
+                        components: []
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('[showHundredItemsPage] 컬렉터 오류:', error);
+        }
+    });
+}
+
 // 10회 뽑기 결과 페이지
 async function showMultiGachaResultPage(interaction, items, currentPage, itemsPerPage, user, selectedSlot, levelUps, isRetry = false) {
     const totalPages = 10; // 각 아이템마다 한 페이지
@@ -1650,10 +2552,21 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3);
     
+    // 마법사 엠블럼 확인
+    const isMage = user && user.emblem && (
+        user.emblem === '견습 마법사' || 
+        user.emblem === '원소 술사' ||
+        user.emblem === '신비한 현자' ||
+        user.emblem === '대마법사' ||
+        user.emblem === '전설의 아크메이지' ||
+        user.emblem.includes('마법사') ||
+        user.emblem.includes('아크메이지')
+    );
+    
     let topStatsText = '';
     sortedStats.forEach(([key, value]) => {
         const statNames = {
-            attack: '공격력',
+            attack: isMage ? '마력' : '공격력',
             defense: '방어력',
             strength: '힘',
             agility: '민첩',
@@ -1683,7 +2596,7 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
     const allStats = Object.entries(item.stats || {})
         .map(([key, value]) => {
             const statNames = {
-                attack: '공격력',
+                attack: isMage ? '마력' : '공격력',
                 defense: '방어력',
                 strength: '힘',
                 agility: '민첩',
@@ -1756,7 +2669,7 @@ async function showMultiGachaResultPage(interaction, items, currentPage, itemsPe
                 .setCustomId(`retry_multi_${selectedSlot}_${user.discordId}`)
                 .setLabel('🎰 다시 10회 뽑기')
                 .setStyle(ButtonStyle.Primary)
-                .setDisabled(user.gold < 90000),
+                .setDisabled(user.gold < 100000),
             new ButtonBuilder()
                 .setCustomId('shop_refresh')
                 .setLabel('상점으로')
@@ -2226,8 +3139,8 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
             }
         }
         
-        // 카트 판매 실행
-        else if (i.customId === 'execute_sell_cart') {
+        // 카트 판매 실행 - showCartSellMode에서 처리하므로 여기서는 무시
+        /*else if (i.customId === 'execute_sell_cart') {
             try {
                 // 중복 판매 방지 체크
                 if (sellingInProgress.has(user.discordId)) {
@@ -2492,7 +3405,7 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
                 }
                 sellingInProgress.delete(user.discordId);
             }
-        }
+        }*/
 
         // 페이지 네비게이션
         else if (i.customId === 'sell_prev') {
@@ -2818,7 +3731,7 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
                         value: `등급: ${item.rarity.toUpperCase()}\n` +
                                `종류: ${SLOT_NAMES[item.type]}\n` +
                                `가격: ${item.price.toLocaleString()}G\n` +
-                               `능력치: ${formatItemStats(item.stats)}`,
+                               `능력치: ${formatItemStats(item.stats, user)}`,
                         inline: true
                     });
                 });
@@ -2924,7 +3837,7 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
                         .addFields(
                             {
                                 name: '📊 능력치',
-                                value: formatItemStats(selectedItem.stats),
+                                value: formatItemStats(selectedItem.stats, user),
                                 inline: true
                             },
                             {
@@ -3396,9 +4309,25 @@ async function showSellMenu(interaction, user, getUser, saveUser) {
 }
 
 // 능력치 포맷
-function formatItemStats(stats) {
+function formatItemStats(stats, user = null) {
+    // 직업별 스탯 표시 확인 (강화 수치 제거)
+    let isMage = false;
+    if (user) {
+        const emblemName = user.emblem ? user.emblem.replace(/\s*\+\d+$/, '') : '';
+        const equippedEmblemName = user.equippedEmblem ? user.equippedEmblem.replace(/\s*\+\d+$/, '') : '';
+        const checkEmblem = equippedEmblemName || emblemName;
+        
+        if (checkEmblem && (
+            checkEmblem.includes('마법사') || checkEmblem.includes('원소 술사') || 
+            checkEmblem.includes('신비한 현자') || checkEmblem.includes('대마법사') || 
+            checkEmblem.includes('아크메이지')
+        )) {
+            isMage = true;
+        }
+    }
+    
     const statNames = {
-        attack: "⚔️ 공격력",
+        attack: isMage ? "🔮 마력" : "⚔️ 공격력",
         defense: "🛡️ 방어력",
         strength: "💪 힘",
         agility: "🏃 민첩",
@@ -3414,12 +4343,458 @@ function formatItemStats(stats) {
         .join('\n');
 }
 
+// 카트 판매 모드 함수
+async function showCartSellMode(interaction, user, getUser, saveUser) {
+    try {
+        // 최신 사용자 정보 가져오기
+        const User = require('../models/User');
+        const freshUser = await User.findOne({ discordId: user.discordId });
+        
+        if (!freshUser || !freshUser.inventory) {
+            await interaction.editReply({
+                content: '❌ 사용자 정보를 불러올 수 없습니다.',
+                embeds: [],
+                components: []
+            });
+            return;
+        }
+        
+        user = freshUser;
+        
+        // 판매 카트 초기화
+        if (!sellCarts.has(user.discordId)) {
+            sellCarts.set(user.discordId, []);
+        }
+        
+        // 판매 가능한 아이템 필터링
+        const sellableItems = user.inventory.filter((item, index) => {
+            if (!item || !item.id) return false;
+            
+            // inventorySlot이 없으면 인덱스로 설정
+            if (item.inventorySlot === undefined) {
+                item.inventorySlot = index;
+            }
+            
+            // 사냥 전리품 제외
+            if (item.type === 'material' || item.fromMonster || item.fromArea) {
+                return false;
+            }
+            
+            // 장착 중인지 확인
+            const isEquipped = Object.values(user.equipment || {}).some(slotIndex => 
+                slotIndex !== null && slotIndex !== undefined && slotIndex !== -1 &&
+                item.inventorySlot !== undefined && item.inventorySlot === slotIndex
+            );
+            
+            return !isEquipped;
+        });
+        
+        if (sellableItems.length === 0) {
+            const embed = new EmbedBuilder()
+                .setColor('#FF0000')
+                .setTitle('💰 카트 판매')
+                .setDescription('판매할 수 있는 장비가 없습니다.')
+                .setFooter({ text: '상점으로 돌아가려면 아래 버튼을 클릭하세요' });
+            
+            const backButton = new ButtonBuilder()
+                .setCustomId('shop_refresh')
+                .setLabel('상점으로 돌아가기')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('🏪');
+            
+            await interaction.editReply({
+                embeds: [embed],
+                components: [new ActionRowBuilder().addComponents(backButton)]
+            });
+            return;
+        }
+        
+        // 아이템을 등급별로 정렬
+        const rarityOrder = ['legendary', 'unique', 'epic', 'rare', 'normal', 'trash'];
+        sellableItems.sort((a, b) => {
+            const rarityDiff = rarityOrder.indexOf(a.rarity) - rarityOrder.indexOf(b.rarity);
+            if (rarityDiff !== 0) return rarityDiff;
+            return (b.sellPrice || 0) - (a.sellPrice || 0);
+        });
+        
+        // 페이지네이션 설정
+        const itemsPerPage = 10;
+        let currentPage = 0;
+        const totalPages = Math.ceil(sellableItems.length / itemsPerPage);
+        
+        const showCartPage = async (page) => {
+            const start = page * itemsPerPage;
+            const end = start + itemsPerPage;
+            const pageItems = sellableItems.slice(start, end);
+            const userCart = sellCarts.get(user.discordId) || [];
+            
+            // 카트 총 가격 계산
+            const cartTotal = userCart.reduce((sum, cartItem) => {
+                const sellPrice = cartItem.item.sellPrice || Math.floor((cartItem.item.price || 0) * 0.3);
+                return sum + sellPrice;
+            }, 0);
+            
+            const embed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle(`💰 카트 판매 (${page + 1}/${totalPages})`)
+                .setDescription(`아이템을 선택하여 카트에 추가하세요\n**🛒 현재 카트**: ${userCart.length}개, 총 ${cartTotal.toLocaleString()}G`)
+                .setFooter({ text: `총 ${sellableItems.length}개의 장비 | 보유 골드: ${user.gold.toLocaleString()}G` });
+            
+            // 드롭다운 메뉴 옵션 생성
+            const selectOptions = pageItems.map((item, index) => {
+                const globalIndex = start + index;
+                const sellPrice = item.sellPrice || Math.floor((item.price || 0) * 0.3);
+                const inCart = userCart.some(ci => ci.item.id === item.id);
+                
+                return {
+                    label: `${globalIndex + 1}. ${item.name}${inCart ? ' (카트에 있음)' : ''}`,
+                    description: `${item.rarity} | ${sellPrice.toLocaleString()}G`,
+                    value: `cart_add_${item.id}`,
+                    emoji: getRarityEmoji(item.rarity)
+                };
+            });
+            
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('cart_item_select')
+                .setPlaceholder('카트에 추가/제거할 아이템 선택 (여러개 가능)')
+                .setMinValues(1)
+                .setMaxValues(Math.min(selectOptions.length, 25))
+                .addOptions(selectOptions);
+            
+            const navigation = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('cart_prev_page')
+                    .setLabel('◀')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page === 0),
+                new ButtonBuilder()
+                    .setCustomId('view_sell_cart')
+                    .setLabel(`카트 (${userCart.length})`)
+                    .setStyle(ButtonStyle.Primary)
+                    .setDisabled(userCart.length === 0),
+                new ButtonBuilder()
+                    .setCustomId('execute_sell_cart')
+                    .setLabel('판매')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(userCart.length === 0),
+                new ButtonBuilder()
+                    .setCustomId('cart_clear')
+                    .setLabel('비우기')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('🗑️')
+                    .setDisabled(userCart.length === 0),
+                new ButtonBuilder()
+                    .setCustomId('cart_next_page')
+                    .setLabel('▶')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page >= totalPages - 1)
+            );
+            
+            const backButton = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('sell_menu')
+                    .setLabel('뒤로가기')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            
+            await interaction.editReply({
+                embeds: [embed],
+                components: [new ActionRowBuilder().addComponents(selectMenu), navigation, backButton]
+            });
+        };
+        
+        await showCartPage(currentPage);
+        
+        // 컬렉터 생성
+        const collector = interaction.channel.createMessageComponentCollector({
+            filter: i => i.user.id === user.discordId,
+            time: 300000 // 5분
+        });
+        
+        collector.on('collect', async i => {
+            try {
+                // defer 처리 개선
+                if (!i.deferred && !i.replied) {
+                    try {
+                        await i.deferUpdate();
+                    } catch (error) {
+                        if (error.code !== 10062) {
+                            console.error('Defer error:', error);
+                        }
+                        return;
+                    }
+                }
+                
+                if (i.customId === 'cart_prev_page') {
+                    currentPage = Math.max(0, currentPage - 1);
+                    await showCartPage(currentPage);
+                }
+                else if (i.customId === 'cart_next_page') {
+                    currentPage = Math.min(totalPages - 1, currentPage + 1);
+                    await showCartPage(currentPage);
+                }
+                else if (i.customId === 'cart_item_select') {
+                    console.log('[Cart] 카트 아이템 선택:', i.values);
+                    const selectedItemIds = i.values.map(value => value.replace('cart_add_', ''));
+                    console.log('[Cart] 선택된 아이템 ID:', selectedItemIds);
+                    
+                    const userCart = sellCarts.get(user.discordId) || [];
+                    console.log('[Cart] 현재 카트 상태:', userCart.length, '개');
+                    console.log('[Cart] 판매 가능 아이템 수:', sellableItems.length);
+                    console.log('[Cart] 첫 번째 아이템 ID 샘플:', sellableItems[0]?.id);
+                    
+                    let addedCount = 0;
+                    let removedCount = 0;
+                    let results = [];
+                    
+                    for (const itemId of selectedItemIds) {
+                        const item = sellableItems.find(item => item.id === itemId);
+                        console.log('[Cart] 아이템 검색:', itemId, '→', item ? item.name : 'NOT FOUND');
+                        if (!item) {
+                            console.log('[Cart] 사용 가능한 아이템 ID들:', sellableItems.map(i => i.id).slice(0, 5));
+                            continue;
+                        }
+                        
+                        const existingIndex = userCart.findIndex(ci => ci.item.id === item.id);
+                        
+                        if (existingIndex >= 0) {
+                            // 카트에서 제거
+                            userCart.splice(existingIndex, 1);
+                            removedCount++;
+                            results.push(`❌ ${item.name}`);
+                        } else {
+                            // 카트에 추가
+                            userCart.push({ item });
+                            addedCount++;
+                            results.push(`✅ ${item.name}`);
+                        }
+                    }
+                    
+                    sellCarts.set(user.discordId, userCart);
+                    
+                    // 결과 메시지
+                    let message = '';
+                    if (addedCount > 0) message += `✅ ${addedCount}개 아이템을 카트에 추가\n`;
+                    if (removedCount > 0) message += `❌ ${removedCount}개 아이템을 카트에서 제거\n`;
+                    
+                    if (results.length <= 10) {
+                        message += '\n' + results.join('\n');
+                    } else {
+                        message += `\n${results.slice(0, 5).join('\n')}\n... 외 ${results.length - 5}개`;
+                    }
+                    
+                    await i.followUp({
+                        content: message,
+                        flags: 64
+                    });
+                    
+                    await showCartPage(currentPage);
+                }
+                else if (i.customId === 'view_sell_cart') {
+                    const userCart = sellCarts.get(user.discordId) || [];
+                    
+                    if (userCart.length === 0) {
+                        await i.followUp({
+                            content: '🛒 카트가 비어있습니다.',
+                            flags: 64
+                        });
+                        return;
+                    }
+                    
+                    const cartEmbed = new EmbedBuilder()
+                        .setColor('#00FF00')
+                        .setTitle('🛒 판매 카트')
+                        .setDescription('카트에 담긴 아이템 목록');
+                    
+                    let totalPrice = 0;
+                    userCart.forEach((cartItem, index) => {
+                        const sellPrice = cartItem.item.sellPrice || Math.floor((cartItem.item.price || 0) * 0.3);
+                        totalPrice += sellPrice;
+                        cartEmbed.addFields({
+                            name: `${index + 1}. ${getRarityEmoji(cartItem.item.rarity)} ${cartItem.item.name}`,
+                            value: `판매가: ${sellPrice.toLocaleString()}G`,
+                            inline: false
+                        });
+                    });
+                    
+                    cartEmbed.setFooter({ text: `총 ${userCart.length}개 | 총 판매가: ${totalPrice.toLocaleString()}G` });
+                    
+                    await i.followUp({
+                        embeds: [cartEmbed],
+                        flags: 64
+                    });
+                }
+                else if (i.customId === 'execute_sell_cart') {
+                    const userCart = sellCarts.get(user.discordId) || [];
+                    
+                    if (userCart.length === 0) {
+                        await i.followUp({
+                            content: '🛒 카트가 비어있습니다.',
+                            flags: 64
+                        });
+                        return;
+                    }
+                    
+                    // 확인 메시지
+                    let totalPrice = 0;
+                    userCart.forEach(cartItem => {
+                        const sellPrice = cartItem.item.sellPrice || Math.floor((cartItem.item.price || 0) * 0.3);
+                        totalPrice += sellPrice;
+                    });
+                    
+                    const confirmEmbed = new EmbedBuilder()
+                        .setColor('#FF9900')
+                        .setTitle('⚠️ 일괄 판매 확인')
+                        .setDescription(`카트에 담긴 **${userCart.length}개**의 아이템을 판매하시겠습니까?`)
+                        .addFields({
+                            name: '💰 총 판매 금액',
+                            value: `${totalPrice.toLocaleString()}G`,
+                            inline: false
+                        });
+                    
+                    const confirmButtons = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('confirm_cart_sell')
+                            .setLabel('판매 확인')
+                            .setStyle(ButtonStyle.Success)
+                            .setEmoji('✅'),
+                        new ButtonBuilder()
+                            .setCustomId('cancel_cart_sell')
+                            .setLabel('취소')
+                            .setStyle(ButtonStyle.Danger)
+                            .setEmoji('❌')
+                    );
+                    
+                    await i.editReply({
+                        embeds: [confirmEmbed],
+                        components: [confirmButtons]
+                    });
+                }
+                else if (i.customId === 'confirm_cart_sell') {
+                    const userCart = sellCarts.get(user.discordId) || [];
+                    let totalSoldPrice = 0;
+                    const soldItems = [];
+                    
+                    // 최신 사용자 정보 가져오기
+                    const latestUser = await User.findOne({ discordId: user.discordId });
+                    
+                    // 카트의 아이템들을 판매
+                    for (const cartItem of userCart) {
+                        const itemIndex = latestUser.inventory.findIndex(invItem => 
+                            invItem && invItem.id === cartItem.item.id
+                        );
+                        
+                        if (itemIndex !== -1) {
+                            const sellPrice = cartItem.item.sellPrice || Math.floor((cartItem.item.price || 0) * 0.3);
+                            totalSoldPrice += sellPrice;
+                            soldItems.push(cartItem.item.name);
+                            
+                            // 인벤토리에서 제거
+                            latestUser.inventory.splice(itemIndex, 1);
+                        }
+                    }
+                    
+                    // 골드 추가
+                    latestUser.gold += totalSoldPrice;
+                    await latestUser.save();
+                    
+                    // 카트 비우기
+                    sellCarts.set(user.discordId, []);
+                    
+                    const resultEmbed = new EmbedBuilder()
+                        .setColor('#00FF00')
+                        .setTitle('💰 판매 완료!')
+                        .setDescription(`${soldItems.length}개의 아이템을 판매했습니다`)
+                        .addFields(
+                            {
+                                name: '판매한 아이템',
+                                value: soldItems.slice(0, 10).join('\n') + (soldItems.length > 10 ? `\n... 외 ${soldItems.length - 10}개` : ''),
+                                inline: false
+                            },
+                            {
+                                name: '💵 획득 골드',
+                                value: `+${totalSoldPrice.toLocaleString()}G`,
+                                inline: true
+                            },
+                            {
+                                name: '💰 보유 골드',
+                                value: `${latestUser.gold.toLocaleString()}G`,
+                                inline: true
+                            }
+                        );
+                    
+                    await i.editReply({
+                        embeds: [resultEmbed],
+                        components: []
+                    });
+                    
+                    collector.stop();
+                }
+                else if (i.customId === 'cancel_cart_sell') {
+                    await showCartPage(currentPage);
+                }
+                else if (i.customId === 'sell_menu') {
+                    collector.stop();
+                    await showSellMenu(i, user, getUser, saveUser);
+                }
+                // 카트 비우기
+                else if (i.customId === 'cart_clear') {
+                    sellCarts.set(user.discordId, []);
+                    
+                    await i.followUp({
+                        content: '🗑️ 카트를 비웠습니다.',
+                        flags: 64
+                    });
+                    
+                    await showCartPage(currentPage);
+                }
+                
+            } catch (error) {
+                console.error('카트 판매 오류:', error);
+                await i.followUp({
+                    content: '❌ 처리 중 오류가 발생했습니다.',
+                    flags: 64
+                }).catch(() => {});
+            }
+        });
+        
+        collector.on('end', () => {
+            // 컬렉터 종료
+        });
+        
+    } catch (error) {
+        console.error('카트 판매 모드 오류:', error);
+        await interaction.editReply({
+            content: '❌ 카트 판매 모드를 불러오는 중 오류가 발생했습니다.',
+            embeds: [],
+            components: []
+        });
+    }
+}
+
 // 모든 지정된 채널에 상점 초기화
 async function initializeAllShops(client) {
-    const shopChannelIds = ['1381614153399140412', '1388182808895291422']; // 엠블럼 상점과 동일한 채널 사용
+    const shopChannelIds = []; // 상점 채널 비활성화
     
     for (const channelId of shopChannelIds) {
-        await initializeShop(client, channelId);
+        try {
+            // 채널 접근 권한 확인
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+            if (!channel) {
+                console.log(`⚠️ 상점: 채널 ${channelId}에 접근할 수 없습니다. 건너뜁니다.`);
+                continue;
+            }
+            
+            // 봇이 메시지를 보낼 권한이 있는지 확인
+            if (channel.type === 0 && !channel.permissionsFor(client.user)?.has(['ViewChannel', 'SendMessages'])) {
+                console.log(`⚠️ 상점: 채널 ${channel.name}에 메시지 전송 권한이 없습니다. 건너뜁니다.`);
+                continue;
+            }
+            
+            await initializeShop(client, channelId);
+        } catch (error) {
+            console.error(`상점: 채널 ${channelId} 초기화 중 오류:`, error);
+        }
     }
 }
 

@@ -71,8 +71,13 @@ const artifactCompanySchema = new mongoose.Schema({
 
 // 인덱스 생성
 // companyId는 unique: true로 이미 인덱스 생성됨
+// 추가 인덱스는 성능상 필요한 경우에만 생성
+// 인덱스 중복 생성 방지를 위해 autoIndex 옵션 사용
 artifactCompanySchema.index({ currentPrice: -1 });
 artifactCompanySchema.index({ totalRevenue: -1 });
+
+// 기존 인덱스와 충돌 방지
+artifactCompanySchema.set('autoIndex', false);
 
 // 가격 업데이트 메서드
 artifactCompanySchema.methods.updatePrice = function(changePercent) {

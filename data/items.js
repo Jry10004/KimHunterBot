@@ -201,6 +201,164 @@ const items = {
             effect: { allStatBuff: 10, duration: 3600000 }, // 1시간
             description: '1시간 동안 모든 스탯이 10 증가합니다',
             tradeable: true
+        },
+        // 완벽한 엠블럼 강화석 (소비 아이템으로 추가)
+        emblem_enhancement_stone_perfect_consumable: {
+            id: 'emblem_enhancement_stone_perfect',
+            name: '완벽한 엠블럼 강화석',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { emblemEnhance: 1, successRate: 100 },
+            description: '엠블럼을 100% 확률로 강화합니다',
+            tradeable: false
+        },
+        // 헌터 승급서 시리즈
+        hunter_upgrade_immortal: {
+            id: 'hunter_upgrade_immortal',
+            name: '불멸헌터 승급서',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { upgradeRank: 'immortal_hunter', fromRank: 'hunter_16', toRank: 'immortal_hunter' },
+            description: '헌터 17강에서 불멸헌터로 승급시킵니다',
+            tradeable: false
+        },
+        hunter_upgrade_cosmic: {
+            id: 'hunter_upgrade_cosmic',
+            name: '우주헌터 승급서',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { upgradeRank: 'cosmic_hunter', fromRank: 'immortal_hunter', toRank: 'cosmic_hunter' },
+            description: '불멸헌터에서 우주헌터로 승급시킵니다',
+            tradeable: false
+        },
+        hunter_upgrade_spacetime: {
+            id: 'hunter_upgrade_spacetime',
+            name: '시공헌터 승급서',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { upgradeRank: 'spacetime_hunter', fromRank: 'cosmic_hunter', toRank: 'spacetime_hunter' },
+            description: '우주헌터에서 시공헌터로 승급시킵니다',
+            tradeable: false
+        },
+        hunter_upgrade_destruction: {
+            id: 'hunter_upgrade_destruction',
+            name: '파멸헌터 승급서',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { upgradeRank: 'destruction_hunter', fromRank: 'spacetime_hunter', toRank: 'destruction_hunter' },
+            description: '시공헌터에서 파멸헌터로 승급시킵니다',
+            tradeable: false
+        },
+        hunter_upgrade_absolute: {
+            id: 'hunter_upgrade_absolute',
+            name: '절대헌터 승급서',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { upgradeRank: 'absolute_hunter', fromRank: 'destruction_hunter', toRank: 'absolute_hunter' },
+            description: '파멸헌터에서 절대헌터로 승급시킵니다',
+            tradeable: false
+        },
+        hunter_upgrade_kim: {
+            id: 'hunter_upgrade_kim',
+            name: '김헌터 승급서',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { upgradeRank: 'kim_hunter', fromRank: 'absolute_hunter', toRank: 'kim_hunter' },
+            description: '절대헌터에서 김헌터로 승급시킵니다',
+            tradeable: false
+        },
+        hunter_upgrade_god: {
+            id: 'hunter_upgrade_god',
+            name: '신 승급서',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { upgradeRank: 'god', fromRank: 'kim_hunter', toRank: 'god' },
+            description: '김헌터에서 신으로 승급시킵니다',
+            tradeable: false
+        },
+        // 엠블럼 보호 주문서
+        emblem_protection_scroll_consumable: {
+            id: 'emblem_protection_scroll_consumable',
+            name: '엠블럼 보호 주문서',
+            type: 'consumable',
+            rarity: 'epic',
+            effect: { emblemProtect: true },
+            description: '엠블럼 강화 실패 시 파괴를 막아줍니다',
+            tradeable: true
+        },
+        // 아이템 보호 주문서
+        item_protection_scroll: {
+            id: 'item_protection_scroll',
+            name: '아이템 보호 주문서',
+            type: 'consumable',
+            rarity: 'epic',
+            effect: { itemProtect: true },
+            description: '아이템 강화 실패 시 파괴를 막아줍니다',
+            tradeable: true
+        },
+        // 강화 확률 증가 주문서
+        enhancement_rate_5: {
+            id: 'enhancement_rate_5',
+            name: '강화 확률 증가 주문서 5%',
+            type: 'consumable',
+            rarity: 'uncommon',
+            effect: { enhanceRateBoost: 5 },
+            description: '다음 강화 시 성공률이 5% 증가합니다',
+            tradeable: true
+        },
+        enhancement_rate_10: {
+            id: 'enhancement_rate_10',
+            name: '강화 확률 증가 주문서 10%',
+            type: 'consumable',
+            rarity: 'rare',
+            effect: { enhanceRateBoost: 10 },
+            description: '다음 강화 시 성공률이 10% 증가합니다',
+            tradeable: true
+        },
+        enhancement_rate_20: {
+            id: 'enhancement_rate_20',
+            name: '강화 확률 증가 주문서 20%',
+            type: 'consumable',
+            rarity: 'rare',
+            effect: { enhanceRateBoost: 20 },
+            description: '다음 강화 시 성공률이 20% 증가합니다',
+            tradeable: true
+        },
+        enhancement_rate_30: {
+            id: 'enhancement_rate_30',
+            name: '강화 확률 증가 주문서 30%',
+            type: 'consumable',
+            rarity: 'epic',
+            effect: { enhanceRateBoost: 30 },
+            description: '다음 강화 시 성공률이 30% 증가합니다',
+            tradeable: true
+        },
+        enhancement_rate_50: {
+            id: 'enhancement_rate_50',
+            name: '강화 확률 증가 주문서 50%',
+            type: 'consumable',
+            rarity: 'epic',
+            effect: { enhanceRateBoost: 50 },
+            description: '다음 강화 시 성공률이 50% 증가합니다',
+            tradeable: true
+        },
+        enhancement_rate_70: {
+            id: 'enhancement_rate_70',
+            name: '강화 확률 증가 주문서 70%',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { enhanceRateBoost: 70 },
+            description: '다음 강화 시 성공률이 70% 증가합니다',
+            tradeable: false
+        },
+        enhancement_rate_100: {
+            id: 'enhancement_rate_100',
+            name: '강화 확률 증가 주문서 100%',
+            type: 'consumable',
+            rarity: 'legendary',
+            effect: { enhanceRateBoost: 100 },
+            description: '다음 강화가 100% 성공합니다',
+            tradeable: false
         }
     },
     

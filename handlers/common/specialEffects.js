@@ -24,15 +24,31 @@ function calculateSpecialEffects(user) {
     if (user.inventory && Array.isArray(user.inventory)) {
         user.inventory.forEach(item => {
             // 장착된 아이템만 확인
-            if (item.equipped && item.specialEffect && item.specialEffect.stats) {
-                const specialStats = item.specialEffect.stats;
+            if (item.equipped) {
+                // specialEffect.stats 확인
+                if (item.specialEffect && item.specialEffect.stats) {
+                    const specialStats = item.specialEffect.stats;
+                    
+                    // 각 효과 누적
+                    Object.keys(specialStats).forEach(stat => {
+                        if (effects.hasOwnProperty(stat)) {
+                            effects[stat] += specialStats[stat];
+                        }
+                    });
+                }
                 
-                // 각 효과 누적
-                Object.keys(specialStats).forEach(stat => {
-                    if (effects.hasOwnProperty(stat)) {
-                        effects[stat] += specialStats[stat];
+                // 일반 stats에서도 보너스 스탯 확인 (관리자가 생성한 장비 등)
+                if (item.stats) {
+                    if (item.stats.expBonus && effects.hasOwnProperty('expBonus')) {
+                        effects.expBonus += item.stats.expBonus;
                     }
-                });
+                    if (item.stats.goldBonus && effects.hasOwnProperty('goldBonus')) {
+                        effects.goldBonus += item.stats.goldBonus;
+                    }
+                    if (item.stats.dropRate && effects.hasOwnProperty('dropRateBonus')) {
+                        effects.dropRateBonus += item.stats.dropRate;
+                    }
+                }
             }
         });
     }

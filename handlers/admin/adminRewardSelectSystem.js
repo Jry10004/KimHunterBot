@@ -9,6 +9,15 @@ class AdminRewardSelectSystem {
         this.pendingRewards = new Map(); // 진행 중인 보상 선택
     }
 
+    // 헬퍼 함수: interaction 상태에 따라 적절한 응답 방법 선택
+    async respond(interaction, options) {
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(options);
+        } else {
+            await interaction.update(options);
+        }
+    }
+
     // 메인 메뉴 (showRewardMenu의 별칭)
     async showMainMenu(interaction) {
         return await this.showRewardMenu(interaction);
@@ -84,7 +93,7 @@ class AdminRewardSelectSystem {
                 { name: '✨ 경험치', value: '프리셋 선택', inline: true },
                 { name: '🎫 티켓', value: '종류별 선택', inline: true },
                 { name: '💎 스탯', value: '타입별 선택', inline: true },
-                { name: '📦 세트', value: '미리 정의된 세트', inline: true }
+                { name: '⚡ 조각', value: '에너지 조각 지급', inline: true }
             );
 
         const buttons = new ActionRowBuilder()
@@ -113,6 +122,10 @@ class AdminRewardSelectSystem {
             
         const buttons2 = new ActionRowBuilder()
             .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('admin_reward_fragment_select')
+                    .setLabel('⚡ 조각 지급')
+                    .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
                     .setCustomId('admin_reward_set')
                     .setLabel('📦 세트 보상')
@@ -307,7 +320,7 @@ class AdminRewardSelectSystem {
         // 선택된 카테고리 업데이트
         embed.data.fields[1].value = category;
 
-        await interaction.update({
+        await this.respond(interaction, {
             embeds: [embed],
             components: [
                 new ActionRowBuilder().addComponents(itemSelect),
@@ -481,6 +494,81 @@ class AdminRewardSelectSystem {
         });
     }
 
+    // 조각 지급 선택 메뉴
+    async showFragmentSelectMenu(interaction) {
+        await interaction.deferUpdate().catch(() => {});
+        const users = await User.find({ registered: true })
+            .sort({ level: -1 })
+            .limit(25);
+
+        const userOptions = users.map(user => ({
+            label: `${user.nickname} (Lv.${user.level})`,
+            description: `조각 보유 확인`,
+            value: user.discordId
+        }));
+
+        const userSelect = new StringSelectMenuBuilder()
+            .setCustomId('admin_fragment_user_select')
+            .setPlaceholder('👥 대상 유저를 선택하세요')
+            .addOptions(userOptions);
+
+        const fragmentSelect = new StringSelectMenuBuilder()
+            .setCustomId('admin_fragment_level_select')
+            .setPlaceholder('⚡ 조각 레벨과 수량을 선택하세요')
+            .addOptions([
+                { label: 'Lv.1 조각 +1개', value: '1_1', emoji: '🔸' },
+                { label: 'Lv.1 조각 +10개', value: '1_10', emoji: '🔸' },
+                { label: 'Lv.1 조각 +100개', value: '1_100', emoji: '🔸' },
+                { label: 'Lv.5 조각 +1개', value: '5_1', emoji: '🔹' },
+                { label: 'Lv.5 조각 +10개', value: '5_10', emoji: '🔹' },
+                { label: 'Lv.5 조각 +50개', value: '5_50', emoji: '🔹' },
+                { label: 'Lv.10 조각 +1개', value: '10_1', emoji: '💠' },
+                { label: 'Lv.10 조각 +10개', value: '10_10', emoji: '💠' },
+                { label: 'Lv.25 조각 +1개', value: '25_1', emoji: '💎' },
+                { label: 'Lv.25 조각 +5개', value: '25_5', emoji: '💎' },
+                { label: 'Lv.50 조각 +1개', value: '50_1', emoji: '✨' },
+                { label: 'Lv.75 조각 +1개', value: '75_1', emoji: '⭐' },
+                { label: 'Lv.100 조각 +1개', value: '100_1', emoji: '🌟' }
+            ]);
+
+        const embed = new EmbedBuilder()
+            .setColor('#9b59b6')
+            .setTitle('⚡ 에너지 조각 지급 (선택식)')
+            .setDescription('대상 유저와 조각을 선택해주세요.')
+            .addFields(
+                { name: '선택된 유저', value: '없음', inline: true },
+                { name: '선택된 조각', value: '없음', inline: true }
+            );
+
+        const confirmButton = new ButtonBuilder()
+            .setCustomId('admin_fragment_confirm')
+            .setLabel('✅ 지급하기')
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(true);
+
+        const cancelButton = new ButtonBuilder()
+            .setCustomId('admin_reward_menu')
+            .setLabel('❌ 취소')
+            .setStyle(ButtonStyle.Secondary);
+
+        await interaction.editReply({
+            embeds: [embed],
+            components: [
+                new ActionRowBuilder().addComponents(userSelect),
+                new ActionRowBuilder().addComponents(fragmentSelect),
+                new ActionRowBuilder().addComponents(confirmButton, cancelButton)
+            ]
+        });
+
+        this.pendingRewards.set(interaction.user.id, {
+            type: 'fragment',
+            targetUser: null,
+            targetUserName: null,
+            fragmentLevel: null,
+            amount: null
+        });
+    }
+
     // 선택 메뉴 핸들러
     async handleSelectMenu(interaction) {
         const customId = interaction.customId;
@@ -488,6 +576,15 @@ class AdminRewardSelectSystem {
         const reward = this.pendingRewards.get(adminId);
 
         if (!reward) return;
+        
+        // interaction 응답 헬퍼 함수
+        const respond = async (options) => {
+            if (interaction.deferred) {
+                await interaction.editReply(options);
+            } else {
+                await interaction.update(options);
+            }
+        };
 
         // 골드 유저 선택
         if (customId === 'admin_gold_user_select') {
@@ -504,7 +601,7 @@ class AdminRewardSelectSystem {
             const confirmButton = interaction.message.components[2].components[0];
             confirmButton.data.disabled = !reward.amount;
             
-            await interaction.update({ embeds: [embed], components: interaction.message.components });
+            await this.respond(interaction, { embeds: [embed], components: interaction.message.components });
         }
 
         // 골드 금액 선택
@@ -521,7 +618,7 @@ class AdminRewardSelectSystem {
             const components = interaction.message.components;
             components[2].components[0].data.disabled = !reward.targetUser;
             
-            await interaction.update({ embeds: [embed], components: components });
+            await this.respond(interaction, { embeds: [embed], components: components });
         }
 
         // 아이템 유저 선택
@@ -535,7 +632,7 @@ class AdminRewardSelectSystem {
             const embed = interaction.message.embeds[0];
             embed.data.fields[0].value = user.nickname;
             
-            await interaction.update({ embeds: [embed] });
+            await this.respond(interaction, { embeds: [embed], components: interaction.message.components });
         }
 
         // 아이템 카테고리 선택
@@ -567,7 +664,7 @@ class AdminRewardSelectSystem {
             const components = interaction.message.components;
             components[1].components[1].data.disabled = false;
             
-            await interaction.update({ embeds: [embed], components: components });
+            await this.respond(interaction, { embeds: [embed], components: components });
         }
 
         // 경험치 유저 선택
@@ -585,7 +682,7 @@ class AdminRewardSelectSystem {
             const components = interaction.message.components;
             components[2].components[0].data.disabled = !reward.expType;
             
-            await interaction.update({ embeds: [embed], components: components });
+            await this.respond(interaction, { embeds: [embed], components: components });
         }
 
         // 티켓 유저 선택
@@ -603,7 +700,41 @@ class AdminRewardSelectSystem {
             const components = interaction.message.components;
             components[3].components[0].data.disabled = !(reward.ticketType && reward.amount);
             
-            await interaction.update({ embeds: [embed], components: components });
+            await this.respond(interaction, { embeds: [embed], components: components });
+        }
+
+        // 조각 유저 선택
+        else if (customId === 'admin_fragment_user_select') {
+            const userId = interaction.values[0];
+            const user = await User.findOne({ discordId: userId });
+            
+            reward.targetUser = userId;
+            reward.targetUserName = user.nickname;
+            
+            const embed = interaction.message.embeds[0];
+            embed.data.fields[0].value = user.nickname;
+            
+            // 확인 버튼 활성화 체크
+            const components = interaction.message.components;
+            components[2].components[0].data.disabled = !(reward.fragmentLevel && reward.amount);
+            
+            await this.respond(interaction, { embeds: [embed], components: components });
+        }
+
+        // 조각 레벨 선택
+        else if (customId === 'admin_fragment_level_select') {
+            const [level, amount] = interaction.values[0].split('_');
+            reward.fragmentLevel = parseInt(level);
+            reward.amount = parseInt(amount);
+            
+            const embed = interaction.message.embeds[0];
+            embed.data.fields[1].value = `Lv.${level} 조각 x${amount}개`;
+            
+            // 확인 버튼 활성화 체크
+            const components = interaction.message.components;
+            components[2].components[0].data.disabled = !reward.targetUser;
+            
+            await this.respond(interaction, { embeds: [embed], components: components });
         }
 
         // 티켓 타입 선택
@@ -628,7 +759,7 @@ class AdminRewardSelectSystem {
             const components = interaction.message.components;
             components[3].components[0].data.disabled = !(reward.targetUser && reward.amount);
             
-            await interaction.update({ embeds: [embed], components: components });
+            await this.respond(interaction, { embeds: [embed], components: components });
         }
 
         // 티켓 수량 선택
@@ -643,7 +774,7 @@ class AdminRewardSelectSystem {
             const components = interaction.message.components;
             components[3].components[0].data.disabled = !(reward.targetUser && reward.ticketType);
             
-            await interaction.update({ embeds: [embed], components: components });
+            await this.respond(interaction, { embeds: [embed], components: components });
         }
 
         // 경험치 타입 선택
@@ -669,7 +800,7 @@ class AdminRewardSelectSystem {
             const components = interaction.message.components;
             components[2].components[0].data.disabled = !reward.targetUser;
             
-            await interaction.update({ embeds: [embed], components: components });
+            await this.respond(interaction, { embeds: [embed], components: components });
         }
     }
 
@@ -822,6 +953,29 @@ class AdminRewardSelectSystem {
                     }
                     break;
 
+                case 'fragment':
+                    // 조각 초기화
+                    if (!targetUser.energyFragments) {
+                        targetUser.energyFragments = {
+                            fragments: new Map(),
+                            dailyFusions: 0,
+                            dailyMines: 20,
+                            failureStack: 0
+                        };
+                    }
+                    
+                    // 조각 추가
+                    const currentAmount = targetUser.energyFragments.fragments.get(String(reward.fragmentLevel)) || 0;
+                    targetUser.energyFragments.fragments.set(String(reward.fragmentLevel), currentAmount + reward.amount);
+                    
+                    await targetUser.save();
+                    
+                    resultMessage = `⚡ **에너지 조각 지급 완료**\n` +
+                        `대상: ${targetUser.nickname}\n` +
+                        `조각: Lv.${reward.fragmentLevel} x${reward.amount}개\n` +
+                        `현재 보유: ${currentAmount + reward.amount}개`;
+                    break;
+
                 case 'exp':
                     const [action] = reward.expType.split('_');
                     
@@ -874,7 +1028,7 @@ class AdminRewardSelectSystem {
                 .setFooter({ text: `관리자: ${interaction.user.username}` })
                 .setTimestamp();
 
-            await interaction.update({
+            await this.respond(interaction, {
                 embeds: [embed],
                 components: [
                     new ActionRowBuilder().addComponents(

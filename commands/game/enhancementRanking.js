@@ -27,11 +27,13 @@ module.exports = {
                     for (const [slot, index] of Object.entries(user.equipment)) {
                         if (index !== null && index !== undefined && user.inventory[index]) {
                             const item = user.inventory[index];
-                            if (item.enhancement > highestEnhancement) {
-                                highestEnhancement = item.enhancement;
+                            const enhanceLevel = item.enhanceLevel || item.enhancement || 0;
+                            // 태그가 있는 아이템 제외 (이벤트, 보상, 운영자아이템)
+                            if (!item.isEvent && !item.itemTag && enhanceLevel > highestEnhancement) {
+                                highestEnhancement = enhanceLevel;
                                 highestItem = {
                                     name: item.name,
-                                    enhancement: item.enhancement,
+                                    enhancement: enhanceLevel,
                                     slot: slot
                                 };
                             }
@@ -41,11 +43,13 @@ module.exports = {
                 
                 // 인벤토리의 모든 아이템도 확인
                 for (const item of user.inventory) {
-                    if (item && item.enhancement > highestEnhancement) {
-                        highestEnhancement = item.enhancement;
+                    const enhanceLevel = item?.enhanceLevel || item?.enhancement || 0;
+                    // 태그가 있는 아이템 제외 (이벤트, 보상, 운영자아이템)
+                    if (item && !item.isEvent && !item.itemTag && enhanceLevel > highestEnhancement) {
+                        highestEnhancement = enhanceLevel;
                         highestItem = {
                             name: item.name,
-                            enhancement: item.enhancement,
+                            enhancement: enhanceLevel,
                             slot: item.type || 'inventory'
                         };
                     }
@@ -82,8 +86,12 @@ module.exports = {
                     const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
                     const itemName = user.item.name || '알 수 없는 아이템';
                     
+                    // 강화 랭크 이름 가져오기
+                    const { ENHANCE_SYSTEM } = require('../../handlers/enhance/enhanceSystem');
+                    const rankName = ENHANCE_SYSTEM.rankNames[user.enhancement] || '알 수 없는 랭크';
+                    
                     description += `${medal} **${user.username}**\n`;
-                    description += `   └ ${itemName} **+${user.enhancement}강**\n`;
+                    description += `   └ ${itemName} **[${rankName}]**\n`;
                     
                     // 25강 이상은 특별 표시
                     if (user.enhancement >= 25) {

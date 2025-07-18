@@ -353,10 +353,27 @@ class EnhanceSystem {
             });
         }
         
-        // 장착 확인
-        const isEquipped = Object.values(user.equipment || {}).includes(itemInventoryIndex) ||
-                          (item.inventorySlot !== undefined && 
-                           Object.values(user.equipment || {}).includes(item.inventorySlot));
+        // 장착 확인 (일반 장비와 악세사리 모두 확인)
+        let isEquipped = false;
+        let isAccessory = false;
+        
+        // 일반 장비 확인
+        if (user.equipment) {
+            isEquipped = Object.values(user.equipment).includes(itemInventoryIndex) ||
+                        (item.inventorySlot !== undefined && 
+                         Object.values(user.equipment).includes(item.inventorySlot));
+        }
+        
+        // 악세사리 확인
+        if (!isEquipped && user.equippedAccessories) {
+            isEquipped = Object.values(user.equippedAccessories).some(acc => 
+                acc && (acc.inventorySlot === itemInventoryIndex || 
+                       (item.inventorySlot !== undefined && acc.inventorySlot === item.inventorySlot))
+            );
+            if (isEquipped) {
+                isAccessory = true;
+            }
+        }
         
         if (!isEquipped) {
             return await interaction.reply({
@@ -375,8 +392,8 @@ class EnhanceSystem {
             });
         }
 
-        const cost = ENHANCE_SYSTEM.costs[nextLevel];
-        const rateData = ENHANCE_SYSTEM.rates[nextLevel];
+        const cost = ENHANCE_SYSTEM.costs[nextLevel] || 100000000; // 기본값 1억 골드
+        const rateData = ENHANCE_SYSTEM.rates[nextLevel] || { success: 10, fail: 70, destroy: 20 }; // 기본 확률
         let baseRate = rateData.success;
         
         // 특수 효과 적용
@@ -422,30 +439,37 @@ class EnhanceSystem {
 
         embed.addFields({ name: '💎 보유 골드', value: `${formatNumber(user.gold)}G`, inline: true });
         
-        // 15성 이상 확률표 표시
-        if (currentLevel >= 14) {
-            let rateTable = '```\n계급 | 성공 | 실패 | 파괴\n';
-            rateTable += '─────┼──────┼──────┼──────\n';
-            
-            for (let i = 15; i <= Math.min(currentLevel + 5, 30); i++) {
-                const rate = ENHANCE_SYSTEM.rates[i];
-                if (rate) {
-                    const current = i === nextLevel ? '▶ ' : '  ';
-                    rateTable += `${current}${i}계급│${rate.success.toString().padStart(4)}% │${rate.fail.toString().padStart(4)}% │${rate.destroy.toString().padStart(4)}%\n`;
-                }
+        // 확률표 표시
+        let rateTable = '```\n계급 | 성공 | 실패 | 파괴\n';
+        rateTable += '─────┼──────┼──────┼──────\n';
+        
+        // 현재 레벨 주변의 확률 표시 (위아래 5개씩)
+        const startLevel = Math.max(1, nextLevel - 5);
+        const endLevel = Math.min(30, nextLevel + 5);
+        
+        for (let i = startLevel; i <= endLevel; i++) {
+            const rate = ENHANCE_SYSTEM.rates[i];
+            if (rate) {
+                const current = i === nextLevel ? '▶ ' : '  ';
+                const levelStr = i.toString().padStart(2);
+                const successStr = rate.success.toString().padStart(4);
+                const failStr = rate.fail.toString().padStart(4);
+                const destroyStr = rate.destroy.toString().padStart(4);
+                rateTable += `${current}${levelStr}계급│${successStr}% │${failStr}% │${destroyStr}%\n`;
             }
-            rateTable += '```';
-            
-            embed.addFields({
-                name: '📈 고계급 확률표',
-                value: rateTable,
-                inline: false
-            });
         }
+        rateTable += '```';
+        
+        embed.addFields({
+            name: '📈 계급 승급 확률표',
+            value: rateTable,
+            inline: false
+        });
 
-        // 계급 승급 시 증가할 스탯 표시
-        if (item.stats) {
-            const statIncrease = [];
+        // 현재 스탯 및 예상 증가량 표시
+        if (item.stats || item.baseStats) {
+            const currentStats = [];
+            const expectedStats = [];
             const itemType = item.type || item.category || 'weapon';
             const mainStats = ENHANCE_SYSTEM.mainStatByType[itemType] || ['attack'];
             
@@ -459,25 +483,67 @@ class EnhanceSystem {
                 increaseRate = ENHANCE_SYSTEM.statIncrease.tier3;
             }
             
-            Object.keys(item.stats).forEach(stat => {
-                if (item.stats[stat] > 0) {
+            // baseStats가 있으면 우선 사용, 없으면 stats 사용
+            const statsToShow = item.baseStats || item.stats || {};
+            
+            // 모든 스탯 수집 (stats와 baseStats 모두 확인)
+            const allStatKeys = new Set();
+            if (item.stats) Object.keys(item.stats).forEach(key => allStatKeys.add(key));
+            if (item.baseStats) Object.keys(item.baseStats).forEach(key => allStatKeys.add(key));
+            
+            // 스탯이 없는 경우 로그
+            if (allStatKeys.size === 0) {
+                console.log(`[강화] 아이템에 스탯이 없음:`, item.name, 'stats:', item.stats, 'baseStats:', item.baseStats);
+                
+                // 아이템의 모든 속성 확인
+                console.log(`[강화] 아이템 전체 데이터:`, JSON.stringify(item, null, 2));
+            }
+            
+            allStatKeys.forEach(stat => {
+                const currentValue = item.stats?.[stat] || item.baseStats?.[stat] || 0;
+                const baseValue = item.baseStats?.[stat] || currentValue;
+                
+                if (currentValue > 0 || baseValue > 0) {
                     const isMainStat = mainStats.includes(stat);
                     const rate = isMainStat ? increaseRate.main : increaseRate.sub;
-                    const increase = Math.ceil(item.stats[stat] * rate);
+                    const increase = Math.ceil(currentValue * rate);
+                    const nextValue = currentValue + increase;
                     
-                    const statName = this.getStatKorean(stat);
+                    const statName = this.getStatKorean(stat, user);
                     const percentage = (rate * 100).toFixed(0);
-                    statIncrease.push(`${isMainStat ? '⭐' : '☆'} ${statName} +${increase} (+${percentage}%)`);
+                    
+                    // 현재 스탯 표시
+                    currentStats.push(`${isMainStat ? '⭐' : '☆'} ${statName}: ${currentValue}`);
+                    
+                    // 예상 증가량 표시
+                    expectedStats.push(`${isMainStat ? '⭐' : '☆'} ${statName}: ${currentValue} → **${nextValue}** (+${increase}, +${percentage}%)`);
                 }
             });
             
-            if (statIncrease.length > 0) {
+            if (currentStats.length > 0) {
                 embed.addFields({
-                    name: '📈 계급 승급 시 스탯 증가',
-                    value: statIncrease.join('\n') + '\n\n⭐ 주 스탯 | ☆ 부 스탯',
-                    inline: false
+                    name: '📊 현재 스탯',
+                    value: currentStats.join('\n'),
+                    inline: true
                 });
             }
+            
+            if (expectedStats.length > 0) {
+                embed.addFields({
+                    name: '📈 계급 승급 시 예상 스탯',
+                    value: expectedStats.join('\n') + '\n\n⭐ 주 스탯 | ☆ 부 스탯',
+                    inline: true
+                });
+            }
+        }
+
+        // 비용 검증
+        if (!cost || cost <= 0) {
+            console.error('[강화 오류] 계산된 강화 비용이 0원 또는 정의되지 않음:', cost, 'nextLevel:', nextLevel);
+            return await interaction.reply({
+                content: '❌ 강화 비용 계산 오류가 발생했습니다. 관리자에게 문의해주세요.',
+                flags: 64
+            });
         }
 
         // 세션 저장
@@ -486,7 +552,7 @@ class EnhanceSystem {
             userId: user.discordId,
             itemId: itemId,
             itemInventoryIndex: itemInventoryIndex,
-            item: item,
+            item: { ...item, isAccessory: isAccessory },
             cost: cost,
             successRate: enhancedRate,
             useProtection: false,
@@ -535,63 +601,108 @@ class EnhanceSystem {
     async performEnhance(interaction, sessionId) {
         const session = this.sessions.get(sessionId);
         if (!session || session.userId !== interaction.user.id) {
-            return await interaction.reply({
+            return await interaction.followUp({
                 content: '❌ 유효하지 않은 강화 세션입니다!',
                 flags: 64
             });
         }
 
+        // 쿨타임 체크 (3초)
+        const cooldownKey = `enhance_cooldown_${interaction.user.id}`;
+        const lastEnhance = this.sessions.get(cooldownKey);
+        const now = Date.now();
+        
+        if (lastEnhance && (now - lastEnhance) < 3000) {
+            const remainingTime = Math.ceil((3000 - (now - lastEnhance)) / 1000);
+            return await interaction.followUp({
+                content: `⏱️ 강화 쿨타임 중입니다! ${remainingTime}초 후에 다시 시도해주세요.`,
+                flags: 64
+            });
+        }
+
+        // 쿨타임 설정
+        this.sessions.set(cooldownKey, now);
+
+        // 세션 데이터 복사 (삭제 전에)
+        const sessionData = { ...session };
+
+        // 중복 실행 방지를 위한 세션 즉시 삭제
+        this.sessions.delete(sessionId);
+
         const user = await getUser(interaction.user.id);
         let item = null;
         
         // 세션에 저장된 인벤토리 인덱스 사용
-        if (session.itemInventoryIndex !== undefined && session.itemInventoryIndex !== -1) {
-            item = user.inventory[session.itemInventoryIndex];
+        if (sessionData.itemInventoryIndex !== undefined && sessionData.itemInventoryIndex !== -1) {
+            item = user.inventory[sessionData.itemInventoryIndex];
         }
         
         // 인덱스로 못 찾으면 다른 방법 시도
         if (!item) {
             item = user.inventory.find(i => 
-                (i._id && i._id.toString() === session.itemId) || 
-                (i.name === session.item.name)
+                (i._id && i._id.toString() === sessionData.itemId) || 
+                (i.name === sessionData.item.name)
             );
         }
 
         if (!item) {
-            return await interaction.reply({
+            return await interaction.followUp({
                 content: '❌ 아이템을 찾을 수 없습니다!',
                 flags: 64
             });
         }
         
-        // 장착 확인
+        // 장착 확인 (일반 장비와 악세사리 모두 확인)
         const itemIndex = user.inventory.indexOf(item);
-        const isEquipped = Object.values(user.equipment || {}).includes(itemIndex) ||
-                          (item.inventorySlot !== undefined && 
-                           Object.values(user.equipment || {}).includes(item.inventorySlot));
+        let isEquipped = false;
+        let isAccessory = sessionData.item.isAccessory || false;
+        
+        // 일반 장비 확인
+        if (!isAccessory && user.equipment) {
+            isEquipped = Object.values(user.equipment).includes(itemIndex) ||
+                        (item.inventorySlot !== undefined && 
+                         Object.values(user.equipment).includes(item.inventorySlot));
+        }
+        
+        // 악세사리 확인
+        if (!isEquipped && user.equippedAccessories) {
+            isEquipped = Object.values(user.equippedAccessories).some(acc => 
+                acc && (acc.inventorySlot === itemIndex || 
+                       (item.inventorySlot !== undefined && acc.inventorySlot === item.inventorySlot))
+            );
+        }
         
         if (!isEquipped) {
-            return await interaction.reply({
+            return await interaction.followUp({
                 content: '❌ 장착하지 않은 장비는 강화할 수 없습니다!',
                 flags: 64
             });
         }
 
-        if (user.gold < session.cost) {
-            return await interaction.reply({
+        // 비용 검증
+        if (!sessionData.cost || sessionData.cost <= 0) {
+            console.error('[강화 오류] 강화 비용이 0원 또는 정의되지 않음:', sessionData.cost);
+            return await interaction.followUp({
+                content: '❌ 강화 비용 오류가 발생했습니다. 다시 시도해주세요.',
+                flags: 64
+            });
+        }
+
+        if (user.gold < sessionData.cost) {
+            return await interaction.followUp({
                 content: '❌ 골드가 부족합니다!',
                 flags: 64
             });
         }
 
         // 골드 차감
-        user.gold -= session.cost;
+        user.gold -= sessionData.cost;
 
         // 강화 재료 사용
-        if (session.useProtection) {
+        if (sessionData.useProtection) {
             this.consumeProtectionStone(user);
         }
-        if (session.useBlessing) {
+        if (sessionData.useBlessing) {
             // 사용할 축복석 찾기
             const blessingStone = user.inventory.find(item => 
                 (item.id === 'blessing_stone' || item.id === 'enhancement_stone' || 
@@ -618,7 +729,7 @@ class EnhanceSystem {
             }
             
             this.consumeBlessingStone(user);
-            session.successRate = Math.min(100, session.successRate + successBonus);
+            sessionData.successRate = Math.min(100, sessionData.successRate + successBonus);
         }
 
         // 강화 시도
@@ -629,9 +740,9 @@ class EnhanceSystem {
         let resultEmbed;
         let result = 'fail'; // success, fail, destroy
         
-        if (roll < session.successRate) {
+        if (roll < sessionData.successRate) {
             result = 'success';
-        } else if (roll < (session.successRate + rateData.fail)) {
+        } else if (roll < (sessionData.successRate + rateData.fail)) {
             result = 'fail';
         } else {
             result = 'destroy';
@@ -639,7 +750,30 @@ class EnhanceSystem {
 
         if (result === 'success') {
             // 계급 승급 성공
+            // 중복 강화 방지를 위한 재확인
+            const actualCurrentLevel = item.enhanceLevel || 0;
+            if (actualCurrentLevel !== currentLevel) {
+                console.error('[강화 버그] 강화 도중 레벨 불일치 감지:', {
+                    expected: currentLevel,
+                    actual: actualCurrentLevel,
+                    item: item.name
+                });
+                return await interaction.followUp({
+                    content: '❌ 강화 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+                    flags: 64
+                });
+            }
             item.enhanceLevel = currentLevel + 1;
+            
+            // 악세사리인 경우 equippedAccessories도 업데이트
+            if (sessionData.item.isAccessory && user.equippedAccessories) {
+                const accessorySlot = Object.entries(user.equippedAccessories).find(
+                    ([slot, acc]) => acc && acc.inventorySlot === sessionData.itemInventoryIndex
+                );
+                if (accessorySlot) {
+                    user.equippedAccessories[accessorySlot[0]].enhanceLevel = item.enhanceLevel;
+                }
+            }
             
             // 스탯 증가
             if (!item.stats) item.stats = {};
@@ -657,15 +791,92 @@ class EnhanceSystem {
                 increaseRate = ENHANCE_SYSTEM.statIncrease.tier3;
             }
             
-            // 각 스탯 증가 적용
-            Object.keys(item.stats).forEach(stat => {
-                if (item.stats[stat] > 0) {
-                    const isMainStat = mainStats.includes(stat);
-                    const rate = isMainStat ? increaseRate.main : increaseRate.sub;
-                    const increase = Math.ceil(item.stats[stat] * rate);
-                    item.stats[stat] += increase;
+            // 기본 스탯 저장 (baseStats가 없는 경우)
+            if (!item.baseStats) {
+                if (item.stats) {
+                    // 강화가 안된 아이템은 현재 스탯이 원본
+                    if (currentLevel === 0) {
+                        item.baseStats = { ...item.stats };
+                    } else {
+                        // 이미 강화된 아이템이면 역산해서 원본 구하기
+                        item.baseStats = {};
+                        Object.keys(item.stats).forEach(stat => {
+                            if (item.stats[stat] > 0) {
+                                const isMainStat = mainStats.includes(stat);
+                                
+                                // 현재 레벨까지의 누적 증가율 계산 (복리 방식)
+                                let totalMultiplier = 1;
+                                for (let level = 1; level <= currentLevel; level++) {
+                                    let levelRate;
+                                    if (level <= 10) {
+                                        levelRate = ENHANCE_SYSTEM.statIncrease.tier1;
+                                    } else if (level <= 20) {
+                                        levelRate = ENHANCE_SYSTEM.statIncrease.tier2;
+                                    } else {
+                                        levelRate = ENHANCE_SYSTEM.statIncrease.tier3;
+                                    }
+                                    const rate = isMainStat ? levelRate.main : levelRate.sub;
+                                    totalMultiplier *= (1 + rate);
+                                }
+                                
+                                // 역산하여 원본 스탯 구하기
+                                item.baseStats[stat] = Math.round(item.stats[stat] / totalMultiplier);
+                            }
+                        });
+                    }
+                } else {
+                    // stats가 없으면 빈 객체로 초기화
+                    item.baseStats = {};
+                    item.stats = {};
                 }
-            });
+            }
+            
+            // 강화 전 스탯 저장 (비교용)
+            const previousStats = {};
+            if (item.stats) {
+                Object.keys(item.stats).forEach(stat => {
+                    previousStats[stat] = item.stats[stat];
+                });
+            }
+            
+            // stats 객체가 없으면 생성
+            if (!item.stats) {
+                item.stats = {};
+            }
+            
+            // 각 스탯은 baseStats 기준으로 재계산
+            if (item.baseStats) {
+                // 모든 스탯 키 수집 (baseStats와 현재 stats 모두에서)
+                const allStatKeys = new Set([
+                    ...Object.keys(item.baseStats),
+                    ...Object.keys(item.stats)
+                ]);
+                
+                allStatKeys.forEach(stat => {
+                    const baseValue = item.baseStats[stat] || 0;
+                    if (baseValue > 0) {
+                        const isMainStat = mainStats.includes(stat);
+                        
+                        // 1~현재 레벨까지의 누적 증가율 계산 (복리 방식)
+                        let totalMultiplier = 1;
+                        for (let level = 1; level <= item.enhanceLevel; level++) {
+                            let levelRate;
+                            if (level <= 10) {
+                                levelRate = ENHANCE_SYSTEM.statIncrease.tier1;
+                            } else if (level <= 20) {
+                                levelRate = ENHANCE_SYSTEM.statIncrease.tier2;
+                            } else {
+                                levelRate = ENHANCE_SYSTEM.statIncrease.tier3;
+                            }
+                            const rate = isMainStat ? levelRate.main : levelRate.sub;
+                            totalMultiplier *= (1 + rate);
+                        }
+                        
+                        // 기본 스탯 * 누적 배율로 현재 스탯 계산
+                        item.stats[stat] = Math.ceil(baseValue * totalMultiplier);
+                    }
+                });
+            }
 
             // 강화 기록 저장
             if (!user.enhanceHistory) user.enhanceHistory = [];
@@ -689,22 +900,38 @@ class EnhanceSystem {
                 const itemType = item.type || item.category || 'weapon';
                 const mainStats = ENHANCE_SYSTEM.mainStatByType[itemType] || ['attack'];
                 
-                Object.keys(item.stats).forEach(stat => {
-                    if (item.stats[stat] > 0) {
+                // 마법사 엠블럼 확인
+                const isMage = user && user.emblem && (
+                    user.emblem === '견습 마법사' || 
+                    user.emblem === '원소 술사' ||
+                    user.emblem === '신비한 현자' ||
+                    user.emblem === '대마법사' ||
+                    user.emblem === '전설의 아크메이지' ||
+                    user.emblem.includes('마법사') ||
+                    user.emblem.includes('아크메이지')
+                );
+                
+                // 모든 스탯 수집 (stats와 baseStats에서)
+                const allStatKeys = new Set([
+                    ...Object.keys(item.stats),
+                    ...(item.baseStats ? Object.keys(item.baseStats) : [])
+                ]);
+                
+                allStatKeys.forEach(stat => {
+                    const currValue = item.stats[stat] || 0;
+                    if (currValue > 0) {
                         const isMainStat = mainStats.includes(stat);
-                        const statEmoji = {
-                            attack: '⚔️ 공격력',
-                            defense: '🛡️ 방어력',
-                            hp: '❤️ 체력',
-                            strength: '💪 힘',
-                            agility: '🏃 민첩',
-                            intelligence: '🧠 지능',
-                            vitality: '💗 활력',
-                            luck: '🍀 행운',
-                            dodge: '💨 회피'
-                        }[stat] || stat;
+                        const statName = this.getStatKorean(stat, user);
                         
-                        statChanges.push(`${statEmoji}: +${item.stats[stat]} ${isMainStat ? '(주 스탯)' : ''}`);
+                        // 강화 전후 비교 표시
+                        const prevValue = previousStats[stat] || 0;
+                        const increase = currValue - prevValue;
+                        
+                        if (increase > 0) {
+                            statChanges.push(`${statName}: ${prevValue} → **${currValue}** (+${increase}) ${isMainStat ? '✨' : ''}`);
+                        } else if (currValue > 0) {
+                            statChanges.push(`${statName}: ${currValue} ${isMainStat ? '✨' : ''}`);
+                        }
                     }
                 });
             }
@@ -719,7 +946,8 @@ class EnhanceSystem {
                 .setImage(GAME_GIFS.enhancement.success)
                 .addFields(
                     { name: '🎖️ 계급 변화', value: `${ENHANCE_SYSTEM.rankNames[currentLevel]} → ${ENHANCE_SYSTEM.rankNames[item.enhanceLevel]}`, inline: true },
-                    { name: '💰 사용 골드', value: `${formatNumber(session.cost)}G`, inline: true }
+                    { name: '💰 사용 골드', value: `${formatNumber(sessionData.cost)}G`, inline: true },
+                    { name: '💳 남은 골드', value: `${formatNumber(user.gold)}G`, inline: true }
                 );
                 
             if (statChanges.length > 0) {
@@ -748,28 +976,44 @@ class EnhanceSystem {
                 // 15계급 미만에서는 계급 하락 가능
                 item.enhanceLevel = Math.max(0, currentLevel - 1);
                 
-                // 스탯 감소 (이전 계급의 증가분만큼 감소)
-                if (item.stats) {
+                // 악세사리인 경우 equippedAccessories도 업데이트
+                if (sessionData.item.isAccessory && user.equippedAccessories) {
+                    const accessorySlot = Object.entries(user.equippedAccessories).find(
+                        ([slot, acc]) => acc && acc.inventorySlot === sessionData.itemInventoryIndex
+                    );
+                    if (accessorySlot) {
+                        user.equippedAccessories[accessorySlot[0]].enhanceLevel = item.enhanceLevel;
+                    }
+                }
+                
+                // 스탯 감소 (baseStats 기준으로 재계산)
+                if (item.baseStats && item.stats) {
                     const itemType = item.type || item.category || 'weapon';
                     const mainStats = ENHANCE_SYSTEM.mainStatByType[itemType] || ['attack'];
                     
-                    // 이전 계급의 증가율
-                    let previousRate;
-                    if (currentLevel <= 10) {
-                        previousRate = ENHANCE_SYSTEM.statIncrease.tier1;
-                    } else if (currentLevel <= 20) {
-                        previousRate = ENHANCE_SYSTEM.statIncrease.tier2;
-                    } else {
-                        previousRate = ENHANCE_SYSTEM.statIncrease.tier3;
-                    }
-                    
-                    Object.keys(item.stats).forEach(stat => {
-                        if (item.stats[stat] > 0) {
+                    // 하락한 레벨(item.enhanceLevel)로 스탯 재계산
+                    Object.keys(item.baseStats).forEach(stat => {
+                        const baseValue = item.baseStats[stat] || 0;
+                        if (baseValue > 0) {
                             const isMainStat = mainStats.includes(stat);
-                            const rate = isMainStat ? previousRate.main : previousRate.sub;
-                            // 역계산: 현재값 / (1 + rate) = 이전값
-                            const previousValue = Math.floor(item.stats[stat] / (1 + rate));
-                            item.stats[stat] = Math.max(1, previousValue);
+                            
+                            // 1~하락한 레벨까지의 누적 증가율 계산 (복리 방식)
+                            let totalMultiplier = 1;
+                            for (let level = 1; level <= item.enhanceLevel; level++) {
+                                let levelRate;
+                                if (level <= 10) {
+                                    levelRate = ENHANCE_SYSTEM.statIncrease.tier1;
+                                } else if (level <= 20) {
+                                    levelRate = ENHANCE_SYSTEM.statIncrease.tier2;
+                                } else {
+                                    levelRate = ENHANCE_SYSTEM.statIncrease.tier3;
+                                }
+                                const rate = isMainStat ? levelRate.main : levelRate.sub;
+                                totalMultiplier *= (1 + rate);
+                            }
+                            
+                            // 기본 스탯 * 누적 배율로 현재 스탯 계산
+                            item.stats[stat] = Math.ceil(baseValue * totalMultiplier);
                         }
                     });
                 }
@@ -784,7 +1028,8 @@ class EnhanceSystem {
                     .setImage(GAME_GIFS.enhancement.failure)
                     .addFields(
                         { name: '📉 계급 변화', value: `${ENHANCE_SYSTEM.rankNames[currentLevel]} → ${ENHANCE_SYSTEM.rankNames[item.enhanceLevel]}`, inline: true },
-                        { name: '💰 사용 골드', value: `${formatNumber(session.cost)}G`, inline: true }
+                        { name: '💰 사용 골드', value: `${formatNumber(sessionData.cost)}G`, inline: true },
+                        { name: '💳 남은 골드', value: `${formatNumber(user.gold)}G`, inline: true }
                     );
                     
                 // 15성 이상 시 다음 강화 확률 표시
@@ -806,12 +1051,13 @@ class EnhanceSystem {
                     .setImage(GAME_GIFS.enhancement.failure)
                     .addFields(
                         { name: '🎖️ 현재 계급', value: ENHANCE_SYSTEM.rankNames[currentLevel], inline: true },
-                        { name: '💰 사용 골드', value: `${formatNumber(session.cost)}G`, inline: true }
+                        { name: '💰 사용 골드', value: `${formatNumber(sessionData.cost)}G`, inline: true },
+                        { name: '💳 남은 골드', value: `${formatNumber(user.gold)}G`, inline: true }
                     );
             }
         } else {
             // 파괴
-            if (session.useProtection) {
+            if (sessionData.useProtection) {
                 // 보호석 사용 - 아이템 보호
                 resultEmbed = new EmbedBuilder()
                     .setColor('#FFA500')
@@ -820,25 +1066,45 @@ class EnhanceSystem {
                     .addFields(
                         { name: '🛡️ 아이템 상태', value: '보호됨', inline: true },
                         { name: '🎖️ 현재 계급', value: ENHANCE_SYSTEM.rankNames[currentLevel], inline: true },
-                        { name: '💰 사용 골드', value: `${formatNumber(session.cost)}G`, inline: true }
+                        { name: '💰 사용 골드', value: `${formatNumber(sessionData.cost)}G`, inline: true },
+                        { name: '💳 남은 골드', value: `${formatNumber(user.gold)}G`, inline: true }
                     );
             } else {
                 // 아이템 파괴 - 0강으로 초기화
                 item.enhanceLevel = 0;
                 
+                // 스탯을 원본으로 복원
+                if (item.baseStats) {
+                    item.stats = { ...item.baseStats };
+                }
+                
+                // 악세사리인 경우 equippedAccessories도 업데이트
+                if (sessionData.item.isAccessory && user.equippedAccessories) {
+                    const accessorySlot = Object.entries(user.equippedAccessories).find(
+                        ([slot, acc]) => acc && acc.inventorySlot === sessionData.itemInventoryIndex
+                    );
+                    if (accessorySlot) {
+                        user.equippedAccessories[accessorySlot[0]].enhanceLevel = 0;
+                        if (item.baseStats) {
+                            user.equippedAccessories[accessorySlot[0]].stats = { ...item.baseStats };
+                        }
+                    }
+                }
+                
                 // 라이프 시스템 뉴스 연동 - 파괴
                 const lifeSystem = require('../../systems/lifeSystemIntegration');
-                lifeSystem.reportEnhancement(user, session.item, currentLevel + 1, false);
+                lifeSystem.reportEnhancement(user, sessionData.item, currentLevel + 1, false);
 
                 resultEmbed = new EmbedBuilder()
                     .setColor('#8B0000')
                     .setTitle('💥 계급 초기화!')
-                    .setDescription(`${session.item.name}의 계급이 완전히 초기화되었습니다...`)
+                    .setDescription(`${sessionData.item.name}의 계급이 완전히 초기화되었습니다...`)
                     .setImage(GAME_GIFS.enhancement.destroy)
                     .addFields(
                         { name: '💔 결과', value: `${ENHANCE_SYSTEM.rankNames[currentLevel]} → ${ENHANCE_SYSTEM.rankNames[0]}`, inline: true },
                         { name: '🎖️ 현재 계급', value: ENHANCE_SYSTEM.rankNames[0], inline: true },
-                        { name: '💰 사용 골드', value: `${formatNumber(session.cost)}G`, inline: true }
+                        { name: '💰 사용 골드', value: `${formatNumber(sessionData.cost)}G`, inline: true },
+                        { name: '💳 남은 골드', value: `${formatNumber(user.gold)}G`, inline: true }
                     )
                     .setFooter({ text: '파괴 시 계급이 무계급으로 돌아갑니다!' });
             }
@@ -866,26 +1132,33 @@ class EnhanceSystem {
         
         let buttons;
         if (result === 'success' && item.enhanceLevel < ENHANCE_SYSTEM.maxLevel) {
-            // 강화 성공 시 세션 업데이트 (계속 강화를 위해)
-            session.item = item;  // 업데이트된 아이템 정보
-            session.cost = ENHANCE_SYSTEM.costs[item.enhanceLevel + 1] || 100000000;  // 다음 강화 비용
-            const nextRateData = ENHANCE_SYSTEM.rates[item.enhanceLevel + 1];
-            session.successRate = nextRateData ? nextRateData.success : 10;  // 다음 강화 확률
+            // 강화 성공 시 새로운 세션 생성 (계속 강화를 위해)
+            const newSessionId = `${user.discordId}-${Date.now()}`;
+            this.sessions.set(newSessionId, {
+                userId: user.discordId,
+                itemId: sessionData.itemId,
+                itemInventoryIndex: sessionData.itemInventoryIndex,
+                item: { ...item, isAccessory: sessionData.item.isAccessory },  // 업데이트된 아이템 정보
+                cost: ENHANCE_SYSTEM.costs[item.enhanceLevel + 1] || 100000000,  // 다음 강화 비용
+                successRate: ENHANCE_SYSTEM.rates[item.enhanceLevel + 1]?.success || 10,  // 다음 강화 확률
+                useProtection: false,
+                useBlessing: false
+            });
             
             // 강화 성공 시 계속 강화 옵션 제공
             buttons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`enhance_continue_${sessionId}`)
+                        .setCustomId(`enhance_continue_${newSessionId}`)
                         .setLabel('🔥 계속 승급')
                         .setStyle(ButtonStyle.Success),
                     new ButtonBuilder()
-                        .setCustomId(`enhance_continue_protection_${sessionId}`)
+                        .setCustomId(`enhance_continue_protection_${newSessionId}`)
                         .setLabel('🛡️ 보호석 사용하여 승급')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(!this.hasProtectionStone(user)),
                     new ButtonBuilder()
-                        .setCustomId(`enhance_continue_blessing_${sessionId}`)
+                        .setCustomId(`enhance_continue_blessing_${newSessionId}`)
                         .setLabel('✨ 강화석 사용하여 승급')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(!this.hasBlessingStone(user))
@@ -916,24 +1189,31 @@ class EnhanceSystem {
             }
         } else if ((result === 'fail' || result === 'destroy') && item && item.enhanceLevel < ENHANCE_SYSTEM.maxLevel) {
             // 실패했거나 파괴된 경우 (아이템이 남아있고 만렙이 아닌 경우)
-            session.item = item;  // 업데이트된 아이템 정보
-            session.cost = ENHANCE_SYSTEM.costs[item.enhanceLevel + 1] || 100000000;  // 다음 강화 비용
-            const nextRateData = ENHANCE_SYSTEM.rates[item.enhanceLevel + 1];
-            session.successRate = nextRateData ? nextRateData.success : 10;  // 다음 강화 확률
+            const newSessionId = `${user.discordId}-${Date.now()}`;
+            this.sessions.set(newSessionId, {
+                userId: user.discordId,
+                itemId: sessionData.itemId,
+                itemInventoryIndex: sessionData.itemInventoryIndex,
+                item: { ...item, isAccessory: sessionData.item.isAccessory },  // 업데이트된 아이템 정보
+                cost: ENHANCE_SYSTEM.costs[item.enhanceLevel + 1] || 100000000,  // 다음 강화 비용
+                successRate: ENHANCE_SYSTEM.rates[item.enhanceLevel + 1]?.success || 10,  // 다음 강화 확률
+                useProtection: false,
+                useBlessing: false
+            });
             
             buttons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`enhance_continue_${sessionId}`)
+                        .setCustomId(`enhance_continue_${newSessionId}`)
                         .setLabel('🔥 계속 승급')
                         .setStyle(ButtonStyle.Danger),  // 실패 후에는 빨간색
                     new ButtonBuilder()
-                        .setCustomId(`enhance_continue_protection_${sessionId}`)
+                        .setCustomId(`enhance_continue_protection_${newSessionId}`)
                         .setLabel('🛡️ 보호석 사용하여 승급')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(!this.hasProtectionStone(user)),
                     new ButtonBuilder()
-                        .setCustomId(`enhance_continue_blessing_${sessionId}`)
+                        .setCustomId(`enhance_continue_blessing_${newSessionId}`)
                         .setLabel('✨ 강화석 사용하여 승급')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(!this.hasBlessingStone(user))
@@ -987,49 +1267,18 @@ class EnhanceSystem {
 
     // 강화 가능한 아이템 목록 조회 (장착한 장비만)
     getEnhanceableItems(user) {
-        if (!user.inventory || !user.equipment) return [];
+        if (!user.inventory) return [];
         
         const equippedItems = [];
         
-        // equipment 객체의 각 슬롯을 확인
-        Object.entries(user.equipment).forEach(([slot, itemIndex]) => {
-            // 유효한 아이템 인덱스인지 확인
-            if (itemIndex !== null && itemIndex !== undefined && itemIndex !== -1) {
-                const item = user.inventory[itemIndex];
-                if (item) {
-                    // 장비 아이템이고 최대 레벨이 아닌 경우
-                    const isEquipment = ['weapon', 'armor', 'accessory'].includes(item.type) ||
-                                       ['sword', 'shield', 'helmet', 'ring', 'bow', 'staff', 'dagger',
-                                        'gloves', 'boots', 'belt', 'cloak', 'necklace', 'earring'].includes(item.category) ||
-                                       ['weapon', 'armor', 'shield', 'helmet', 'gloves', 'boots', 
-                                        'belt', 'cloak', 'ring', 'necklace', 'earring'].includes(item.type);
-                    const notMaxLevel = (item.enhanceLevel || 0) < ENHANCE_SYSTEM.maxLevel;
-                    
-                    if (isEquipment && notMaxLevel) {
-                        // 슬롯 정보 추가
-                        item.equipmentSlot = slot;
-                        item.inventoryIndex = itemIndex;
-                        equippedItems.push(item);
-                    }
-                }
-            }
-        });
-        
-        // inventorySlot을 사용하는 경우도 체크
-        user.inventory.forEach((item, index) => {
-            if (item && item.inventorySlot !== undefined) {
-                // 이미 추가되지 않은 아이템인지 확인
-                const alreadyAdded = equippedItems.some(equipped => 
-                    equipped.inventoryIndex === index
-                );
-                
-                if (!alreadyAdded) {
-                    // equipment에 해당 inventorySlot이 있는지 확인
-                    const isEquipped = Object.values(user.equipment || {}).some(slotValue => 
-                        slotValue === item.inventorySlot
-                    );
-                    
-                    if (isEquipped) {
+        // 일반 장비 슬롯 확인 (equipment 객체)
+        if (user.equipment) {
+            Object.entries(user.equipment).forEach(([slot, itemIndex]) => {
+                // 유효한 아이템 인덱스인지 확인
+                if (itemIndex !== null && itemIndex !== undefined && itemIndex !== -1) {
+                    const item = user.inventory[itemIndex];
+                    if (item) {
+                        // 장비 아이템이고 최대 레벨이 아닌 경우
                         const isEquipment = ['weapon', 'armor', 'accessory'].includes(item.type) ||
                                            ['sword', 'shield', 'helmet', 'ring', 'bow', 'staff', 'dagger',
                                             'gloves', 'boots', 'belt', 'cloak', 'necklace', 'earring'].includes(item.category) ||
@@ -1038,6 +1287,81 @@ class EnhanceSystem {
                         const notMaxLevel = (item.enhanceLevel || 0) < ENHANCE_SYSTEM.maxLevel;
                         
                         if (isEquipment && notMaxLevel) {
+                            // 슬롯 정보 추가
+                            item.equipmentSlot = slot;
+                            item.inventoryIndex = itemIndex;
+                            equippedItems.push(item);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 악세사리 슬롯 확인 (equippedAccessories 객체)
+        if (user.equippedAccessories) {
+            Object.entries(user.equippedAccessories).forEach(([slot, accessoryItem]) => {
+                if (accessoryItem) {
+                    // 인벤토리에서 원본 아이템 찾기
+                    let originalItem = null;
+                    let itemIndex = -1;
+                    
+                    if (accessoryItem.inventorySlot !== undefined) {
+                        // inventorySlot으로 찾기
+                        originalItem = user.inventory.find(item => item && item.inventorySlot === accessoryItem.inventorySlot);
+                        itemIndex = accessoryItem.inventorySlot;
+                    }
+                    
+                    if (!originalItem) {
+                        // 인벤토리에서 동일한 아이템 찾기
+                        const foundIndex = user.inventory.findIndex(item => 
+                            item && item.name === accessoryItem.name && item.type === 'accessory'
+                        );
+                        if (foundIndex !== -1) {
+                            originalItem = user.inventory[foundIndex];
+                            itemIndex = foundIndex;
+                        }
+                    }
+                    
+                    if (originalItem) {
+                        const notMaxLevel = (originalItem.enhanceLevel || 0) < ENHANCE_SYSTEM.maxLevel;
+                        
+                        if (notMaxLevel) {
+                            // 슬롯 정보 추가
+                            originalItem.equipmentSlot = slot;
+                            originalItem.inventoryIndex = itemIndex;
+                            originalItem.isAccessory = true;
+                            equippedItems.push(originalItem);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // equipment 객체에서 찾지 못한 경우 inventorySlot으로도 확인
+        // equipment의 값이 inventorySlot인 경우를 체크
+        user.inventory.forEach((item, index) => {
+            if (item && item.inventorySlot !== undefined) {
+                // 이미 추가되지 않은 아이템인지 확인
+                const alreadyAdded = equippedItems.some(equipped => 
+                    equipped.inventoryIndex === index
+                );
+                
+                if (!alreadyAdded) {
+                    // equipment의 값이 현재 아이템의 inventorySlot과 일치하는지 확인
+                    const equipmentSlot = Object.entries(user.equipment || {}).find(([slot, value]) => 
+                        value === item.inventorySlot
+                    );
+                    
+                    if (equipmentSlot) {
+                        const isEquipment = ['weapon', 'armor', 'accessory'].includes(item.type) ||
+                                           ['sword', 'shield', 'helmet', 'ring', 'bow', 'staff', 'dagger',
+                                            'gloves', 'boots', 'belt', 'cloak', 'necklace', 'earring'].includes(item.category) ||
+                                           ['weapon', 'armor', 'shield', 'helmet', 'gloves', 'boots', 
+                                            'belt', 'cloak', 'ring', 'necklace', 'earring'].includes(item.type);
+                        const notMaxLevel = (item.enhanceLevel || 0) < ENHANCE_SYSTEM.maxLevel;
+                        
+                        if (isEquipment && notMaxLevel) {
+                            item.equipmentSlot = equipmentSlot[0]; // 실제 장착된 슬롯 저장
                             item.inventoryIndex = index;
                             equippedItems.push(item);
                         }
@@ -1231,15 +1555,48 @@ class EnhanceSystem {
     }
 
     // 스탯 한글 변환
-    getStatKorean(stat) {
+    getStatKorean(stat, user = null) {
+        // 마법사 엠블럼 확인
+        const isMage = user && user.emblem && (
+            user.emblem === '견습 마법사' || 
+            user.emblem === '원소 술사' ||
+            user.emblem === '신비한 현자' ||
+            user.emblem === '대마법사' ||
+            user.emblem === '전설의 아크메이지' ||
+            user.emblem.includes('마법사') ||
+            user.emblem.includes('아크메이지')
+        );
+        
         const stats = {
-            'attack': '공격력',
+            'attack': isMage ? '마력' : '공격력',
             'defense': '방어력',
             'hp': '체력',
+            'health': '체력',
             'luck': '행운',
             'strength': '힘',
             'agility': '민첩',
-            'intelligence': '지능'
+            'intelligence': '지능',
+            'vitality': '활력',
+            'dodge': '회피',
+            'critical': '치명타',
+            'criticalChance': '치명타 확률',
+            'criticalDamage': '치명타 피해',
+            'speed': '속도',
+            'mana': '마나',
+            'stamina': '스태미나',
+            'resistance': '저항력',
+            'accuracy': '명중률',
+            'evasion': '회피율',
+            'blockChance': '방어 확률',
+            'penetration': '관통력',
+            'lifesteal': '생명력 흡수',
+            'attackSpeed': '공격 속도',
+            'moveSpeed': '이동 속도',
+            'cooldownReduction': '재사용 대기시간 감소',
+            'expBonus': '경험치 보너스',
+            'goldBonus': '골드 보너스',
+            'itemFind': '아이템 발견률',
+            'magicFind': '마법 아이템 발견률'
         };
         return stats[stat] || stat;
     }
@@ -1252,24 +1609,28 @@ const enhanceSystem = new EnhanceSystem();
 async function handleEnhanceInteraction(interaction) {
     const customId = interaction.customId;
     
-    // 버튼 인터랙션인 경우 사용자 확인
-    if (interaction.isButton() && !customId.startsWith('enhance_')) {
-        // enhance로 시작하지 않는 버튼은 체크하지 않음
-    } else if (interaction.isButton() && customId.startsWith('enhance_')) {
-        // 세션 ID에서 사용자 ID 추출
+    // 세션이 필요한 인터랙션인 경우 사용자 확인
+    const sessionRequiredPrefixes = ['enhance_confirm_', 'enhance_protection_', 'enhance_blessing_'];
+    const needsSessionCheck = sessionRequiredPrefixes.some(prefix => customId.startsWith(prefix));
+    
+    if (needsSessionCheck) {
+        // 세션 ID에서 사용자 ID 추출 (enhance_confirm_유저ID-타임스탬프 형식)
         const sessionParts = customId.split('_');
-        const sessionUserId = sessionParts[sessionParts.length - 1].split('-')[0];
-        
-        if (sessionUserId && sessionUserId !== interaction.user.id) {
-            if (interaction.deferred) {
-                return await interaction.editReply({
-                    content: '❌ 다른 사용자의 강화 세션입니다!'
-                });
-            } else {
-                return await interaction.reply({
-                    content: '❌ 다른 사용자의 강화 세션입니다!',
-                    flags: 64
-                });
+        if (sessionParts.length >= 3) {
+            const sessionId = sessionParts.slice(2).join('_'); // enhance_confirm_ 이후 전체
+            const sessionUserId = sessionId.split('-')[0]; // 첫 번째 - 이전까지가 유저 ID
+            
+            if (sessionUserId && sessionUserId !== interaction.user.id) {
+                if (interaction.deferred) {
+                    return await interaction.editReply({
+                        content: '❌ 다른 사용자의 강화 세션입니다!'
+                    });
+                } else {
+                    return await interaction.reply({
+                        content: '❌ 다른 사용자의 강화 세션입니다!',
+                        flags: 64
+                    });
+                }
             }
         }
     }
@@ -1279,7 +1640,9 @@ async function handleEnhanceInteraction(interaction) {
     }
     else if (customId === 'enhance_menu') {
         // 메뉴 버튼 클릭 시 update 사용
-        await interaction.deferUpdate();
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
         return await enhanceSystem.showEnhanceMenu(interaction);
     }
     else if (customId === 'enhance_select_item') {
@@ -1460,5 +1823,6 @@ async function handleEnhanceInteraction(interaction) {
 module.exports = {
     handleEnhanceInteraction,
     enhanceSystem,
-    EnhanceSystem
+    EnhanceSystem,
+    ENHANCE_SYSTEM
 };

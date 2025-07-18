@@ -2,218 +2,359 @@
 const EXERCISE_SYSTEM = {
     // 운동 종류 정의
     exercises: {
-        // 기본 운동 (무료)
+        // 💪 힘 특화 운동
         pushup: {
             id: 'pushup',
             name: '팔굽혀펴기',
             emoji: '💪',
             category: 'basic',
-            description: '기본적인 근력 운동',
+            description: '힘 +1/시간',
             requirements: null,
-            maxDuration: 3600000, // 1시간
-            efficiency: {
-                strength: 1.5,
-                stamina: 0.5,
-                flexibility: 0.3,
-                agility: 0.2,
-                mental: 0.5
+            statGains: {
+                strength: 1  // 시간당 스탯
             },
-            fatigueRate: 0.8, // 피로도 증가율
             rewards: {
-                goldPerMinute: 500,    // 10 -> 500 (50x)
-                expPerMinute: 50,      // 5 -> 50 (10x)
-                fitnessExpPerMinute: 80  // 8 -> 80 (10x)
-            }
-        },
-        jogging: {
-            id: 'jogging',
-            name: '조깅',
-            emoji: '🏃',
-            category: 'basic',
-            description: '기본적인 유산소 운동',
-            requirements: null,
-            maxDuration: 7200000, // 2시간
-            efficiency: {
-                strength: 0.3,
-                stamina: 1.5,
-                flexibility: 0.2,
-                agility: 0.8,
-                mental: 0.7
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 50,
+                fitnessExpPerMinute: 10
             },
-            fatigueRate: 0.6,
-            rewards: {
-                goldPerMinute: 400,    // 8 -> 400 (50x)
-                expPerMinute: 60,      // 6 -> 60 (10x)
-                fitnessExpPerMinute: 100  // 10 -> 100 (10x)
-            }
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도  // 30분 운동 = 24 피로도
         },
-        stretching: {
-            id: 'stretching',
-            name: '스트레칭',
-            emoji: '🧘',
-            category: 'basic',
-            description: '유연성을 기르는 운동',
-            requirements: null,
-            maxDuration: 1800000, // 30분
-            efficiency: {
-                strength: 0.1,
-                stamina: 0.3,
-                flexibility: 2.0,
-                agility: 0.5,
-                mental: 1.0
-            },
-            fatigueRate: 0.3,
-            rewards: {
-                goldPerMinute: 250,    // 5 -> 250 (50x)
-                expPerMinute: 40,      // 4 -> 40 (10x)
-                fitnessExpPerMinute: 60  // 6 -> 60 (10x)
-            }
-        },
-        
-        // 헬스장 운동 (일일 이용권 필요)
         weight: {
             id: 'weight',
             name: '웨이트 트레이닝',
             emoji: '🏋️',
             category: 'gym',
-            description: '전문적인 근력 운동',
+            description: '힘 +2, 체력 +1/시간',
             requirements: 'gym',
-            maxDuration: 5400000, // 1.5시간
-            efficiency: {
-                strength: 2.5,
-                stamina: 1.0,
-                flexibility: 0.2,
-                agility: 0.3,
-                mental: 0.8
+            statGains: {
+                strength: 2,
+                vitality: 1
             },
-            fatigueRate: 1.2,
             rewards: {
-                goldPerMinute: 1000,   // 20 -> 1000 (50x)
-                expPerMinute: 100,     // 10 -> 100 (10x)
-                fitnessExpPerMinute: 150  // 15 -> 150 (10x)
-            }
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 100,
+                fitnessExpPerMinute: 15
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도
         },
-        treadmill: {
-            id: 'treadmill',
-            name: '러닝머신',
-            emoji: '🏃‍♂️',
-            category: 'gym',
-            description: '실내 유산소 운동',
-            requirements: 'gym',
-            maxDuration: 10800000, // 3시간
-            efficiency: {
-                strength: 0.5,
-                stamina: 2.2,
-                flexibility: 0.3,
-                agility: 1.5,
-                mental: 1.0
+        powerlifting: {
+            id: 'powerlifting',
+            name: '파워리프팅',
+            emoji: '🏋️‍♂️',
+            category: 'premium',
+            description: '힘 +3/시간',
+            requirements: 'premium',
+            statGains: {
+                strength: 3
             },
-            fatigueRate: 0.9,
             rewards: {
-                goldPerMinute: 750,    // 15 -> 750 (50x)
-                expPerMinute: 120,     // 12 -> 120 (10x)
-                fitnessExpPerMinute: 180  // 18 -> 180 (10x)
-            }
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 150,
+                fitnessExpPerMinute: 20
+            },
+            fatigueRate: 1.5  // 30분 운동 = 45 피로도
+        },
+        
+        // 🏃 민첩 특화 운동
+        jogging: {
+            id: 'jogging',
+            name: '조깅',
+            emoji: '🏃',
+            category: 'basic',
+            description: '민첩 +1/시간',
+            requirements: null,
+            statGains: {
+                agility: 1
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 60,
+                fitnessExpPerMinute: 10
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도  // 30분 운동 = 24 피로도
         },
         spinning: {
             id: 'spinning',
             name: '스피닝',
             emoji: '🚴',
             category: 'gym',
-            description: '고강도 사이클 운동',
+            description: '민첩 +2, 체력 +1/시간',
             requirements: 'gym',
-            maxDuration: 3600000, // 1시간
-            efficiency: {
-                strength: 0.8,
-                stamina: 2.0,
-                flexibility: 0.4,
-                agility: 1.8,
-                mental: 1.2
+            statGains: {
+                agility: 2,
+                vitality: 1
             },
-            fatigueRate: 1.4,
             rewards: {
-                goldPerMinute: 900,    // 18 -> 900 (50x)
-                expPerMinute: 140,     // 14 -> 140 (10x)
-                fitnessExpPerMinute: 200  // 20 -> 200 (10x)
-            }
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 140,
+                fitnessExpPerMinute: 15
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도
+        },
+        parkour: {
+            id: 'parkour',
+            name: '파쿠르',
+            emoji: '🤸‍♂️',
+            category: 'premium',
+            description: '민첩 +3/시간',
+            requirements: 'premium',
+            statGains: {
+                agility: 3
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 200,
+                fitnessExpPerMinute: 20
+            },
+            fatigueRate: 1.5  // 30분 운동 = 45 피로도
         },
         
-        // 프리미엄 운동 (프리미엄 회원권 필요)
+        // 🧠 지능 특화 운동
+        reading: {
+            id: 'reading',
+            name: '독서',
+            emoji: '📚',
+            category: 'basic',
+            description: '지능 +1/시간',
+            requirements: null,
+            statGains: {
+                intelligence: 1
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 40,
+                fitnessExpPerMinute: 10
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도  // 30분 운동 = 24 피로도
+        },
+        meditation: {
+            id: 'meditation',
+            name: '명상',
+            emoji: '🧘',
+            category: 'gym',
+            description: '지능 +2, 정신력 +1/시간',
+            requirements: 'gym',
+            statGains: {
+                intelligence: 2,
+                mental: 1  // 정신력은 전투력에만 영향
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 120,
+                fitnessExpPerMinute: 15
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도
+        },
+        braintraining: {
+            id: 'braintraining',
+            name: '두뇌 트레이닝',
+            emoji: '🧠',
+            category: 'premium',
+            description: '지능 +3/시간',
+            requirements: 'premium',
+            statGains: {
+                intelligence: 3
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 180,
+                fitnessExpPerMinute: 20
+            },
+            fatigueRate: 1.5  // 30분 운동 = 45 피로도
+        },
+        
+        // ❤️ 체력 특화 운동
+        jumprope: {
+            id: 'jumprope',
+            name: '줄넘기',
+            emoji: '🪢',
+            category: 'basic',
+            description: '체력 +1/시간',
+            requirements: null,
+            statGains: {
+                vitality: 1
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 50,
+                fitnessExpPerMinute: 10
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도  // 30분 운동 = 24 피로도
+        },
         swimming: {
             id: 'swimming',
             name: '수영',
             emoji: '🏊',
-            category: 'premium',
-            description: '전신 운동의 최고봉',
-            requirements: 'premium',
-            maxDuration: 7200000, // 2시간
-            efficiency: {
-                strength: 1.5,
-                stamina: 1.8,
-                flexibility: 1.5,
-                agility: 1.5,
-                mental: 1.2
+            category: 'gym',
+            description: '체력 +2, 민첩 +1/시간',
+            requirements: 'gym',
+            statGains: {
+                vitality: 2,
+                agility: 1
             },
-            fatigueRate: 1.0,
             rewards: {
-                goldPerMinute: 1500,   // 30 -> 1500 (50x)
-                expPerMinute: 200,     // 20 -> 200 (10x)
-                fitnessExpPerMinute: 250  // 25 -> 250 (10x)
-            }
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 150,
+                fitnessExpPerMinute: 15
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도
         },
-        pilates: {
-            id: 'pilates',
-            name: '필라테스',
-            emoji: '🤸',
+        marathon: {
+            id: 'marathon',
+            name: '마라톤',
+            emoji: '🏃‍♀️',
             category: 'premium',
-            description: '코어 강화와 유연성',
+            description: '체력 +3/시간',
             requirements: 'premium',
-            maxDuration: 5400000, // 1.5시간
-            efficiency: {
-                strength: 1.2,
-                stamina: 0.8,
-                flexibility: 2.5,
-                agility: 1.0,
-                mental: 1.8
+            statGains: {
+                vitality: 3
             },
-            fatigueRate: 0.7,
             rewards: {
-                goldPerMinute: 1250,   // 25 -> 1250 (50x)
-                expPerMinute: 180,     // 18 -> 180 (10x)
-                fitnessExpPerMinute: 220  // 22 -> 220 (10x)
-            }
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 200,
+                fitnessExpPerMinute: 20
+            },
+            fatigueRate: 1.5  // 30분 운동 = 45 피로도
         },
-        crossfit: {
-            id: 'crossfit',
-            name: '크로스핏',
-            emoji: '💥',
-            category: 'premium',
-            description: '종합 고강도 운동',
-            requirements: 'premium',
-            maxDuration: 3600000, // 1시간
-            efficiency: {
-                strength: 2.0,
-                stamina: 2.0,
-                flexibility: 1.0,
-                agility: 2.0,
-                mental: 1.5
+        
+        // 🍀 행운 특화 운동
+        darts: {
+            id: 'darts',
+            name: '다트',
+            emoji: '🎯',
+            category: 'basic',
+            description: '행운 +1/시간',
+            requirements: null,
+            statGains: {
+                luck: 1
             },
-            fatigueRate: 1.8,
             rewards: {
-                goldPerMinute: 1750,   // 35 -> 1750 (50x)
-                expPerMinute: 250,     // 25 -> 250 (10x)
-                fitnessExpPerMinute: 300  // 30 -> 300 (10x)
-            }
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 45,
+                fitnessExpPerMinute: 10
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도  // 30분 운동 = 24 피로도
+        },
+        archery: {
+            id: 'archery',
+            name: '양궁',
+            emoji: '🏹',
+            category: 'gym',
+            description: '행운 +2, 민첩 +1/시간',
+            requirements: 'gym',
+            statGains: {
+                luck: 2,
+                agility: 1
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제거
+                expPerMinute: 130,
+                fitnessExpPerMinute: 15
+            },
+            fatigueRate: 1.2  // 30분 운동 = 36 피로도
+        },
+        shooting: {
+            id: 'shooting',
+            name: '정밀 사격',
+            emoji: '🎯',
+            category: 'premium',
+            description: '행운 +3/시간',
+            requirements: 'premium',
+            statGains: {
+                luck: 3
+            },
+            rewards: {
+                goldPerMinute: 0,  // 골드 보상 제겄
+                expPerMinute: 190,
+                fitnessExpPerMinute: 20
+            },
+            fatigueRate: 1.5  // 30분 운동 = 45 피로도
         }
     },
     
     // 피트니스 레벨 티어
     levelTiers: {
-        1: { name: '운동 초보자', emoji: '🌱', requiredExp: 0 },
-        11: { name: '운동 아마추어', emoji: '🌿', requiredExp: 1000 },
-        31: { name: '세미 프로', emoji: '🌳', requiredExp: 5000 },
-        51: { name: '프로 운동가', emoji: '🏆', requiredExp: 15000 },
-        71: { name: '운동 마스터', emoji: '👑', requiredExp: 50000 }
+        1: { 
+            name: '운동 초보자', 
+            emoji: '🌱', 
+            requiredExp: 0,
+            benefits: '기본 운동만 가능'
+        },
+        10: { 
+            name: '운동 입문자', 
+            emoji: '🌿', 
+            requiredExp: 500,
+            benefits: '운동 효율 +3%'
+        },
+        20: { 
+            name: '운동 애호가', 
+            emoji: '🌳', 
+            requiredExp: 2000,
+            benefits: '운동 효율 +5%, 피로도 회복 속도 +5%'
+        },
+        30: { 
+            name: '피트니스 매니아', 
+            emoji: '💪', 
+            requiredExp: 5000,
+            benefits: '운동 효율 +8%, 피로도 회복 속도 +10%'
+        },
+        40: { 
+            name: '운동 중독자', 
+            emoji: '🔥', 
+            requiredExp: 10000,
+            benefits: '운동 효율 +12%, 피로도 회복 속도 +15%, 스탯 증가량 +5%'
+        },
+        50: { 
+            name: '세미 프로', 
+            emoji: '⭐', 
+            requiredExp: 20000,
+            benefits: '운동 효율 +15%, 피로도 회복 속도 +20%, 스탯 증가량 +10%'
+        },
+        60: { 
+            name: '프로 운동가', 
+            emoji: '🏆', 
+            requiredExp: 40000,
+            benefits: '운동 효율 +20%, 피로도 회복 속도 +25%, 스탯 증가량 +15%'
+        },
+        70: { 
+            name: '운동 전문가', 
+            emoji: '🥇', 
+            requiredExp: 80000,
+            benefits: '운동 효율 +25%, 피로도 회복 속도 +30%, 스탯 증가량 +20%'
+        },
+        80: { 
+            name: '피트니스 구루', 
+            emoji: '🎯', 
+            requiredExp: 150000,
+            benefits: '운동 효율 +28%, 피로도 회복 속도 +40%, 스탯 증가량 +25%, 일일 보너스 시간 +15분'
+        },
+        90: { 
+            name: '운동의 신', 
+            emoji: '⚡', 
+            requiredExp: 300000,
+            benefits: '운동 효율 +30%, 피로도 회복 속도 +45%, 스탯 증가량 +28%, 일일 보너스 시간 +25분'
+        },
+        100: { 
+            name: '전설의 보디빌더', 
+            emoji: '👑', 
+            requiredExp: 600000,
+            benefits: '운동 효율 +35%, 피로도 회복 속도 +50%, 스탯 증가량 +30%, 일일 보너스 시간 +30분'
+        }
+    },
+    
+    // 레벨별 보너스 (누적)
+    levelBonuses: {
+        10: { efficiency: 1.03, fatigueRecovery: 1.0 },
+        20: { efficiency: 1.05, fatigueRecovery: 1.05 },
+        30: { efficiency: 1.08, fatigueRecovery: 1.1 },
+        40: { efficiency: 1.12, fatigueRecovery: 1.15, statBonus: 1.05 },
+        50: { efficiency: 1.15, fatigueRecovery: 1.2, statBonus: 1.1 },
+        60: { efficiency: 1.2, fatigueRecovery: 1.25, statBonus: 1.15 },
+        70: { efficiency: 1.25, fatigueRecovery: 1.3, statBonus: 1.2 },
+        80: { efficiency: 1.28, fatigueRecovery: 1.4, statBonus: 1.25, bonusMinutes: 15 },
+        90: { efficiency: 1.3, fatigueRecovery: 1.45, statBonus: 1.28, bonusMinutes: 25 },
+        100: { efficiency: 1.35, fatigueRecovery: 1.5, statBonus: 1.3, bonusMinutes: 30 }
     },
     
     // 운동 장비
@@ -266,13 +407,20 @@ const EXERCISE_SYSTEM = {
         { days: 30, bonus: 0.5, message: '한달 연속! 효율 +50%' }
     ],
     
-    // 피로도 설정
-    fatigue: {
-        maxFatigue: 3600,  // 최대 피로도 (60시간)
-        recoveryRate: 60,  // 1시간당 60분 회복
-        exerciseLimit: 3600, // 운동 가능 최대치
-        warningLevel: 2400,  // 경고 레벨 (40시간)
-        fatiguePerMinute: 1  // 1분당 1 피로도
+    // 일일 운동 시간 제한
+    dailyLimits: {
+        basic: 120,     // 기본: 2시간 (120분)
+        premium: 240,   // 프리미엄: 4시간 (240분)
+        vip: 360        // VIP: 6시간 (360분)
+    },
+    
+    // 직업별 추천 운동
+    recommendedExercises: {
+        '전사': ['pushup', 'weight', 'powerlifting'],
+        '궁수': ['jogging', 'archery', 'parkour'],
+        '마법사': ['reading', 'meditation', 'braintraining'],
+        '도적': ['parkour', 'darts', 'shooting'],
+        '수호자': ['jumprope', 'swimming', 'marathon']
     }
 };
 

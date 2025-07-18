@@ -161,7 +161,7 @@ async function handlePVPInteraction(interaction) {
                     .setStyle(ButtonStyle.Secondary)
             );
 
-        return await interaction.update({ 
+        return await interaction.editReply({ 
             embeds: [infoEmbed],
             components: [buttons]
         });
@@ -263,7 +263,7 @@ async function handlePVPInteraction(interaction) {
     // PVP 대기실 관련 인터랙션
     if (customId.startsWith('pvp_join_') || customId.startsWith('pvp_start_') || 
         customId.startsWith('pvp_offline_') || customId.startsWith('pvp_leave_') ||
-        customId.startsWith('pvp_spectate_')) {
+        customId.startsWith('pvp_room_spectate_')) {
         return await handlePVPWaitingRoomInteraction(interaction, getPVPSystem());
     }
 

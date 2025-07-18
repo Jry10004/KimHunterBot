@@ -1,3 +1,54 @@
 {
-  "lastSpawnTime": 1752677827135
+  "lastSpawnTime": 1752876533867,
+  "activeWorldBoss": {
+    "boss": {
+      "id": "ancient_golem",
+      "name": "고대 골렘",
+      "emoji": "🗿",
+      "level": 95,
+      "hp": 900000,
+      "requiredLevel": 85,
+      "attack": 900,
+      "defense": 600,
+      "spawnMessage": "오랜 세월이 깨어납니다!\n고대의 수호자가 부활했습니다!",
+      "rewards": {
+        "exp": 300000,
+        "gold": 3000000,
+        "items": [
+          {
+            "id": "ancient_core",
+            "chance": 0.06
+          },
+          {
+            "id": "eternal_stone",
+            "chance": 0.1
+          }
+        ]
+      },
+      "skills": [
+        {
+          "name": "천년의 주먹",
+          "damage": 2300,
+          "chance": 0.4
+        },
+        {
+          "name": "불멸의 방패",
+          "effect": "super_shield",
+          "chance": 0.3
+        },
+        {
+          "name": "대지 붕괴",
+          "damage": 3500,
+          "chance": 0.1
+        }
+      ]
+    },
+    "bossName": "고대 골렘",
+    "startTime": 1752876533531,
+    "currentHp": 900000,
+    "maxHp": 900000,
+    "participants": 0,
+    "messageId": "1395890100595855470",
+    "channelId": "1391112529828384870"
+  }
 }

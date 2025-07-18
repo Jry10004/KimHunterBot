@@ -8,21 +8,27 @@ module.exports = {
     async execute(interaction) {
         // 먼저 즉시 defer 처리 (타임아웃 방지)
         try {
-            await interaction.deferReply({ flags: 64 });
+            // 이미 defer 또는 reply 된 상태인지 확인
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ flags: 64 });
+            }
         } catch (error) {
             if (error.code === 10062) {
                 console.log('[게임 명령어] 상호작용 만료');
                 return;
             }
-            console.error('[게임 명령어] defer 오류:', error);
+            if (error.code === 40060) {
+                console.log('[게임 명령어] 이미 acknowledged된 interaction');
+                // 에러를 무시하고 계속 진행
+            } else {
+                console.error('[게임 명령어] defer 오류:', error);
+            }
         }
         
         try {
             // 유저 데이터 확인 (병렬 처리로 최적화)
             const User = require('../../models/User');
-            const [user] = await Promise.all([
-                User.findOne({ discordId: interaction.user.id }).lean()
-            ]);
+            const user = await User.findOne({ discordId: interaction.user.id });
             
             if (!user || !user.registered) {
                 return await interaction.editReply({
@@ -31,8 +37,14 @@ module.exports = {
             }
             
             // 전투력 계산
-            const { calculateCombatPower } = require('../../handlers/common/utils');
+            const { calculateCombatPower } = require('../../handlers/common/combatPower');
             const combatPower = calculateCombatPower(user);
+            
+            // DB의 전투력과 다르면 업데이트
+            if (user.combatPower !== combatPower) {
+                user.combatPower = combatPower;
+                await user.save();
+            }
             
             // 마법사 엠블럼 확인
             const isMage = user.equippedEmblem && (
@@ -75,6 +87,12 @@ module.exports = {
                 description: '보유 아이템 확인',
                 value: 'inventory',
                 emoji: '🎒'
+            },
+            {
+                label: '🏆 엠블럼',
+                description: '엠블럼 확인 및 관리',
+                value: 'emblem',
+                emoji: '🏆'
             },
             {
                 label: '🎮 미니게임',

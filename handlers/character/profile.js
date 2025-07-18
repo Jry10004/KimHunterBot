@@ -1,8 +1,8 @@
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
 const { getUser, formatNumber, calculateExpForLevel, getTierEmoji, calculateTier } = require('../common/utils');
-const { calculateCombatPower } = require('../common/combatPower');
 const { checkAndProcessLevelUp } = require('../common/levelUp');
 const BOSS_ACCESSORIES = require('../../data/bossAccessories');
+const { migrateAccessories } = require('./equipment');
 
 // 스탯 보너스 표시 헬퍼 함수
 function getStatBonus(value) {
@@ -10,8 +10,15 @@ function getStatBonus(value) {
     return ` (+${value})`;
 }
 
-async function showProfile(interaction) {
-    await interaction.deferUpdate().catch(() => {});
+async function showProfile(interaction, page = 1) {
+    // interaction 상태 확인 후 적절히 처리
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferUpdate();
+        }
+    } catch (error) {
+        console.log('[Profile] Defer 처리 스킵:', error.message);
+    }
     
     const user = await getUser(interaction.user.id);
     if (!user || !user.registered) {
@@ -22,6 +29,10 @@ async function showProfile(interaction) {
         });
     }
     
+    // 장신구 데이터 마이그레이션
+    await migrateAccessories(user);
+    await user.save();
+    
     // 레벨업 체크
     const { leveledUp, levelsGained } = await checkAndProcessLevelUp(user);
 
@@ -29,8 +40,17 @@ async function showProfile(interaction) {
     const maxExp = calculateExpForLevel(user.level);
     const expPercentage = Math.floor((user.exp / maxExp) * 100);
     
-    // 전투력 계산 (통합 함수 사용)
-    const combatPower = calculateCombatPower(user);
+    // 전투력 계산 (통합 함수 사용) - 직접 require 방식으로 변경
+    let combatPower = 0;
+    let fragmentAttack = 0;
+    try {
+        const combatPowerModule = require('../common/combatPower');
+        combatPower = combatPowerModule.calculateCombatPower(user);
+        fragmentAttack = combatPowerModule.getFragmentAttackBonus(user);
+    } catch (error) {
+        console.error('[Profile] 전투력 계산 오류:', error);
+        combatPower = user.combatPower || 0;
+    }
     
     // 계산된 전투력이 DB와 다르면 업데이트
     if (user.combatPower !== combatPower) {
@@ -38,404 +58,351 @@ async function showProfile(interaction) {
         await user.save();
     }
     
-    // 마법사 엠블럼 확인
-    const isMage = user.equippedEmblem && (
-        user.equippedEmblem.includes('마법사') || 
-        user.equippedEmblem.includes('원소 술사') ||
-        user.equippedEmblem.includes('신비한 현자') ||
-        user.equippedEmblem.includes('대마법사') ||
-        user.equippedEmblem.includes('아크메이지')
-    );
+    // 직업별 스탯 표시 확인 (강화 수치 제거)
+    const emblemName = user.emblem ? user.emblem.replace(/\s*\+\d+$/, '') : '';
+    const equippedEmblemName = user.equippedEmblem ? user.equippedEmblem.replace(/\s*\+\d+$/, '') : '';
+    const checkEmblem = equippedEmblemName || emblemName;
     
-    const powerLabel = isMage ? '마력' : '전투력';
-    const powerEmoji = isMage ? '🔮' : '⚔️';
-
-    // 프로필 임베드
-    const profileEmbed = new EmbedBuilder()
-        .setColor('#9b59b6')
-        .setTitle(`👤 ${user.nickname || interaction.user.username}님의 프로필`)
-        .setThumbnail(interaction.user.displayAvatarURL())
-        .addFields(
-            { 
-                name: '📊 기본 정보', 
-                value: `**레벨**: ${user.level}\n**경험치**: ${formatNumber(user.exp)}/${formatNumber(maxExp)} (${expPercentage}%)\n**골드**: ${formatNumber(user.gold)}G\n**인기도**: ${formatNumber(user.popularity)}\n**엠블럼**: ${user.emblem || '없음'}`, 
-                inline: true 
-            },
-            { 
-                name: `${powerEmoji} 전투 정보`, 
-                value: `**${powerLabel}**: ${formatNumber(combatPower)}\n**PVP 레이팅**: ${user.pvp?.rating || 1000}\n**티어**: ${getTierEmoji(calculateTier(user.pvp?.rating || 1000))} ${calculateTier(user.pvp?.rating || 1000)}`, 
-                inline: true 
-            },
-            { 
-                name: '📈 기본 스탯', 
-                value: `💪 **힘**: ${user.stats?.strength || 10}${getStatBonus(user.emblemEnhancement?.appliedStats?.strength)}\n🏃 **민첩**: ${user.stats?.agility || 10}${getStatBonus(user.emblemEnhancement?.appliedStats?.agility)}\n🧠 **지능**: ${user.stats?.intelligence || 10}${getStatBonus(user.emblemEnhancement?.appliedStats?.intelligence)}\n❤️ **체력**: ${user.stats?.vitality || 10}${getStatBonus(user.emblemEnhancement?.appliedStats?.vitality)}\n🍀 **행운**: ${user.stats?.luck || 10}${getStatBonus(user.emblemEnhancement?.appliedStats?.luck)}\n\n📍 **남은 스탯 포인트**: ${user.statPoints || 0}`, 
-                inline: true 
-            }
-        );
-
-    // 장비 정보 추가
-    const equipmentInfo = [];
-    const slots = {
-        weapon: '🗡️ 무기',
-        armor: '🛡️ 갑옷',
-        helmet: '⛑️ 투구',
-        gloves: '🧤 장갑',
-        boots: '👢 신발',
-        shield: '🛡️ 방패'
+    let classType = 'physical';
+    if (checkEmblem && (
+        checkEmblem.includes('마법사') || checkEmblem.includes('원소 술사') || 
+        checkEmblem.includes('신비한 현자') || checkEmblem.includes('대마법사') || 
+        checkEmblem.includes('아크메이지')
+    )) {
+        classType = 'magic';
+    }
+    
+    const isMage = classType === 'magic';
+    const attackLabel = isMage ? '마력' : '공격력';
+    const attackIcon = isMage ? '🔮' : '⚔️';
+    
+    const emblemType = checkEmblem || '없음';
+    
+    // 티어 계산
+    const { tier, stars } = calculateTier(user.level);
+    const tierEmoji = getTierEmoji(tier, stars);
+    
+    // 경험치 프로그레스 바 생성
+    const barLength = 20;
+    const filledLength = Math.floor(barLength * (expPercentage / 100));
+    const emptyLength = barLength - filledLength;
+    const progressBar = '█'.repeat(filledLength) + '░'.repeat(emptyLength);
+    
+    // 추가 스탯 계산
+    const distributedStats = user.distributedStats || {};
+    const emblemStats = user.emblemEnhancement?.appliedStats || {};
+    const exerciseStats = user.exerciseStats || {};
+    
+    // 기본 스탯 (user.stats에는 이미 운동 스탯이 포함되어 있음)
+    const baseStats = {
+        strength: (user.stats?.strength || 10) - (exerciseStats.strength || 0),
+        agility: (user.stats?.agility || 10) - (exerciseStats.agility || 0),
+        intelligence: (user.stats?.intelligence || 10) - (exerciseStats.intelligence || 0),
+        vitality: (user.stats?.vitality || 10) - (exerciseStats.vitality || 0),
+        luck: (user.stats?.luck || 10) - (exerciseStats.luck || 0)
     };
-
-    // getEquippedItem 함수 로컬 구현
-    const getEquippedItem = function(user, slot) {
-        if (!user.equipment || user.equipment[slot] === undefined || user.equipment[slot] === null || user.equipment[slot] === -1) {
-            return null;
-        }
-        
-        const slotIndex = user.equipment[slot];
-        if (slotIndex < 0 || !user.inventory) {
-            return null;
-        }
-        
-        // inventorySlot으로 먼저 찾기
-        let item = user.inventory.find(item => item && item.inventorySlot === slotIndex);
-        
-        // 못 찾았으면 배열 인덱스로 찾기
-        if (!item) {
-            item = user.inventory[slotIndex];
-        }
-        
-        if (!item) return null;
-        
-        // 각 슬롯에 맞는 타입만 장착 가능
-        const isValidType = item.type === slot;
-        
-        if (!isValidType) return null;
-        
-        return item;
-    };
-
-    // 총 장비 능력치 계산
-    let totalEquipStats = {
-        attack: 0,
-        defense: 0,
+    
+    // 장비 스탯 계산 - 실제 사용하는 스탯만 포함
+    const equipmentStats = {
         strength: 0,
         agility: 0,
         intelligence: 0,
         vitality: 0,
         luck: 0,
+        attack: 0,  // 마법사는 이것을 '마력'으로 표시
+        defense: 0,
         hp: 0,
-        dodge: 0
+        dodge: 0,
+        // TODO: 아래 스탯들은 아직 아이템에 구현되지 않았지만, 나중에 추가될 예정
+        // 새로운 아이템 옵션 추가 시 이 코드를 참고하여 사용하세요
+        criticalChance: 0,    // 치명타 확률 (%)
+        criticalDamage: 0,    // 치명타 피해 (%)
+        goldBonus: 0,         // 골드 획득 보너스 (%)
+        expBonus: 0           // 경험치 획득 보너스 (%)
     };
-
-    for (const [slot, emoji] of Object.entries(slots)) {
-        const item = getEquippedItem(user, slot);
-        if (item && item.name) {
-            let itemText = `${emoji}: **${item.name}**`;
-            
-            // 강화 수치
-            if (item.enhancement && item.enhancement > 0) {
-                itemText += ` ✨(+${item.enhancement})`;
-            }
-            
-            // 희귀도 표시
-            if (item.rarity) {
-                const rarityColors = {
-                    'legendary': '🟡',
-                    'unique': '🟣',
-                    'epic': '🔵',
-                    'rare': '🟢',
-                    'normal': '⚪',
-                    'trash': '🔴'
-                };
-                itemText = `${rarityColors[item.rarity] || '⚪'} ` + itemText;
-            }
-            
-            // 능력치 표시를 더 간단하고 명확하게
-            const statText = [];
-            let itemCombatPower = 0;
-            
-            // 스탯 확인 - stats가 없으면 기본 속성 확인
-            const itemStats = item.stats || {};
-            
-            // 구버전 호환성 - stats가 없더라도 기본 속성 확인
-            if (!item.stats) {
-                if (item.attack !== undefined) itemStats.attack = item.attack;
-                if (item.defense !== undefined) itemStats.defense = item.defense;
-                if (item.strength !== undefined) itemStats.strength = item.strength;
-                if (item.agility !== undefined) itemStats.agility = item.agility;
-                if (item.intelligence !== undefined) itemStats.intelligence = item.intelligence;
-                if (item.vitality !== undefined) itemStats.vitality = item.vitality;
-                if (item.luck !== undefined) itemStats.luck = item.luck;
-                if (item.hp !== undefined) itemStats.hp = item.hp;
-                if (item.dodge !== undefined) itemStats.dodge = item.dodge;
-                if (item.evasion !== undefined) itemStats.dodge = item.evasion; // evasion -> dodge
-            }
-            
-            if (Object.keys(itemStats).length > 0) {
-                // 주요 스탯만 표시
-                if (itemStats.attack) {
-                    const totalAttack = itemStats.attack + (item.enhancement || 0) * 10;
-                    statText.push(`공격+${totalAttack}`);
-                    totalEquipStats.attack += totalAttack;
-                    itemCombatPower += totalAttack * 2;
-                }
-                if (itemStats.defense) {
-                    const totalDefense = itemStats.defense + (item.enhancement || 0) * 10;
-                    statText.push(`방어+${totalDefense}`);
-                    totalEquipStats.defense += totalDefense;
-                    itemCombatPower += totalDefense * 1.5;
+    
+    // 일반 장비 스탯 합산
+    if (user.equipment && user.inventory) {
+        for (const [slot, equippedSlot] of Object.entries(user.equipment)) {
+            if (equippedSlot >= 0) {
+                let equippedItem = null;
+                
+                // inventorySlot으로 먼저 찾기
+                equippedItem = user.inventory.find(item => item && item.inventorySlot === equippedSlot);
+                
+                // 못 찾았으면 배열 인덱스로 찾기
+                if (!equippedItem && user.inventory[equippedSlot]) {
+                    equippedItem = user.inventory[equippedSlot];
                 }
                 
-                // 부가 스탯은 있는 것만 표시
-                if (itemStats.strength) {
-                    statText.push(`힘+${itemStats.strength}`);
-                    totalEquipStats.strength += itemStats.strength;
-                    itemCombatPower += itemStats.strength * 2;
-                }
-                if (itemStats.agility) {
-                    statText.push(`민첩+${itemStats.agility}`);
-                    totalEquipStats.agility += itemStats.agility;
-                    itemCombatPower += itemStats.agility * 1.5;
-                }
-                if (itemStats.intelligence) {
-                    statText.push(`지능+${itemStats.intelligence}`);
-                    totalEquipStats.intelligence += itemStats.intelligence;
-                    itemCombatPower += itemStats.intelligence * 1.2;
-                }
-                if (itemStats.vitality) {
-                    statText.push(`체력+${itemStats.vitality}`);
-                    totalEquipStats.vitality += itemStats.vitality;
-                    itemCombatPower += itemStats.vitality * 1.8;
-                }
-                if (itemStats.luck) {
-                    statText.push(`행운+${itemStats.luck}`);
-                    totalEquipStats.luck += itemStats.luck;
-                    itemCombatPower += itemStats.luck * 0.5;
-                }
-                if (itemStats.hp) {
-                    const totalHp = itemStats.hp + (item.enhancement || 0) * 20;
-                    statText.push(`HP+${totalHp}`);
-                    totalEquipStats.hp += totalHp;
-                    itemCombatPower += totalHp * 0.3;
-                }
-                if (itemStats.dodge || itemStats.evasion) {
-                    const dodgeValue = itemStats.dodge || itemStats.evasion;
-                    statText.push(`회피+${dodgeValue}`);
-                    totalEquipStats.dodge += dodgeValue;
-                    itemCombatPower += dodgeValue * 1;
+                if (equippedItem && equippedItem.stats) {
+                    for (const [stat, value] of Object.entries(equippedItem.stats)) {
+                        if (value > 0) {
+                            // equipmentStats에 없는 스탯이면 추가
+                            if (!equipmentStats.hasOwnProperty(stat)) {
+                                equipmentStats[stat] = 0;
+                            }
+                            equipmentStats[stat] += value;
+                        }
+                    }
                 }
             }
-            
-            // 능력치가 있을 때만 표시
-            if (statText.length > 0) {
-                itemText += `\n　├ ${statText.join(', ')}\n　└ ${powerEmoji} ${powerLabel}: **${Math.floor(itemCombatPower)}**`;
-            }
-            
-            equipmentInfo.push(itemText);
-        } else {
-            equipmentInfo.push(`${emoji}: 비어있음`);
         }
     }
-
-    // 장비로 인한 전투력 계산
-    const equipmentCombatPower = Math.floor(
-        (totalEquipStats.attack * 2) + 
-        (totalEquipStats.defense * 1.5) + 
-        (totalEquipStats.strength * 2) + 
-        (totalEquipStats.agility * 1.5) + 
-        (totalEquipStats.intelligence * 1.2) + 
-        (totalEquipStats.vitality * 1.8) + 
-        (totalEquipStats.luck * 0.5) + 
-        (totalEquipStats.hp * 0.3) + 
-        (totalEquipStats.dodge * 1)
-    );
     
-    profileEmbed.addFields({
-        name: `⚔️ 장착 장비`,
-        value: `┌─ 총 ${powerLabel}: **${formatNumber(equipmentCombatPower)}** ─┐\n\n${equipmentInfo.join('\n')}`,
-        inline: false
-    });
+    // 악세서리 스탯 합산
+    if (user.equippedAccessories) {
+        for (const accessory of Object.values(user.equippedAccessories)) {
+            if (accessory) {
+                // stats가 Map인 경우 Object로 변환
+                const stats = accessory.stats instanceof Map 
+                    ? Object.fromEntries(accessory.stats) 
+                    : (accessory.stats || {});
+                
+                // 구버전 악세서리 호환성 (개별 속성으로 되어있는 경우)
+                if (Object.keys(stats).length === 0) {
+                    if (accessory.attack) stats.attack = accessory.attack;
+                    if (accessory.defense) stats.defense = accessory.defense;
+                    if (accessory.hp) stats.hp = accessory.hp;
+                    if (accessory.strength) stats.strength = accessory.strength;
+                    if (accessory.agility) stats.agility = accessory.agility;
+                    if (accessory.intelligence) stats.intelligence = accessory.intelligence;
+                    if (accessory.vitality) stats.vitality = accessory.vitality;
+                    if (accessory.luck) stats.luck = accessory.luck;
+                    if (accessory.magic) stats.magic = accessory.magic;
+                }
+                
+                for (const [stat, value] of Object.entries(stats)) {
+                    if (value > 0) {
+                        // equipmentStats에 없는 스탯이면 추가
+                        if (!equipmentStats.hasOwnProperty(stat)) {
+                            equipmentStats[stat] = 0;
+                        }
+                        equipmentStats[stat] += value;
+                    }
+                }
+            }
+        }
+    }
+    
+    // 총 스탯 계산 (user.stats에 이미 운동이 포함되어 있으므로 운동은 따로 더하지 않음)
+    const totalStats = {
+        strength: (user.stats?.strength || 10) + (distributedStats.strength || 0) + (emblemStats.strength || 0) + (equipmentStats.strength || 0),
+        agility: (user.stats?.agility || 10) + (distributedStats.agility || 0) + (emblemStats.agility || 0) + (equipmentStats.agility || 0),
+        intelligence: (user.stats?.intelligence || 10) + (distributedStats.intelligence || 0) + (emblemStats.intelligence || 0) + (equipmentStats.intelligence || 0),
+        vitality: (user.stats?.vitality || 10) + (distributedStats.vitality || 0) + (emblemStats.vitality || 0) + (equipmentStats.vitality || 0),
+        luck: (user.stats?.luck || 10) + (distributedStats.luck || 0) + (emblemStats.luck || 0) + (equipmentStats.luck || 0)
+    };
+    
+    // 스탯 표시 생성 (상세 정보 포함)
+    const statDisplay = [];
+    
+    // 스탯 상세 표시 함수
+    const formatStatDetail = (statName, icon, total, base, distributed, emblem, exercise, equipment) => {
+        let detail = `${icon} ${statName}: ${formatNumber(total)}`;
+        
+        // 증가 요소가 있을 때만 상세 표시
+        if (distributed > 0 || emblem > 0 || exercise > 0 || equipment > 0 || base > 10) {
+            detail += ` (`;
+            const parts = [];
+            
+            // 기본 스탯 (운동 제외)
+            parts.push(`기본 ${base}`);
+            
+            // 운동 스탯
+            if (exercise > 0) {
+                parts.push(`운동 +${exercise}`);
+            }
+            
+            // 분배 포인트
+            if (distributed > 0) {
+                parts.push(`분배 +${distributed}`);
+            }
+            
+            // 엠블럼 강화
+            if (emblem > 0) {
+                parts.push(`엠블럼 +${emblem}`);
+            }
+            
+            // 장비 스탯
+            if (equipment > 0) {
+                parts.push(`장비 +${equipment}`);
+            }
+            
+            detail += parts.join(' + ');
+            detail += `)`;
+        }
+        
+        return detail;
+    };
+    
+    // 직업별 특화 스탯 표시
+    if (checkEmblem.includes('전사')) {
+        statDisplay.push(formatStatDetail('힘', '💪', totalStats.strength, baseStats.strength, distributedStats.strength || 0, emblemStats.strength || 0, exerciseStats.strength || 0, equipmentStats.strength || 0));
+        statDisplay.push(formatStatDetail('체력', '❤️', totalStats.vitality, baseStats.vitality, distributedStats.vitality || 0, emblemStats.vitality || 0, exerciseStats.vitality || 0, equipmentStats.vitality || 0));
+    } else if (checkEmblem.includes('궁수') || checkEmblem.includes('archer')) {
+        statDisplay.push(formatStatDetail('민첩', '🏃', totalStats.agility, baseStats.agility, distributedStats.agility || 0, emblemStats.agility || 0, exerciseStats.agility || 0, equipmentStats.agility || 0));
+        statDisplay.push(formatStatDetail('행운', '🍀', totalStats.luck, baseStats.luck, distributedStats.luck || 0, emblemStats.luck || 0, exerciseStats.luck || 0, equipmentStats.luck || 0));
+    } else if (checkEmblem.includes('마법사') || checkEmblem.includes('아크메이지')) {
+        statDisplay.push(formatStatDetail('지능', '🧠', totalStats.intelligence, baseStats.intelligence, distributedStats.intelligence || 0, emblemStats.intelligence || 0, exerciseStats.intelligence || 0, equipmentStats.intelligence || 0));
+        statDisplay.push(formatStatDetail('행운', '🍀', totalStats.luck, baseStats.luck, distributedStats.luck || 0, emblemStats.luck || 0, exerciseStats.luck || 0, equipmentStats.luck || 0));
+    } else if (checkEmblem.includes('도적') || checkEmblem.includes('rogue')) {
+        statDisplay.push(formatStatDetail('민첩', '🏃', totalStats.agility, baseStats.agility, distributedStats.agility || 0, emblemStats.agility || 0, exerciseStats.agility || 0, equipmentStats.agility || 0));
+        statDisplay.push(formatStatDetail('행운', '🍀', totalStats.luck, baseStats.luck, distributedStats.luck || 0, emblemStats.luck || 0, exerciseStats.luck || 0, equipmentStats.luck || 0));
+    } else if (checkEmblem.includes('수호자')) {
+        statDisplay.push(formatStatDetail('체력', '❤️', totalStats.vitality, baseStats.vitality, distributedStats.vitality || 0, emblemStats.vitality || 0, exerciseStats.vitality || 0, equipmentStats.vitality || 0));
+        statDisplay.push(formatStatDetail('힘', '💪', totalStats.strength, baseStats.strength, distributedStats.strength || 0, emblemStats.strength || 0, exerciseStats.strength || 0, equipmentStats.strength || 0));
+    } else {
+        // 엠블럼이 없는 경우 모든 스탯 표시
+        statDisplay.push(formatStatDetail('힘', '💪', totalStats.strength, baseStats.strength, distributedStats.strength || 0, emblemStats.strength || 0, exerciseStats.strength || 0, equipmentStats.strength || 0));
+        statDisplay.push(formatStatDetail('민첩', '🏃', totalStats.agility, baseStats.agility, distributedStats.agility || 0, emblemStats.agility || 0, exerciseStats.agility || 0, equipmentStats.agility || 0));
+        statDisplay.push(formatStatDetail('지능', '🧠', totalStats.intelligence, baseStats.intelligence, distributedStats.intelligence || 0, emblemStats.intelligence || 0, exerciseStats.intelligence || 0, equipmentStats.intelligence || 0));
+        statDisplay.push(formatStatDetail('체력', '❤️', totalStats.vitality, baseStats.vitality, distributedStats.vitality || 0, emblemStats.vitality || 0, exerciseStats.vitality || 0, equipmentStats.vitality || 0));
+        statDisplay.push(formatStatDetail('행운', '🍀', totalStats.luck, baseStats.luck, distributedStats.luck || 0, emblemStats.luck || 0, exerciseStats.luck || 0, equipmentStats.luck || 0));
+    }
+    
+    // 장비에서 제공하는 추가 스탯 표시
+    const additionalStats = [];
+    
+    // 전투 스탯
+    if (equipmentStats.attack > 0) {
+        // 마법사인 경우 '마력'으로 표시
+        const attackLabel = isMage ? '마력' : '공격력';
+        const attackIcon = isMage ? '🔮' : '⚔️';
+        additionalStats.push(`${attackIcon} ${attackLabel}: +${formatNumber(equipmentStats.attack)}`);
+    }
+    if (equipmentStats.defense > 0) {
+        additionalStats.push(`🛡️ 방어력: +${formatNumber(equipmentStats.defense)}`);
+    }
+    if (equipmentStats.hp > 0) {
+        additionalStats.push(`❤️ HP: +${formatNumber(equipmentStats.hp)}`);
+    }
+    
+    // 특수 스탯
+    if (equipmentStats.dodge > 0) {
+        additionalStats.push(`💨 회피: +${formatNumber(equipmentStats.dodge)}`);
+    }
+    
+    // TODO: 아래 스탯들은 아이템에 구현될 때 활성화됩니다
+    // 새로운 특수 옵션 아이템 추가 시 이 코드를 사용하세요
+    if (equipmentStats.criticalChance > 0) {
+        additionalStats.push(`⚡ 치명타 확률: +${formatNumber(equipmentStats.criticalChance)}%`);
+    }
+    if (equipmentStats.criticalDamage > 0) {
+        additionalStats.push(`💥 치명타 피해: +${formatNumber(equipmentStats.criticalDamage)}%`);
+    }
+    
+    // 보너스 스탯 (골드/경험치 획득량 증가)
+    if (equipmentStats.goldBonus > 0) {
+        additionalStats.push(`💰 골드 획득: +${formatNumber(equipmentStats.goldBonus)}%`);
+    }
+    if (equipmentStats.expBonus > 0) {
+        additionalStats.push(`✨ 경험치 획득: +${formatNumber(equipmentStats.expBonus)}%`);
+    }
+    
+    // 기타 스탯 (정의되지 않은 스탯들도 표시)
+    for (const [stat, value] of Object.entries(equipmentStats)) {
+        if (value > 0 && !['strength', 'agility', 'intelligence', 'vitality', 'luck', 
+            'attack', 'magic', 'defense', 'hp', 'dodge', 
+            'criticalChance', 'criticalDamage', 'goldBonus', 'expBonus'].includes(stat)) {
+            additionalStats.push(`📊 ${stat}: +${formatNumber(value)}`);
+        }
+    }
+    
+    if (additionalStats.length > 0) {
+        statDisplay.push(`\n📦 **장비 추가 능력치**`);
+        statDisplay.push(...additionalStats);
+    }
+    
+    // 조각 시스템 공격력 표시
+    if (fragmentAttack > 0) {
+        statDisplay.push(`\n⚔️ 공격력: +${formatNumber(fragmentAttack)} (조각 시스템)`);
+    }
+    
+    // 스탯 포인트 표시
+    const availablePoints = user.statPoints || 0;
+    if (availablePoints > 0) {
+        statDisplay.push(`\n📌 **사용 가능한 스탯 포인트: ${availablePoints}**`);
+    }
+    
+    // 프로필 Embed 생성
+    const profileEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setTitle(`👤 ${user.nickname || interaction.user.username}님의 프로필`)
+        .setThumbnail(interaction.user.displayAvatarURL())
+        .addFields(
+            { 
+                name: '📊 기본 정보', 
+                value: [
+                    `${tierEmoji} **레벨**: ${user.level}`,
+                    `💰 **골드**: ${formatNumber(user.gold)}G`,
+                    `${attackIcon} **${isMage ? '마력' : '전투력'}**: ${formatNumber(combatPower)}`,
+                    `🎖️ **엠블럼**: ${emblemType}`
+                ].join('\n'),
+                inline: true 
+            },
+            { 
+                name: '⚔️ 전투 기록', 
+                value: [
+                    `⚔️ **던전 클리어**: ${formatNumber(user.achievements?.dungeonsCleared || 0)}회`,
+                    `👹 **보스 처치**: ${formatNumber(user.achievements?.bossKills || 0)}회`,
+                    `🏆 **PVP 승리**: ${formatNumber(user.pvpWins || 0)}회`,
+                    `💀 **PVP 패배**: ${formatNumber(user.pvpLosses || 0)}회`
+                ].join('\n'),
+                inline: true 
+            },
+            { 
+                name: '💎 경험치', 
+                value: [
+                    `${progressBar} ${expPercentage}%`,
+                    `${formatNumber(user.exp)} / ${formatNumber(maxExp)}`
+                ].join('\n'),
+                inline: false 
+            },
+            { 
+                name: '📈 스탯', 
+                value: statDisplay.join('\n'),
+                inline: false 
+            }
+        );
 
-    // 장비 능력치 총합 표시
-    const equipStatsSummary = [];
-    if (totalEquipStats.attack > 0) equipStatsSummary.push(`⚔️ 공격력 +${totalEquipStats.attack}`);
-    if (totalEquipStats.defense > 0) equipStatsSummary.push(`🛡️ 방어력 +${totalEquipStats.defense}`);
-    if (totalEquipStats.strength > 0) equipStatsSummary.push(`💪 힘 +${totalEquipStats.strength}`);
-    if (totalEquipStats.agility > 0) equipStatsSummary.push(`🏃 민첩 +${totalEquipStats.agility}`);
-    if (totalEquipStats.intelligence > 0) equipStatsSummary.push(`🧠 지능 +${totalEquipStats.intelligence}`);
-    if (totalEquipStats.vitality > 0) equipStatsSummary.push(`❤️ 체력 +${totalEquipStats.vitality}`);
-    if (totalEquipStats.luck > 0) equipStatsSummary.push(`🍀 행운 +${totalEquipStats.luck}`);
-    if (totalEquipStats.hp > 0) equipStatsSummary.push(`💖 HP +${totalEquipStats.hp}`);
-    if (totalEquipStats.dodge > 0) equipStatsSummary.push(`💨 회피 +${totalEquipStats.dodge}`);
-
-    if (equipStatsSummary.length > 0) {
+    // 누적 활동 표시
+    const activities = [];
+    if (user.achievements?.totalGoldEarned) {
+        activities.push(`💰 누적 획득 골드: ${formatNumber(user.achievements.totalGoldEarned)}G`);
+    }
+    if (user.achievements?.totalExpEarned) {
+        activities.push(`✨ 누적 획득 경험치: ${formatNumber(user.achievements.totalExpEarned)}`);
+    }
+    if (user.achievements?.totalItemsFound) {
+        activities.push(`📦 누적 획득 아이템: ${formatNumber(user.achievements.totalItemsFound)}개`);
+    }
+    
+    if (activities.length > 0) {
         profileEmbed.addFields({
-            name: '📊 장비 능력치 총합',
-            value: `${equipStatsSummary.join(' | ')}`,
+            name: '📊 누적 활동',
+            value: activities.join('\n'),
             inline: false
         });
     }
 
+    // 최근 업적 표시
+    const recentAchievements = [];
     
-    // 장착한 장신구 표시
-    const accessorySlots = {
-        ring1: '💍 반지 1',
-        ring2: '💍 반지 2',
-        necklace: '📿 목걸이',
-        bracelet1: '🔗 팔찌 1',
-        bracelet2: '🔗 팔찌 2',
-        earring1: '💎 귀걸이 1',
-        earring2: '💎 귀걸이 2'
-    };
-
-    const accessoryInfo = [];
-    let equippedSetCounts = {};
-    let hasAnyAccessory = false;
-    let totalAccessoryCombatPower = 0;
-    let totalAccessoryStats = {
-        attack: 0,
-        defense: 0,
-        hp: 0,
-        criticalChance: 0,
-        criticalDamage: 0,
-        goldBonus: 0,
-        expBonus: 0,
-        dropRate: 0,
-        pvpDamage: 0,
-        dodge: 0,
-        luck: 0
-    };
-
-    // 각 슬롯별로 장착된 장신구 확인
-    for (const [slot, slotName] of Object.entries(accessorySlots)) {
-        if (user.equippedAccessories && user.equippedAccessories[slot] && user.equippedAccessories[slot].name) {
-            const accessory = user.equippedAccessories[slot];
-            hasAnyAccessory = true;
-            let accessoryText = `${slotName}: **${accessory.name}**`;
-            
-            // 스탯 표시
-            const statText = [];
-            let accessoryCombatPower = 0;
-            
-            if (accessory.stats) {
-                // Map을 객체로 변환하여 처리
-                const stats = accessory.stats instanceof Map ? Object.fromEntries(accessory.stats) : accessory.stats;
-                
-                // 스탯 표시 및 합산
-                if (stats.attack) {
-                    statText.push(`⚔️+${stats.attack}`);
-                    totalAccessoryStats.attack += stats.attack;
-                    accessoryCombatPower += stats.attack * 2.5;
-                }
-                if (stats.defense) {
-                    statText.push(`🛡️+${stats.defense}`);
-                    totalAccessoryStats.defense += stats.defense;
-                    accessoryCombatPower += stats.defense * 1.8;
-                }
-                if (stats.hp) {
-                    statText.push(`❤️+${stats.hp}`);
-                    totalAccessoryStats.hp += stats.hp;
-                    accessoryCombatPower += stats.hp * 0.4;
-                }
-                if (stats.criticalChance) {
-                    statText.push(`⚡+${stats.criticalChance}%`);
-                    totalAccessoryStats.criticalChance += stats.criticalChance;
-                    accessoryCombatPower += stats.criticalChance * 5;
-                }
-                if (stats.criticalDamage) {
-                    statText.push(`💥+${stats.criticalDamage}%`);
-                    totalAccessoryStats.criticalDamage += stats.criticalDamage;
-                    accessoryCombatPower += stats.criticalDamage * 3;
-                }
-                if (stats.goldBonus) {
-                    statText.push(`💰+${stats.goldBonus}%`);
-                    totalAccessoryStats.goldBonus += stats.goldBonus;
-                }
-                if (stats.expBonus) {
-                    statText.push(`⭐+${stats.expBonus}%`);
-                    totalAccessoryStats.expBonus += stats.expBonus;
-                }
-                if (stats.dropRate) {
-                    statText.push(`🎁+${stats.dropRate}%`);
-                    totalAccessoryStats.dropRate += stats.dropRate;
-                }
-                if (stats.pvpDamage) {
-                    statText.push(`⚔️PVP+${stats.pvpDamage}%`);
-                    totalAccessoryStats.pvpDamage += stats.pvpDamage;
-                    accessoryCombatPower += stats.pvpDamage * 4;
-                }
-                if (stats.dodge) {
-                    statText.push(`💨+${stats.dodge}`);
-                    totalAccessoryStats.dodge += stats.dodge;
-                    accessoryCombatPower += stats.dodge * 1.2;
-                }
-                if (stats.luck) {
-                    statText.push(`🍀+${stats.luck}`);
-                    totalAccessoryStats.luck += stats.luck;
-                    accessoryCombatPower += stats.luck * 0.8;
-                }
-            }
-            
-            if (statText.length > 0) {
-                accessoryText += `\n　├ ${statText.join(' ')}\n　└ ${powerEmoji} ${powerLabel}: **${Math.floor(accessoryCombatPower)}**`;
-            }
-            
-            accessoryInfo.push(accessoryText);
-            
-            // 세트 카운트
-            if (accessory.setId) {
-                equippedSetCounts[accessory.setId] = (equippedSetCounts[accessory.setId] || 0) + 1;
-            }
-        } else {
-            accessoryInfo.push(`${slotName}: 비어있음`);
-        }
-    }
-
-    // 장신구로 인한 전투력 계산
-    totalAccessoryCombatPower = Math.floor(
-        (totalAccessoryStats.attack * 2.5) + 
-        (totalAccessoryStats.defense * 1.8) + 
-        (totalAccessoryStats.hp * 0.4) + 
-        (totalAccessoryStats.dodge * 1.2) + 
-        (totalAccessoryStats.luck * 0.8) +
-        (totalAccessoryStats.criticalChance * 5) +
-        (totalAccessoryStats.criticalDamage * 3) +
-        (totalAccessoryStats.pvpDamage * 4)
-    );
-    
-    // 장신구 섹션은 항상 표시
-    let accessoryFieldValue = `┌─ 총 ${powerLabel}: **${formatNumber(totalAccessoryCombatPower)}** ─┐\n\n`;
-    accessoryFieldValue += accessoryInfo.join('\n');
-    
-    if (!hasAnyAccessory) {
-        accessoryFieldValue += '\n\n────────────────────────────\n📌 *모든 슬롯이 비어있습니다*';
+    // PVP 연승
+    if (user.pvp?.currentWinStreak > 0) {
+        recentAchievements.push(`🔥 PVP ${user.pvp.currentWinStreak}연승 중!`);
     }
     
-    profileEmbed.addFields({
-        name: `💎 장착 장신구`,
-        value: accessoryFieldValue,
-        inline: false
-    });
-
-    // 활성화된 세트 효과 표시
-    const activeSetEffects = [];
-    for (const [setId, count] of Object.entries(equippedSetCounts)) {
-        if (count >= 2) {
-            const setInfo = Object.values(BOSS_ACCESSORIES.sets).find(set => set.id === setId);
-            if (setInfo) {
-                activeSetEffects.push(`**${setInfo.name}** (${count}/4)`);
-                
-                // 세트 보너스 표시
-                if (count >= 2) activeSetEffects.push(`  ▸ 2세트: 기본 보너스 활성화`);
-                if (count >= 3) activeSetEffects.push(`  ▸ 3세트: 강화 보너스 활성화`);
-                if (count >= 4) activeSetEffects.push(`  ▸ 4세트: 특수 능력 활성화`);
-            }
-        }
+    // 최고 기록
+    if (user.pvp?.bestWinStreak > 0) {
+        recentAchievements.push(`🏆 최고 연승: ${user.pvp.bestWinStreak}연승`);
     }
-
-    if (activeSetEffects.length > 0) {
+    
+    if (recentAchievements.length > 0) {
         profileEmbed.addFields({
-            name: '✨ 세트 효과',
-            value: activeSetEffects.join('\n'),
+            name: '🏅 최근 업적',
+            value: recentAchievements.join('\n'),
             inline: false
         });
     }
@@ -447,14 +414,14 @@ async function showProfile(interaction) {
                 .setCustomId('stat_distribution')
                 .setLabel('📊 스탯 분배')
                 .setStyle(ButtonStyle.Primary)
-                .setDisabled(false), // 항상 접근 가능하도록 변경
+                .setDisabled(false),
+            new ButtonBuilder()
+                .setCustomId('profile_page_2')
+                .setLabel('⚔️ 장비 정보')
+                .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('inventory')
                 .setLabel('🎒 인벤토리')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('equipment')
-                .setLabel('⚔️ 장비 관리')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('main_menu')
@@ -462,9 +429,296 @@ async function showProfile(interaction) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
+    // 페이지 1만 표시
+    if (page === 1) {
+        return await interaction.editReply({
+            embeds: [profileEmbed],
+            components: [buttons]
+        });
+    }
+    
+    // 페이지 2: 장비 정보 (equipment.js와 동일한 전투력 계산 사용)
+    return await showEquipmentPage(interaction, user);
+}
+
+// 장비 페이지 표시 함수
+async function showEquipmentPage(interaction, user) {
+    const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+    const { formatNumber } = require('../common/utils');
+    const { calculateCombatPower, getJobFromEmblem, JOB_WEIGHTS } = require('../common/combatPower');
+    
+    const equipmentEmbed = new EmbedBuilder()
+        .setColor('#9b59b6')
+        .setTitle(`⚔️ ${user.nickname || interaction.user.username}님의 장비`)
+        .setThumbnail(interaction.user.displayAvatarURL());
+    
+    // 장비 슬롯 정의
+    const equipmentSlots = {
+        weapon: '🗡️ 무기',
+        armor: '🛡️ 갑옷',
+        helmet: '⛑️ 투구',
+        gloves: '🧤 장갑',
+        boots: '👢 신발',
+        shield: '🛡️ 방패'
+    };
+    
+    // 악세서리 슬롯 정의
+    const accessorySlots = {
+        ring1: '💍 반지 1',
+        ring2: '💍 반지 2',
+        necklace: '📿 목걸이',
+        bracelet1: '🔗 팔찌 1',
+        bracelet2: '🔗 팔찌 2',
+        earring1: '💎 귀걸이 1',
+        earring2: '💎 귀걸이 2'
+    };
+    
+    // 직업 확인
+    const job = getJobFromEmblem(user.emblem);
+    const weights = job ? JOB_WEIGHTS[job] : null;
+    
+    // 장비 정보 표시
+    let totalCombatPowerFromItems = 0;
+    const equipmentInfo = [];
+    
+    // 일반 장비
+    for (const [slot, slotName] of Object.entries(equipmentSlots)) {
+        const equippedSlot = user.equipment?.[slot];
+        let equippedItem = null;
+        
+        if (equippedSlot >= 0 && user.inventory) {
+            // inventorySlot으로 먼저 찾기
+            equippedItem = user.inventory.find(item => item && item.inventorySlot === equippedSlot);
+            
+            // 못 찾았으면 배열 인덱스로 찾기
+            if (!equippedItem && user.inventory[equippedSlot]) {
+                equippedItem = user.inventory[equippedSlot];
+            }
+        }
+        
+        if (equippedItem) {
+            const stats = equippedItem.stats || {};
+            let itemPower = 0;
+            let statDetails = [];
+            
+            // 각 스탯별 상세 정보 수집
+            for (const [stat, value] of Object.entries(stats)) {
+                if (value > 0) {
+                    // 강화 수치 확인
+                    const baseStat = equippedItem.baseStats?.[stat] || value;
+                    const enhanceBonus = equippedItem.enhanceLevel > 0 && equippedItem.baseStats ? value - baseStat : 0;
+                    
+                    let statText = '';
+                    switch(stat) {
+                        case 'attack': 
+                            statText = enhanceBonus > 0 ? `공격력 +${value} (${baseStat}+${enhanceBonus})` : `공격력 +${value}`;
+                            break;
+                        case 'defense': 
+                            statText = enhanceBonus > 0 ? `방어력 +${value} (${baseStat}+${enhanceBonus})` : `방어력 +${value}`;
+                            break;
+                        case 'hp': 
+                            statText = enhanceBonus > 0 ? `HP +${value} (${baseStat}+${enhanceBonus})` : `HP +${value}`;
+                            break;
+                        case 'strength': 
+                            statText = enhanceBonus > 0 ? `힘 +${value} (${baseStat}+${enhanceBonus})` : `힘 +${value}`;
+                            break;
+                        case 'agility': 
+                            statText = enhanceBonus > 0 ? `민첩 +${value} (${baseStat}+${enhanceBonus})` : `민첩 +${value}`;
+                            break;
+                        case 'intelligence': 
+                            statText = enhanceBonus > 0 ? `지능 +${value} (${baseStat}+${enhanceBonus})` : `지능 +${value}`;
+                            break;
+                        case 'vitality': 
+                            statText = enhanceBonus > 0 ? `체력 +${value} (${baseStat}+${enhanceBonus})` : `체력 +${value}`;
+                            break;
+                        case 'luck': 
+                            statText = enhanceBonus > 0 ? `행운 +${value} (${baseStat}+${enhanceBonus})` : `행운 +${value}`;
+                            break;
+                        case 'dodge': 
+                            statText = enhanceBonus > 0 ? `회피 +${value} (${baseStat}+${enhanceBonus})` : `회피 +${value}`;
+                            break;
+                    }
+                    
+                    if (statText) statDetails.push(statText);
+                }
+            }
+            
+            if (weights) {
+                // 직업별 가중치 적용
+                for (const [stat, value] of Object.entries(stats)) {
+                    if (weights[stat]) {
+                        itemPower += value * weights[stat];
+                    }
+                }
+            } else {
+                // 기본 가중치
+                itemPower = (stats.attack || 0) * 2 + (stats.defense || 0) * 1.5 + 
+                          (stats.hp || 0) * 0.3 + (stats.luck || 0) * 0.5;
+            }
+            
+            totalCombatPowerFromItems += itemPower;
+            
+            // 아이템 정보 표시
+            let itemText = `${slotName}: **${equippedItem.name}**`;
+            if (equippedItem.enhanceLevel > 0) {
+                itemText += ` +${equippedItem.enhanceLevel}`;
+            }
+            itemText += ` (전투력: ${Math.floor(itemPower)})`;
+            
+            if (statDetails.length > 0) {
+                itemText += `\n  └ ${statDetails.join(', ')}`;
+            }
+            
+            equipmentInfo.push(itemText);
+        } else {
+            equipmentInfo.push(`${slotName}: 비어있음`);
+        }
+    }
+    
+    equipmentEmbed.addFields({
+        name: '🛡️ 장비',
+        value: equipmentInfo.join('\n') || '장착된 장비가 없습니다.',
+        inline: false
+    });
+    
+    // 악세서리 정보 표시
+    const accessoryInfo = [];
+    
+    for (const [slot, slotName] of Object.entries(accessorySlots)) {
+        if (user.equippedAccessories && user.equippedAccessories[slot]) {
+            const accessory = user.equippedAccessories[slot];
+            // stats가 Map인 경우 Object로 변환
+            const stats = accessory.stats instanceof Map 
+                ? Object.fromEntries(accessory.stats) 
+                : (accessory.stats || {});
+            let itemPower = 0;
+            let statDetails = [];
+            
+            // 각 스탯별 상세 정보 수집
+            for (const [stat, value] of Object.entries(stats)) {
+                if (value > 0) {
+                    let statText = '';
+                    switch(stat) {
+                        case 'attack': statText = `공격력 +${value}`; break;
+                        case 'defense': statText = `방어력 +${value}`; break;
+                        case 'hp': statText = `HP +${value}`; break;
+                        case 'strength': statText = `힘 +${value}`; break;
+                        case 'agility': statText = `민첩 +${value}`; break;
+                        case 'intelligence': statText = `지능 +${value}`; break;
+                        case 'vitality': statText = `체력 +${value}`; break;
+                        case 'luck': statText = `행운 +${value}`; break;
+                        case 'dodge': statText = `회피 +${value}`; break;
+                        case 'goldBonus': statText = `골드 획득 +${value}%`; break;
+                        case 'expBonus': statText = `경험치 획득 +${value}%`; break;
+                        case 'criticalChance': statText = `치명타 확률 +${value}%`; break;
+                        case 'criticalDamage': statText = `치명타 피해 +${value}%`; break;
+                    }
+                    
+                    if (statText) statDetails.push(statText);
+                }
+            }
+            
+            if (weights) {
+                for (const [stat, value] of Object.entries(stats)) {
+                    if (weights[stat]) {
+                        itemPower += value * weights[stat];
+                    }
+                }
+            }
+            
+            totalCombatPowerFromItems += itemPower;
+            const name = accessory.name || accessory.type;
+            
+            if (!name) {
+                // 이름이 없으면 비어있음으로 처리
+                accessoryInfo.push(`${slotName}: 비어있음`);
+            } else {
+                // 구버전 악세서리 호환성 체크 - stats가 없고 개별 속성으로 되어있는 경우
+                if (Object.keys(stats).length === 0) {
+                    // 개별 속성들을 확인
+                    if (accessory.attack) { stats.attack = accessory.attack; statDetails.push(`공격력 +${accessory.attack}`); }
+                    if (accessory.defense) { stats.defense = accessory.defense; statDetails.push(`방어력 +${accessory.defense}`); }
+                    if (accessory.hp) { stats.hp = accessory.hp; statDetails.push(`HP +${accessory.hp}`); }
+                    if (accessory.strength) { stats.strength = accessory.strength; statDetails.push(`힘 +${accessory.strength}`); }
+                    if (accessory.agility) { stats.agility = accessory.agility; statDetails.push(`민첩 +${accessory.agility}`); }
+                    if (accessory.intelligence) { stats.intelligence = accessory.intelligence; statDetails.push(`지능 +${accessory.intelligence}`); }
+                    if (accessory.vitality) { stats.vitality = accessory.vitality; statDetails.push(`체력 +${accessory.vitality}`); }
+                    if (accessory.luck) { stats.luck = accessory.luck; statDetails.push(`행운 +${accessory.luck}`); }
+                    if (accessory.dodge || accessory.evasion) { 
+                        const dodgeValue = accessory.dodge || accessory.evasion;
+                        stats.dodge = dodgeValue; 
+                        statDetails.push(`회피 +${dodgeValue}`); 
+                    }
+                    if (accessory.goldBonus) { statDetails.push(`골드 획득 +${accessory.goldBonus}%`); }
+                    if (accessory.expBonus) { statDetails.push(`경험치 획득 +${accessory.expBonus}%`); }
+                    if (accessory.criticalChance) { statDetails.push(`치명타 확률 +${accessory.criticalChance}%`); }
+                    if (accessory.criticalDamage) { statDetails.push(`치명타 피해 +${accessory.criticalDamage}%`); }
+                    
+                    // 전투력 재계산
+                    itemPower = 0;
+                    if (weights) {
+                        for (const [stat, value] of Object.entries(stats)) {
+                            if (weights[stat] && value > 0) {
+                                itemPower += value * weights[stat];
+                            }
+                        }
+                    }
+                    totalCombatPowerFromItems += itemPower;
+                }
+                
+                // 악세서리 정보 표시
+                let itemText = `${slotName}: **${name}** (전투력: ${Math.floor(itemPower)})`;
+                
+                if (statDetails.length > 0) {
+                    itemText += `\n  └ ${statDetails.join(', ')}`;
+                }
+                
+                accessoryInfo.push(itemText);
+            }
+        } else {
+            accessoryInfo.push(`${slotName}: 비어있음`);
+        }
+    }
+    
+    equipmentEmbed.addFields({
+        name: '💍 악세서리',
+        value: accessoryInfo.join('\n') || '장착된 악세서리가 없습니다.',
+        inline: false
+    });
+    
+    // 전체 전투력 표시 (calculateCombatPower 사용)
+    const totalCombatPower = calculateCombatPower(user);
+    
+    equipmentEmbed.addFields({
+        name: '⚔️ 총 전투력',
+        value: `**${formatNumber(totalCombatPower)}**`,
+        inline: false
+    });
+    
+    // 페이지 2 버튼
+    const page2Buttons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('profile_page_1')
+                .setLabel('◀️ 기본 정보')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('equipment')
+                .setLabel('🔄 장비 관리')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('inventory')
+                .setLabel('🎒 인벤토리')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('main_menu')
+                .setLabel('🏠 메인 메뉴')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    
     return await interaction.editReply({
-        embeds: [profileEmbed],
-        components: [buttons]
+        embeds: [equipmentEmbed],
+        components: [page2Buttons]
     });
 }
 

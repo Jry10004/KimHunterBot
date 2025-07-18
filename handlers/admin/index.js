@@ -37,12 +37,21 @@ const {
 async function handleAdminInteraction(interaction) {
     const customId = interaction.customId;
     
+    console.log('[AdminHandler] Processing customId:', customId);
+    console.log('[AdminHandler] Is deferred:', interaction.deferred, 'Is replied:', interaction.replied);
+    
     // 관리자 권한 체크
     if (!isAdmin(interaction.user.id)) {
         return await interaction.reply({ 
             content: '❌ 관리자만 접근할 수 있습니다!', 
             flags: 64 
         });
+    }
+    
+    // admin_bulk_fragment_select 특별 처리 - 가장 먼저 체크
+    if (customId === 'admin_bulk_fragment_select') {
+        console.log('[AdminHandler] Fragment select detected - routing to handleSelectMenu DIRECTLY');
+        return await adminBulkRewardSystem.handleSelectMenu(interaction);
     }
     
     // 점검 관련 처리
@@ -142,8 +151,14 @@ async function handleAdminInteraction(interaction) {
     else if (customId === 'admin_reward_ticket_select') {
         return await adminRewardSelectSystem.showTicketSelectMenu(interaction);
     }
+    else if (customId === 'admin_reward_fragment_select') {
+        return await adminRewardSelectSystem.showFragmentSelectMenu(interaction);
+    }
     else if (customId === 'admin_ticket_confirm') {
         return await adminRewardSelectSystem.processReward(interaction, 'ticket');
+    }
+    else if (customId === 'admin_fragment_confirm') {
+        return await adminRewardSelectSystem.processReward(interaction, 'fragment');
     }
     else if (customId === 'admin_gold_confirm') {
         return await adminRewardSelectSystem.processReward(interaction, 'gold');
@@ -158,17 +173,15 @@ async function handleAdminInteraction(interaction) {
         return await adminRewardSelectSystem.showItemSelectMenu(interaction);
     }
     
-    // 선택 메뉴 핸들러
-    else if (customId.includes('_select') && customId.includes('admin')) {
-        return await adminRewardSelectSystem.handleSelectMenu(interaction);
-    }
-    
-    // 3단어 장비 생성 시스템
+    // 3단어 장비 생성 시스템 - 이것을 먼저 체크
     else if (customId === 'admin_equip_menu') {
         return await adminEquipmentSystem.showEquipmentMenu(interaction);
     }
     else if (customId === 'admin_equip_create') {
         return await adminEquipmentSystem.showCreateStep1(interaction);
+    }
+    else if (customId === 'admin_equip_preset') {
+        return await adminEquipmentSystem.showPresetEquipment(interaction);
     }
     else if (customId === 'admin_equip_next_step') {
         return await adminEquipmentSystem.showCreateStep2(interaction);
@@ -183,7 +196,13 @@ async function handleAdminInteraction(interaction) {
         return await adminEquipmentSystem.showCreateStep2(interaction);
     }
     else if (customId.includes('admin_equip_') && customId.includes('_select')) {
+        console.log('[AdminHandler] Equipment select menu detected:', customId);
         return await adminEquipmentSystem.handleSelectMenu(interaction);
+    }
+    
+    // 선택 메뉴 핸들러 - admin_equip_을 제외한 나머지
+    else if (customId.includes('_select') && customId.includes('admin') && !customId.includes('admin_equip_')) {
+        return await adminRewardSelectSystem.handleSelectMenu(interaction);
     }
     else if (customId === 'admin_reward_gold') {
         return await adminRewardSystem.showGoldModal(interaction);
@@ -227,6 +246,7 @@ async function handleAdminInteraction(interaction) {
         return await adminBulkRewardSystem.handleRewardTypeSelect(interaction);
     }
     else if (customId.startsWith('admin_bulk_') && customId.includes('_select')) {
+        console.log('[AdminHandler] Routing to bulk select menu:', customId);
         return await adminBulkRewardSystem.handleSelectMenu(interaction);
     }
     else if (customId.startsWith('admin_bulk_') && (customId.includes('_amount') || customId.includes('_type'))) {
@@ -447,6 +467,31 @@ async function handleAdminInteraction(interaction) {
     else if (customId === 'admin_backup') {
         return await showBackupMenu(interaction);
     }
+    
+    // StringSelectMenu 처리
+    if (interaction.isStringSelectMenu()) {
+        // 프리셋 장비 선택
+        if (customId === 'admin_preset_select') {
+            return await adminEquipmentSystem.handlePresetSelect(interaction);
+        }
+        // 프리셋 장비 유저 선택
+        else if (customId.startsWith('admin_preset_user_')) {
+            const parts = customId.split('_');
+            const category = parts[3];
+            const itemIndex = parseInt(parts[4]);
+            const userId = interaction.values[0];
+            return await adminEquipmentSystem.givePresetItem(interaction, category, itemIndex, userId);
+        }
+        // 프리셋 장비 강화 선택
+        else if (customId.startsWith('admin_preset_enhance_')) {
+            const parts = customId.split('_');
+            const category = parts[3];
+            const itemIndex = parseInt(parts[4]);
+            const userId = parts[5];
+            const enhancement = interaction.values[0];
+            return await adminEquipmentSystem.finalizePresetGive(interaction, category, itemIndex, userId, enhancement);
+        }
+    }
 }
 
 // 관리자 모달 핸들러
@@ -622,6 +667,33 @@ async function handleAdminModal(interaction) {
                 )
             ]
         });
+    }
+    else if (customId === 'admin_bulk_item_modal') {
+        const adminId = interaction.user.id;
+        const bulk = adminBulkRewardSystem.pendingBulkRewards.get(adminId);
+        
+        if (!bulk) {
+            return await interaction.reply({
+                content: '❌ 보상 설정 정보를 찾을 수 없습니다.',
+                flags: 64
+            });
+        }
+        
+        const itemId = interaction.fields.getTextInputValue('item_id');
+        const quantity = parseInt(interaction.fields.getTextInputValue('item_quantity'));
+        
+        if (isNaN(quantity) || quantity < 1) {
+            return await interaction.reply({
+                content: '❌ 올바른 수량을 입력해주세요.',
+                flags: 64
+            });
+        }
+        
+        bulk.rewardData = { itemId, quantity };
+        
+        // 바로 지급 시작
+        await interaction.deferReply();
+        return await adminBulkRewardSystem.processBulkReward(interaction);
     }
     else if (customId === 'admin_bulk_mixed_modal') {
         const adminId = interaction.user.id;

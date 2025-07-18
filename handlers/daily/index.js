@@ -1,6 +1,6 @@
 const { showAttendanceMenu, claimDailyReward, showAttendanceRanking } = require('./attendance');
 const { showHuntingMenu, executeHunt } = require('./hunting');
-const { showExerciseMenu, executeExercise, showExerciseShop, showExerciseStats, showExerciseRanking, performExercise, buyExerciseItem, checkExerciseProgress, completeExercise } = require('./exercise');
+const { showExerciseMenu, executeExercise, showExerciseShop, showExerciseStats, showExerciseRanking, performExercise, buyExerciseItem, checkExerciseProgress, completeExercise, completeExerciseEarly, getTodayUsedTime } = require('./exercise');
 const { showQuestMenu, showDailyQuests, acceptQuest, claimQuestRewards } = require('./quest');
 const { showAppraisalMenu, executeAppraisal } = require('./lootAppraisal');
 const { showTournamentMenu, showWeeklyRanking, startSpeedHunt, executeSpeedHunt } = require('./huntingTournament');
@@ -10,7 +10,9 @@ const { sellFromWarehouse, withdrawToInventory, createCertificate, payWarehouseF
 const { showStrategyMenu, selectStrategy, applyStrategy, showPredictions, upgradeWarehouse } = require('./warehouseStrategy');
 const { showMarketPrices: showMarketCenter, handleMarketInteraction } = require('./lootMarket');
 const { getUser } = require('../common/utils');
+const { EXERCISE_SYSTEM } = require('../../data/exerciseSystem');
 const { showDailyMissions, showWeeklyMissions, claimDailyMissionReward, claimWeeklyMissionReward } = require('./missions');
+const { showLockerRoom, showEquipmentManagement, showSupplementMenu, handleEquipmentSelection, handleSupplementUse } = require('./lockerRoom');
 
 // 일일 활동 인터랙션 핸들러
 async function handleDailyInteraction(interaction) {
@@ -102,7 +104,22 @@ async function handleDailyInteraction(interaction) {
     else if (customId === 'work' || customId === 'exercise_menu') {
         return await showExerciseMenu(interaction);
     } else if (customId === 'exercise_gym_shop') {
-        return await showExerciseShop(interaction);
+        console.log('[Daily Handler] Processing exercise_gym_shop interaction');
+        try {
+            return await showExerciseShop(interaction);
+        } catch (error) {
+            console.error('[Daily Handler] Error in showExerciseShop:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                return await interaction.reply({
+                    content: '❌ 운동 용품점을 여는 중 오류가 발생했습니다.',
+                    flags: 64
+                });
+            } else {
+                return await interaction.editReply({
+                    content: '❌ 운동 용품점을 여는 중 오류가 발생했습니다.'
+                });
+            }
+        }
     } else if (customId === 'exercise_stats') {
         return await showExerciseStats(interaction);
     } else if (customId === 'exercise_ranking') {
@@ -118,7 +135,13 @@ async function handleDailyInteraction(interaction) {
     } else if (customId === 'exercise_check_progress') {
         return await checkExerciseProgress(interaction);
     } else if (customId === 'exercise_complete_early') {
-        return await completeExercise(interaction);
+        return await completeExerciseEarly(interaction);
+    } else if (customId === 'exercise_inventory') {
+        return await showLockerRoom(interaction);
+    } else if (customId === 'locker_equip_manage') {
+        return await showEquipmentManagement(interaction);
+    } else if (customId === 'locker_use_supplement') {
+        return await showSupplementMenu(interaction);
     }
     
     // 퀘스트 관련
@@ -230,6 +253,45 @@ async function handleDailyInteraction(interaction) {
         return await showStrategyMenu(interaction);
     }
     
+    // 운동 시간 선택 버튼 처리
+    else if (customId.startsWith('exercise_start_')) {
+        const parts = customId.split('_');
+        const exerciseId = parts[2];
+        const minutes = parseInt(parts[3]);
+        const { performExercise } = require('./exercise');
+        return await performExercise(interaction, exerciseId, minutes);
+    } else if (customId === 'exercise_cancel') {
+        return await showExerciseMenu(interaction);
+    } else if (customId.startsWith('exercise_custom_')) {
+        const exerciseId = customId.replace('exercise_custom_', '');
+        // 사용자 정의 시간 입력을 위한 모달 표시
+        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+        const user = await getUser(interaction.user.id);
+        const todayUsedMinutes = getTodayUsedTime(user);
+        const userType = user.premium?.type || 'basic';
+        const dailyLimit = EXERCISE_SYSTEM.dailyLimits[userType] || 60;
+        const remainingMinutes = dailyLimit - todayUsedMinutes;
+        
+        const modal = new ModalBuilder()
+            .setCustomId(`exercise_time_${exerciseId}`)
+            .setTitle('운동 시간 입력');
+        
+        const timeInput = new TextInputBuilder()
+            .setCustomId('exercise_minutes')
+            .setLabel('운동 시간 (분)')
+            .setPlaceholder(`1 ~ ${remainingMinutes} 분`)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMinLength(1)
+            .setMaxLength(3)
+            .setValue('30');
+        
+        const row = new ActionRowBuilder().addComponents(timeInput);
+        modal.addComponents(row);
+        
+        return await interaction.showModal(modal);
+    }
+    
     // 드롭다운 메뉴 처리
     else if (interaction.isStringSelectMenu()) {
         if (customId === 'exercise_select') {
@@ -256,6 +318,10 @@ async function handleDailyInteraction(interaction) {
         } else if (customId === 'market_category_select') {
             const { handleMarketInteraction } = require('./lootMarket');
             return await handleMarketInteraction(interaction);
+        } else if (customId === 'locker_equip_select') {
+            return await handleEquipmentSelection(interaction);
+        } else if (customId === 'locker_supplement_select') {
+            return await handleSupplementUse(interaction);
         }
     }
 }

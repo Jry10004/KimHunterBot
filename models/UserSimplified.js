@@ -153,6 +153,9 @@ userSimplifiedSchema.index({ 'accountStatus': 1 });
 userSimplifiedSchema.index({ 'lastActiveDate': -1 });
 userSimplifiedSchema.index({ createdAt: -1 });
 
+// 자동 인덱스 생성 비활성화
+userSimplifiedSchema.set('autoIndex', false);
+
 // 가상 필드: 전투력 계산
 userSimplifiedSchema.virtual('combatPower').get(function() {
     const basePower = this.level * 100;

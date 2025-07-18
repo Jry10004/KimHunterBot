@@ -62,6 +62,9 @@ const pvpStatsSchema = new mongoose.Schema({
 pvpStatsSchema.index({ rating: -1 });
 pvpStatsSchema.index({ wins: -1 });
 
+// 자동 인덱스 생성 비활성화
+pvpStatsSchema.set('autoIndex', false);
+
 // 업데이트 시 updatedAt 자동 갱신
 pvpStatsSchema.pre('save', function(next) {
     this.updatedAt = new Date();

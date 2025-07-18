@@ -223,7 +223,25 @@ class MarketPriceService {
                     const newPrice = Math.floor(item.currentPrice * (1 + changePercent));
                     const volume = Math.floor(Math.random() * 100 + 10);
                     
-                    await item.updatePrice(newPrice, volume);
+                    // 재시도 로직 추가
+                    let retries = 3;
+                    while (retries > 0) {
+                        try {
+                            // 최신 문서 다시 가져오기
+                            const freshItem = await MarketItem.findById(item._id);
+                            if (!freshItem) break;
+                            
+                            await freshItem.updatePrice(newPrice, volume);
+                            break;
+                        } catch (err) {
+                            if (err.name === 'VersionError' && retries > 1) {
+                                retries--;
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                                continue;
+                            }
+                            throw err;
+                        }
+                    }
                 } catch (error) {
                     console.error(`[MarketPriceService] 아이템 업데이트 실패 - ${item.itemName}:`, error.message);
                 }

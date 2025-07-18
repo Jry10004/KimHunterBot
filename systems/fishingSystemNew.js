@@ -15,16 +15,133 @@ class FishingManager {
     
     // 메인 낚시 UI
     createMainEmbed(user) {
+        // 낚시권 재생성 체크
+        this.regenerateTickets(user);
+        
+        // 시간대별 인사말
+        const hour = new Date().getHours();
+        let greeting, bgColor;
+        if (hour < 6) {
+            greeting = '🌙 새벽 낚시는 대물의 시간!';
+            bgColor = '#191970';
+        } else if (hour < 12) {
+            greeting = '🌅 아침 햇살과 함께하는 낚시!';
+            bgColor = '#FFD700';
+        } else if (hour < 18) {
+            greeting = '☀️ 오후의 여유로운 낚시 시간!';
+            bgColor = '#87CEEB';
+        } else {
+            greeting = '🌆 노을과 함께하는 황금 낚시 시간!';
+            bgColor = '#FF6347';
+        }
+        
         const embed = new EmbedBuilder()
-            .setTitle('🎣 낚시터')
-            .setColor('#1e90ff')
-            .setDescription('평화로운 낚시터에서 물고기를 낚아보세요!');
+            .setTitle('🎣 김헌터 낚시터에 오신 것을 환영합니다!')
+            .setColor(bgColor)
+            .setDescription(`${greeting}\n\n오늘은 어떤 물고기를 만나실까요? 🐟`);
             
         // 낚시 데이터 초기화
         if (!user.fishing) {
             user.fishing = {
-                level: 1,  // 낚시 레벨 추가
-                exp: 0,    // 낚시 경험치 추가
+                level: 1,
+                exp: 0,
+                rod: 'wooden',
+                bait: 10,
+                baits: {
+                    worm: 10,
+                    shrimp: 0,
+                    bread: 0,
+                    lure: 0,
+                    glowing: 0,
+                    golden: 0,
+                    legendary: 0
+                },
+                unlockedSpots: ['pond'],
+                stats: {
+                    totalCaught: 0,
+                    totalEarned: 0,
+                    biggestCatch: { fishId: null, size: 0, date: null },
+                    rarestCatch: { fishId: null, rarity: null, date: null }
+                },
+                inventory: [],
+                collection: [],
+                tickets: 20,
+                lastTicketRegen: new Date()
+            };
+        }
+        
+        // level과 exp가 없는 경우 추가
+        if (user.fishing && user.fishing.level === undefined) {
+            user.fishing.level = 1;
+            user.fishing.exp = 0;
+        }
+        
+        // 다음 레벨까지 경험치 퍼센트
+        const expPercent = Math.round((user.fishing.exp / (user.fishing.level * 100)) * 100);
+        const expBar = this.createProgressBar(expPercent);
+        
+        // 티켓 재생성 시간
+        const nextTicketTime = new Date(user.fishing.lastTicketRegen).getTime() + (30 * 60 * 1000);
+        const timeUntilNextTicket = Math.max(0, Math.floor((nextTicketTime - Date.now()) / 1000 / 60));
+        
+        embed.addFields(
+            {
+                name: '🎫 낚시권',
+                value: `${user.fishing.tickets || 0}/20 장\n다음 티켓: ${timeUntilNextTicket}분 후`,
+                inline: true
+            },
+            {
+                name: '📊 낚시 정보',
+                value: `**레벨:** Lv.${user.fishing.level}\n${expBar} ${expPercent}%`,
+                inline: true
+            },
+            {
+                name: '🎣 장비',
+                value: `**낚싯대:** ${FISHING_SYSTEM.fishingRods[user.fishing.rod].name}\n**인벤토리:** ${user.fishing.inventory.length}/100`,
+                inline: true
+            }
+        );
+        
+        // 최고 기록
+        if (user.fishing.stats.biggestCatch && user.fishing.stats.biggestCatch.size > 0) {
+            embed.addFields({
+                name: '🏆 최고 기록',
+                value: `**최대 크기:** ${user.fishing.stats.biggestCatch.size}cm\n**총 수익:** ${user.fishing.stats.totalEarned.toLocaleString()}G\n**잡은 물고기:** ${user.fishing.stats.totalCaught}마리`,
+                inline: false
+            });
+        }
+        
+        // 오늘의 운세
+        const fortunes = [
+            "🍀 오늘은 대물을 낚을 수 있는 행운의 날!",
+            "✨ 희귀한 물고기와의 만남이 기다립니다!",
+            "🌟 전설의 물고기가 당신을 기다립니다!",
+            "💰 오늘은 황금 물고기의 날!",
+            "🎯 백발백중! 모든 캐스팅이 성공할 예감!",
+            "🌈 무지개 물고기를 만날 수 있을지도?"
+        ];
+        const todayFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
+        
+        embed.setFooter({ text: todayFortune });
+        
+        return embed;
+    }
+    
+    // 진행도 바 생성
+    createProgressBar(percent) {
+        const filled = Math.floor(percent / 10);
+        const empty = 10 - filled;
+        return '█'.repeat(filled) + '░'.repeat(empty);
+    }
+    
+    createMainComponents(user) {
+        const components = [];
+        
+        // 낚시 데이터 초기화 확인
+        if (!user.fishing) {
+            user.fishing = {
+                level: 1,
+                exp: 0,
                 rod: 'wooden',
                 bait: 10,
                 specialBaits: {
@@ -48,53 +165,9 @@ class FishingManager {
                     },
                     perfectSales: 0,
                     missedOpportunities: 0
-                },
-                inventory: [],
-                collection: {
-                    discovered: new Map(),
-                    uniqueVariants: [],
-                    legendaryVariants: []
-                },
-                lastFish: null,
-                dailyLimit: 0,
-                lastDailyReset: null
+                }
             };
         }
-        
-        // level과 exp가 없는 경우 추가
-        if (user.fishing && user.fishing.level === undefined) {
-            user.fishing.level = 1;
-            user.fishing.exp = 0;
-        }
-        
-        embed.addFields(
-            {
-                name: '🎣 낚시 레벨',
-                value: `Lv.${user.fishing.level} (${user.fishing.exp}/${user.fishing.level * 100} EXP)`,
-                inline: true
-            },
-            {
-                name: '🎣 낚싯대',
-                value: FISHING_SYSTEM.fishingRods[user.fishing.rod].name,
-                inline: true
-            },
-            {
-                name: '🎒 인벤토리',
-                value: `${user.fishing.inventory.length}/${FISHING_SYSTEM.settings.maxInventory}`,
-                inline: true
-            },
-            {
-                name: '📊 통계',
-                value: `총 ${user.fishing.stats.totalCaught}마리 낚음\n총 ${user.fishing.stats.totalEarned.toLocaleString()}G 수익`,
-                inline: false
-            }
-        );
-        
-        return embed;
-    }
-    
-    createMainComponents(user) {
-        const components = [];
         
         // 첫 번째 줄 - 낚시터 선택
         const spotRow = new ActionRowBuilder()
@@ -103,22 +176,22 @@ class FishingManager {
                     .setCustomId('fishing_spot_pond')
                     .setLabel('🏞️ 마을 연못')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(user.fishing.level < 1),
+                    .setDisabled((user.fishing?.level || 1) < 1),
                 new ButtonBuilder()
                     .setCustomId('fishing_spot_river')
                     .setLabel('🌊 맑은 강')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(user.fishing.level < 10),
+                    .setDisabled((user.fishing?.level || 1) < 10),
                 new ButtonBuilder()
                     .setCustomId('fishing_spot_lake')
                     .setLabel('🏔️ 호수')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(user.fishing.level < 20),
+                    .setDisabled((user.fishing?.level || 1) < 20),
                 new ButtonBuilder()
                     .setCustomId('fishing_spot_coast')
                     .setLabel('🏖️ 해안가')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(user.fishing.level < 30)
+                    .setDisabled((user.fishing?.level || 1) < 30)
             );
             
         // 두 번째 줄 - 특수 낚시터
@@ -128,17 +201,17 @@ class FishingManager {
                     .setCustomId('fishing_spot_deepsea')
                     .setLabel('🌑 심해')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(user.fishing.level < 50),
+                    .setDisabled((user.fishing?.level || 1) < 50),
                 new ButtonBuilder()
                     .setCustomId('fishing_spot_abyss')
                     .setLabel('🌌 심연')
                     .setStyle(ButtonStyle.Danger)
-                    .setDisabled(user.fishing.level < 70),
+                    .setDisabled((user.fishing?.level || 1) < 70),
                 new ButtonBuilder()
                     .setCustomId('fishing_spot_void')
                     .setLabel('🕳️ 공허의 바다')
                     .setStyle(ButtonStyle.Danger)
-                    .setDisabled(user.fishing.level < 100)
+                    .setDisabled((user.fishing?.level || 1) < 100)
             );
             
         // 세 번째 줄 - 기능 버튼
@@ -153,6 +226,10 @@ class FishingManager {
                     .setLabel('🛒 상점')
                     .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
+                    .setCustomId('fishing_market')
+                    .setLabel('🏪 수산시장')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
                     .setCustomId('fishing_collection')
                     .setLabel('📖 도감')
                     .setStyle(ButtonStyle.Secondary)
@@ -164,34 +241,111 @@ class FishingManager {
     
     // 낚시터 상세 정보
     createSpotDetailEmbed(spot, user) {
+        // 낚시터별 특별한 색상
+        const spotColors = {
+            pond: '#87CEEB',      // 하늘색
+            river: '#4169E1',     // 로얄블루
+            lake: '#191970',      // 미드나잇블루
+            coast: '#FFD700',     // 골드
+            deepsea: '#000080',   // 네이비
+            abyss: '#4B0082',     // 인디고
+            void: '#8B008B',      // 다크마젠타
+            dragon_ocean: '#FF4500', // 오렌지레드
+            celestial_lake: '#FFB6C1', // 라이트핑크
+            eternal_depths: '#9400D3'  // 바이올렛
+        };
+        
         const embed = new EmbedBuilder()
             .setTitle(`${spot.name}`)
-            .setColor('#1e90ff')
-            .setDescription(spot.description);
+            .setColor(spotColors[spot.id] || '#1e90ff')
+            .setDescription(`${spot.description}\n\n*"${this.getSpotQuote(spot.id)}"*`);
             
-        // 미끼 정보
+        // 미끼 정보를 더 시각적으로
         let baitInfo = '';
+        let totalBaits = 0;
+        
+        if (!user.fishing.baits) {
+            user.fishing.baits = {
+                worm: user.fishing.bait || 10,
+                shrimp: 0,
+                bread: 0,
+                lure: 0,
+                glowing: 0,
+                golden: 0,
+                legendary: 0
+            };
+        }
+        
         for (const [baitId, count] of Object.entries(user.fishing.baits)) {
             const bait = FISHING_SYSTEM.baits[baitId];
             if (bait && count > 0) {
-                baitInfo += `${bait.name}: ${count}개\n`;
+                baitInfo += `${bait.name} ×${count}\n`;
+                totalBaits += count;
             }
         }
+        
+        // 추천 정보 추가
+        const recommendations = this.getSpotRecommendations(spot);
         
         embed.addFields(
             {
                 name: '📍 낚시터 정보',
-                value: `레벨 제한: ${spot.requiredLevel}\n물고기 종류: ${spot.fishTypes === 'special' ? '특수' : spot.fishTypes === 'freshwater' ? '민물' : '바닷물'}`,
+                value: `**레벨 제한:** Lv.${spot.requiredLevel}+\n**주요 어종:** ${spot.fishTypes === 'special' ? '✨ 특수' : spot.fishTypes === 'freshwater' ? '💧 민물' : '🌊 바닷물'}\n**크기 보정:** ×${spot.sizeModifier}`,
                 inline: true
             },
             {
-                name: '🪱 보유 미끼',
-                value: baitInfo || '미끼가 없습니다!',
+                name: '🎒 미끼 보유현황',
+                value: totalBaits > 0 ? baitInfo : '⚠️ 미끼가 없습니다!\n상점에서 구매하세요!',
                 inline: true
+            },
+            {
+                name: '💡 낚시 팁',
+                value: recommendations,
+                inline: false
             }
         );
         
+        // 특수 물고기 정보
+        if (spot.specialFish && spot.specialFish.length > 0) {
+            embed.addFields({
+                name: '🌟 출현 가능한 특수 어종',
+                value: spot.specialFish.join(', '),
+                inline: false
+            });
+        }
+        
         return embed;
+    }
+    
+    // 낚시터별 명언
+    getSpotQuote(spotId) {
+        const quotes = {
+            pond: "평화로운 연못에는 항상 놀라움이 숨어있다.",
+            river: "흐르는 물살 속에 진정한 도전이 있다.",
+            lake: "깊은 호수는 큰 꿈을 품고 있다.",
+            coast: "파도와 함께 춤추는 물고기들의 향연.",
+            deepsea: "어둠 속에서 빛나는 것들을 찾아서.",
+            abyss: "심연을 들여다보면, 심연도 당신을 본다.",
+            void: "차원의 경계에서 만나는 기적.",
+            dragon_ocean: "용의 숨결이 닿는 곳, 전설이 시작된다.",
+            celestial_lake: "별빛이 내리는 곳에 천상의 물고기가.",
+            eternal_depths: "시간이 멈춘 곳에서 영원을 낚는다."
+        };
+        return quotes[spotId] || "낚시는 인내의 예술이다.";
+    }
+    
+    // 낚시터별 추천 정보
+    getSpotRecommendations(spot) {
+        const tips = {
+            pond: "🎣 초보자 추천!\n🪱 지렁이로 충분해요\n🐟 작지만 귀여운 물고기들",
+            river: "💨 물살이 세서 큰 물고기 출현!\n🦐 새우 미끼 추천\n📏 평균 크기 UP",
+            lake: "🏆 대물 낚시의 성지\n✨ 발광 미끼 효과 좋음\n🎯 인내심이 필요해요",
+            coast: "🌊 다양한 어종 서식\n🍞 빵조각도 의외로 잘 먹힘\n⏰ 조수 시간 확인!",
+            deepsea: "⚡ 희귀 어종 다수!\n💎 고급 미끼 필수\n🦈 대형 어종 주의",
+            abyss: "🌌 미지의 세계\n✨ 전설 미끼 강력 추천\n😱 상상초월 크기",
+            void: "🕳️ 차원어 전용 낚시터\n🌟 모든 미끼 효과 증폭\n🎰 도박과도 같은 곳"
+        };
+        return tips[spot.id] || "🎣 행운을 빕니다!";
     }
     
     // 미끼 선택 컴포넌트
@@ -216,13 +370,15 @@ class FishingManager {
         for (const [baitId, count] of Object.entries(user.fishing.baits)) {
             if (count > 0 && buttonCount < 5) {
                 const bait = FISHING_SYSTEM.baits[baitId];
-                baitRow.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`fishing_execute_${spot.id}_${baitId}`)
-                        .setLabel(`${bait.name} (${count})`)
-                        .setStyle(ButtonStyle.Primary)
-                );
-                buttonCount++;
+                if (bait) {  // bait가 존재하는지 확인
+                    baitRow.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`fishing_execute_${spot.id}_${baitId}`)
+                            .setLabel(`${bait.name} (${count})`)
+                            .setStyle(ButtonStyle.Primary)
+                    );
+                    buttonCount++;
+                }
             }
         }
         
@@ -247,6 +403,151 @@ class FishingManager {
         return components;
     }
     
+    // 물고기 명언 생성
+    getFishQuote(rarity) {
+        const quotes = {
+            common: [
+                "오늘도 평화로운 낚시네요.",
+                "작지만 소중한 한 마리!",
+                "낚시의 기본은 인내심이죠."
+            ],
+            uncommon: [
+                "오, 뭔가 특별한 녀석이네요!",
+                "이런 걸 낚다니, 운이 좋군요!",
+                "반짝반짝 빛나는 비늘이 예쁘네요."
+            ],
+            rare: [
+                "와! 이건 정말 희귀한 물고기예요!",
+                "낚시 실력이 대단하시네요!",
+                "이런 건 쉽게 못 봅니다!"
+            ],
+            epic: [
+                "믿을 수 없어! 정말 대단한 낚시예요!",
+                "전설적인 순간입니다!",
+                "이건 자랑할 만한 성과네요!"
+            ],
+            legendary: [
+                "전설은 당신과 함께합니다!",
+                "역사에 남을 낚시입니다!",
+                "신화가 현실이 되는 순간!"
+            ],
+            mythic: [
+                "신들도 놀랄 만한 낚시입니다!",
+                "우주의 신비가 당신의 낚싯대에!",
+                "이건... 정말 기적입니다!"
+            ]
+        };
+        
+        const rarityQuotes = quotes[rarity] || quotes.common;
+        return rarityQuotes[Math.floor(Math.random() * rarityQuotes.length)];
+    }
+    
+    // 물고기 이미지 URL 생성 (이모지 기반)
+    getFishImage(rarity) {
+        const images = {
+            common: 'https://cdn.discordapp.com/attachments/1234567890/fish_common.png',
+            uncommon: 'https://cdn.discordapp.com/attachments/1234567890/fish_uncommon.png',
+            rare: 'https://cdn.discordapp.com/attachments/1234567890/fish_rare.png',
+            epic: 'https://cdn.discordapp.com/attachments/1234567890/fish_epic.png',
+            legendary: 'https://cdn.discordapp.com/attachments/1234567890/fish_legendary.png',
+            mythic: 'https://cdn.discordapp.com/attachments/1234567890/fish_mythic.png'
+        };
+        
+        // 실제 이미지가 없으므로 null 반환 (나중에 추가 가능)
+        return null;
+    }
+    
+    // 수집 보상 체크
+    checkCollectionRewards(user) {
+        const collectionCount = Array.isArray(user.fishing.collection) ? user.fishing.collection.length : 0;
+        
+        // 이미 받은 보상 체크
+        if (!user.fishing.collectionRewardsClaimed) {
+            user.fishing.collectionRewardsClaimed = [];
+            user.markModified('fishing.collectionRewardsClaimed');
+        }
+        
+        const rewards = [];
+        let hasNewRewards = false;
+        
+        // 10종 - 강철 낚싯대 해금
+        if (collectionCount >= 10 && !user.fishing.collectionRewardsClaimed.includes(10)) {
+            if (!user.fishing.unlockedRods) user.fishing.unlockedRods = ['wooden'];
+            if (!user.fishing.unlockedRods.includes('steel')) {
+                user.fishing.unlockedRods.push('steel');
+                rewards.push('🎣 강철 낚싯대가 해금되었습니다!');
+                user.markModified('fishing.unlockedRods');
+            }
+            user.fishing.collectionRewardsClaimed.push(10);
+            hasNewRewards = true;
+        }
+        
+        // 20종 - 10,000,000G 보너스
+        if (collectionCount >= 20 && !user.fishing.collectionRewardsClaimed.includes(20)) {
+            user.gold = (user.gold || 0) + 10000000;
+            rewards.push('💰 10,000,000G를 획득했습니다!');
+            user.markModified('gold');
+            user.fishing.collectionRewardsClaimed.push(20);
+            hasNewRewards = true;
+        }
+        
+        // 30종 - 티타늄 낚싯대 해금
+        if (collectionCount >= 30 && !user.fishing.collectionRewardsClaimed.includes(30)) {
+            if (!user.fishing.unlockedRods) user.fishing.unlockedRods = ['wooden'];
+            if (!user.fishing.unlockedRods.includes('titanium')) {
+                user.fishing.unlockedRods.push('titanium');
+                rewards.push('🎣 티타늄 낚싯대가 해금되었습니다!');
+                user.markModified('fishing.unlockedRods');
+            }
+            user.fishing.collectionRewardsClaimed.push(30);
+            hasNewRewards = true;
+        }
+        
+        // 40종 - 전설 미끼 10개
+        if (collectionCount >= 40 && !user.fishing.collectionRewardsClaimed.includes(40)) {
+            if (!user.fishing.baits) user.fishing.baits = {};
+            user.fishing.baits.legendary = (user.fishing.baits.legendary || 0) + 10;
+            rewards.push('💎 전설 미끼 10개를 획득했습니다!');
+            user.markModified('fishing.baits');
+            user.fishing.collectionRewardsClaimed.push(40);
+            hasNewRewards = true;
+        }
+        
+        // 50종 - 낚시왕 칭호
+        if (collectionCount >= 50 && !user.fishing.collectionRewardsClaimed.includes(50)) {
+            user.fishing.isFishingKing = true;
+            rewards.push('🏆 낚시왕 칭호를 획득했습니다! (에픽 이하 물고기 판매가 10배)');
+            user.markModified('fishing.isFishingKing');
+            user.fishing.collectionRewardsClaimed.push(50);
+            hasNewRewards = true;
+        }
+        
+        // 보상을 받았다면 collectionRewardsClaimed 배열 변경 사항을 마크
+        if (hasNewRewards) {
+            user.markModified('fishing.collectionRewardsClaimed');
+        }
+        
+        return rewards;
+    }
+    
+    // 낚시권 재생성
+    regenerateTickets(user) {
+        if (!user.fishing.tickets) user.fishing.tickets = 0;
+        if (!user.fishing.lastTicketRegen) user.fishing.lastTicketRegen = new Date();
+        
+        const now = new Date();
+        const lastRegen = new Date(user.fishing.lastTicketRegen);
+        const timeDiff = now - lastRegen;
+        const thirtyMinutes = 30 * 60 * 1000; // 30분
+        
+        const ticketsToRegen = Math.floor(timeDiff / thirtyMinutes);
+        
+        if (ticketsToRegen > 0) {
+            user.fishing.tickets = Math.min(20, user.fishing.tickets + ticketsToRegen);
+            user.fishing.lastTicketRegen = new Date(lastRegen.getTime() + (ticketsToRegen * thirtyMinutes));
+        }
+    }
+    
     // 낚시 실행
     async executeFishing(user, spotId, baitId) {
         const spot = FISHING_SYSTEM.fishingSpots[spotId];
@@ -256,10 +557,28 @@ class FishingManager {
             return { success: false, message: '잘못된 낚시터 또는 미끼입니다.' };
         }
         
-        // 미끼 확인
+        // collection 초기화 확인
+        if (!Array.isArray(user.fishing.collection)) {
+            user.fishing.collection = [];
+        }
+        
+        // collectionRewardsClaimed 초기화 확인
+        if (!user.fishing.collectionRewardsClaimed) {
+            user.fishing.collectionRewardsClaimed = [];
+            user.markModified('fishing.collectionRewardsClaimed');
+        }
+        
+        // 낚시권 체크 및 재생성
+        this.regenerateTickets(user);
+        
+        if (!user.fishing.tickets || user.fishing.tickets <= 0) {
+            return { success: false, message: '낚시권이 부족합니다! (30분마다 1장씩 회복)' };
+        }
+        
+        // 미끼 확인 및 초기화
         if (!user.fishing.baits) {
             user.fishing.baits = {
-                worm: user.fishing.bait || 10,
+                worm: user.fishing.bait !== undefined ? user.fishing.bait : 10,
                 shrimp: 0,
                 bread: 0,
                 lure: 0,
@@ -269,32 +588,66 @@ class FishingManager {
             };
         }
         
+        // 구 버전 필드가 있으면 삭제
+        if (user.fishing.bait !== undefined) {
+            delete user.fishing.bait;
+        }
+        if (user.fishing.specialBaits !== undefined) {
+            delete user.fishing.specialBaits;
+        }
+        
         if (!user.fishing.baits[baitId] || user.fishing.baits[baitId] <= 0) {
             return { success: false, message: '미끼가 부족합니다!' };
         }
         
         // 인벤토리 확인
+        if (!user.fishing.inventory || !Array.isArray(user.fishing.inventory)) {
+            user.fishing.inventory = [];
+        }
+        
+        // 기존 잘못된 데이터 정리
+        user.fishing.inventory = user.fishing.inventory.filter(item => 
+            item && item.fishId && item.caughtSpot
+        );
+        
         if (user.fishing.inventory.length >= FISHING_SYSTEM.settings.maxInventory) {
             return { success: false, message: '인벤토리가 가득 찼습니다!' };
         }
         
         // 미끼 소모
         user.fishing.baits[baitId]--;
+        user.markModified('fishing.baits');
+        
+        // 낚시권 소모
+        user.fishing.tickets--;
+        user.markModified('fishing.tickets');
         
         // 물고기 결정
         const fishResult = this.determineFish(spot, user.fishing.rod, bait);
         
-        // 인벤토리에 추가
-        user.fishing.inventory.push(fishResult);
+        // 인벤토리에 추가 (필수 필드 포함)
+        user.fishing.inventory.push({
+            fishId: fishResult.baseType,
+            size: fishResult.size,
+            quality: fishResult.rarity,
+            caughtAt: new Date(),
+            caughtSpot: spotId,
+            estimatedPrice: fishResult.estimatedPrice
+        });
+        user.markModified('fishing.inventory');
         
         // 통계 업데이트
         user.fishing.stats.totalCaught++;
         user.fishing.exp += fishResult.expReward;
+        user.markModified('fishing.stats');
+        user.markModified('fishing.exp');
         
         // 레벨업 체크
         while (user.fishing.exp >= user.fishing.level * 100) {
             user.fishing.exp -= user.fishing.level * 100;
             user.fishing.level++;
+            user.markModified('fishing.exp');
+            user.markModified('fishing.level');
         }
         
         // 최고 기록 체크
@@ -312,6 +665,7 @@ class FishingManager {
                 size: fishResult.size,
                 date: new Date()
             };
+            user.markModified('fishing.stats.biggestCatch');
         }
         
         // 희귀도 기록
@@ -330,11 +684,73 @@ class FishingManager {
                 rarity: fishResult.rarity,
                 date: new Date()
             };
+            user.markModified('fishing.stats.rarestCatch');
         }
         
-        // 도감 등록
-        if (!user.fishing.collection.includes(fishResult.baseType)) {
-            user.fishing.collection.push(fishResult.baseType);
+        // 도감 등록 - 강제로 배열로 변환
+        if (!Array.isArray(user.fishing.collection)) {
+            // 기존 데이터가 있다면 백업
+            const oldCollection = user.fishing.collection;
+            user.fishing.collection = [];
+            
+            // 기존 데이터가 객체였다면 처리
+            if (oldCollection && typeof oldCollection === 'object') {
+                if (oldCollection.uniqueVariants && Array.isArray(oldCollection.uniqueVariants)) {
+                    // 기존 uniqueVariants를 새로운 형식으로 변환
+                    oldCollection.uniqueVariants.forEach(fishType => {
+                        user.fishing.collection.push({
+                            type: fishType,
+                            firstCatch: {
+                                name: fishType,
+                                size: 0,
+                                date: new Date()
+                            },
+                            bestCatch: {
+                                name: fishType,
+                                size: 0,
+                                date: new Date()
+                            }
+                        });
+                    });
+                }
+            }
+        }
+        
+        // 물고기 종류만으로 도감 체크
+        const existingFish = Array.isArray(user.fishing.collection) ? 
+            user.fishing.collection.find(f => 
+                (typeof f === 'string' && f === fishResult.baseType) || 
+                (typeof f === 'object' && f.type === fishResult.baseType)
+            ) : null;
+        
+        if (!existingFish) {
+            // 새로운 물고기 종류 발견 - 첫 기록 저장
+            // collection이 배열인지 다시 한번 확인
+            if (!Array.isArray(user.fishing.collection)) {
+                user.fishing.collection = [];
+            }
+            user.fishing.collection.push({
+                type: fishResult.baseType,
+                firstCatch: {
+                    name: fishResult.name,
+                    size: fishResult.size,
+                    date: new Date()
+                },
+                bestCatch: {
+                    name: fishResult.name,
+                    size: fishResult.size,
+                    date: new Date()
+                }
+            });
+            user.markModified('fishing.collection');
+        } else if (typeof existingFish === 'object' && existingFish.bestCatch && fishResult.size > existingFish.bestCatch.size) {
+            // 기존 물고기의 최대 크기 갱신
+            existingFish.bestCatch = {
+                name: fishResult.name,
+                size: fishResult.size,
+                date: new Date()
+            };
+            user.markModified('fishing.collection');
         }
         
         // 랭킹 통계 업데이트
@@ -366,24 +782,63 @@ class FishingManager {
         // 마지막 업데이트 시간
         user.rankingStats.fishing.lastUpdated = new Date();
         
+        // 수집 보상 체크
+        const collectionRewards = this.checkCollectionRewards(user);
+        
         // 낚시 결과 임베드
+        const catchMessages = {
+            common: ['평범한 ', '흔한 ', '일반적인 '],
+            uncommon: ['특별한 ', '반짝이는 ', '예쁜 '],
+            rare: ['희귀한 ', '놀라운 ', '진귀한 '],
+            epic: ['엄청난 ', '전설적인 ', '눈부신 '],
+            legendary: ['신화의 ', '전설의 ', '불멸의 '],
+            mythic: ['신들의 ', '천상의 ', '우주의 ']
+        };
+        
+        const sizeMessages = {
+            tiny: '🐟 아주 작은',
+            small: '🐟 작은',
+            normal: '🐟 보통 크기의',
+            large: '🐠 큰',
+            huge: '🐠 거대한',
+            gigantic: '🐋 초거대'
+        };
+        
+        const randomMessage = catchMessages[fishResult.rarity][Math.floor(Math.random() * catchMessages[fishResult.rarity].length)];
+        
         const embed = new EmbedBuilder()
-            .setTitle('🎣 낚시 성공!')
+            .setTitle(`🎣 ${fishResult.rarity === 'mythic' ? '🌟 신화급 낚시 성공! 🌟' : fishResult.rarity === 'legendary' ? '⭐ 전설급 낚시 성공! ⭐' : '낚시 성공!'}`)
             .setColor(FISHING_SYSTEM.rarities[fishResult.rarity].color)
-            .setDescription(`**${fishResult.name}**을(를) 낚았습니다!`)
+            .setDescription(`${user.nickname || '낚시꾼'}님이 ${randomMessage}**${fishResult.name}**을(를) 낚았습니다!\n\n*"${this.getFishQuote(fishResult.rarity)}"*`)
+            .setThumbnail(this.getFishImage(fishResult.rarity))
             .addFields(
                 {
-                    name: '📊 정보',
-                    value: `등급: ${FISHING_SYSTEM.rarities[fishResult.rarity].emoji} ${FISHING_SYSTEM.rarities[fishResult.rarity].name}\n크기: ${fishResult.size}cm (${fishResult.sizeGrade.name})\n예상 가격: ${fishResult.estimatedPrice.toLocaleString()}G`,
+                    name: `${FISHING_SYSTEM.rarities[fishResult.rarity].emoji} 희귀도`,
+                    value: `${FISHING_SYSTEM.rarities[fishResult.rarity].name}`,
+                    inline: true
+                },
+                {
+                    name: '📏 크기',
+                    value: `${fishResult.size}cm\n${sizeMessages[fishResult.sizeGrade.grade]} ${fishResult.sizeGrade.name}`,
+                    inline: true
+                },
+                {
+                    name: '💰 예상 가격',
+                    value: `${fishResult.estimatedPrice.toLocaleString()}G`,
+                    inline: true
+                },
+                {
+                    name: '✨ 획득 보상',
+                    value: `경험치 +${fishResult.expReward}\n${fishResult.rarity === 'legendary' || fishResult.rarity === 'mythic' ? '🎁 특별 보상 있음!' : ''}`,
                     inline: false
                 }
             )
-            .setFooter({ text: `경험치 +${fishResult.expReward} | 도감 ${user.fishing.collection.length}/50` });
+            .setFooter({ text: `🎫 낚시권: ${user.fishing.tickets}/20 | 📖 도감: ${Array.isArray(user.fishing.collection) ? user.fishing.collection.length : 0}/50 | 🎒 인벤토리: ${user.fishing.inventory.length}/${FISHING_SYSTEM.settings.maxInventory}` })
+            .setTimestamp();
             
-        // 레어 이상 공개 알림
-        if (rarityOrder.indexOf(fishResult.rarity) >= rarityOrder.indexOf('rare')) {
-            await this.sendPublicNotification(user, fishResult, spot);
-        }
+        
+        // 모든 낚시 결과 공개 알림 (희귀도 무관)
+        await this.sendPublicNotification(user, fishResult, spot);
         
         // 주문서 드롭 체크 (0.3% 확률)
         if (Math.random() < 0.003) {
@@ -419,13 +874,32 @@ class FishingManager {
             });
         }
         
+        // 수집 보상 표시
+        if (collectionRewards.length > 0) {
+            embed.addFields({
+                name: '🎊 수집 보상 획득!',
+                value: collectionRewards.join('\n'),
+                inline: false
+            });
+        }
+        
         const components = [
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`fishing_execute_${spotId}_${baitId}`)
-                    .setLabel('다시 낚시하기')
+                    .setLabel('🎣 다시 낚시하기')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(user.fishing.baits[baitId] <= 0),
+                    .setDisabled(user.fishing.tickets <= 0 || user.fishing.baits[baitId] <= 0)
+                    .setEmoji('🎣'),
+                new ButtonBuilder()
+                    .setCustomId('fishing_sell')
+                    .setLabel('💰 물고기 판매')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(user.fishing.inventory.length === 0),
+                new ButtonBuilder()
+                    .setCustomId('fishing_inventory')
+                    .setLabel('🎒 인벤토리')
+                    .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
                     .setCustomId('fishing_back')
                     .setLabel('🔙 돌아가기')
@@ -442,49 +916,105 @@ class FishingManager {
         const rarity = this.determineRarity(spot, rodId, bait);
         
         // 물고기 종류 결정
-        let fishTypes;
+        let fishData;
+        let fishName;
+        
         if (spot.fishTypes === 'special') {
-            fishTypes = FISHING_SYSTEM.specialFishTypes;
+            const fishNames = Object.keys(FISHING_SYSTEM.specialFishTypes);
+            fishName = fishNames[Math.floor(Math.random() * fishNames.length)];
+            fishData = FISHING_SYSTEM.specialFishTypes[fishName];
         } else if (spot.fishTypes === 'freshwater') {
-            fishTypes = FISHING_SYSTEM.fishTypes.freshwater;
+            const fishNames = Object.keys(FISHING_SYSTEM.fishTypes.freshwater);
+            fishName = fishNames[Math.floor(Math.random() * fishNames.length)];
+            fishData = FISHING_SYSTEM.fishTypes.freshwater[fishName];
         } else {
-            fishTypes = FISHING_SYSTEM.fishTypes.saltwater;
+            const fishNames = Object.keys(FISHING_SYSTEM.fishTypes.saltwater);
+            fishName = fishNames[Math.floor(Math.random() * fishNames.length)];
+            fishData = FISHING_SYSTEM.fishTypes.saltwater[fishName];
         }
         
-        // 특수 물고기 체크
-        if (spot.specialFish && Math.random() < 0.1) {
-            const specialFish = spot.specialFish[Math.floor(Math.random() * spot.specialFish.length)];
-            if (fishTypes.includes(specialFish)) {
-                fishTypes = [specialFish];
+        // 형용사 선택
+        const adjectiveList = FISHING_SYSTEM.adjectives[rarity];
+        const usePositive = Math.random() > 0.3;  // 70% 긍정적
+        const adjectives = usePositive ? Object.keys(adjectiveList.positive) : Object.keys(adjectiveList.negative);
+        const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const adjectiveData = usePositive ? adjectiveList.positive[adjective] : adjectiveList.negative[adjective];
+        
+        // 특수 접두사 확률 체크
+        let prefix = '';
+        let prefixMulti = 1;
+        for (const [tier, data] of Object.entries(FISHING_SYSTEM.specialPrefixes)) {
+            if (Math.random() < data.chance) {
+                prefix = data.prefixes[Math.floor(Math.random() * data.prefixes.length)] + ' ';
+                // 특수 접두사 보너스
+                if (prefix.includes('왕의')) prefixMulti = 1.5;
+                else if (prefix.includes('신이내린')) prefixMulti = 2.0;
+                else if (prefix.includes('용왕의')) prefixMulti = 1.8;
+                else if (prefix.includes('튀김용')) prefixMulti = 1.2;
+                break;
             }
         }
         
-        const baseType = fishTypes[Math.floor(Math.random() * fishTypes.length)];
+        // 크기 결정 (형용사의 크기 영향 적용)
+        const sizeMulti = adjectiveData.sizeMulti * (bait.bonus?.size || 1) * spot.sizeModifier;
+        const baseSizePercent = Math.random() * sizeMulti;
         
-        // 크기 결정
-        const sizeResult = this.determineSize(spot, rodId, bait);
+        // 실제 크기 계산
+        let actualSize;
+        if (baseSizePercent <= 1.0) {
+            // 일반 범위
+            actualSize = fishData.minSize + (fishData.maxSize - fishData.minSize) * baseSizePercent;
+        } else {
+            // 대물 범위
+            const megaPercent = Math.min((baseSizePercent - 1.0) / 2.0, 1.0);
+            actualSize = fishData.maxSize + (fishData.megaSize - fishData.maxSize) * megaPercent;
+        }
         
-        // 이름 생성
-        const name = FISHING_SYSTEM.generateFishName(rarity, baseType, sizeResult.grade);
+        actualSize = Math.floor(actualSize);
         
-        // 가격 계산
-        const basePrice = FISHING_SYSTEM.rarities[rarity].basePrice;
-        const price = Math.floor(
-            (basePrice.min + Math.random() * (basePrice.max - basePrice.min)) *
-            sizeResult.sizeGrade.priceMultiplier
+        // 크기 등급 결정
+        const sizePercent = ((actualSize - fishData.minSize) / (fishData.megaSize - fishData.minSize)) * 100;
+        let sizeGrade;
+        for (const [grade, data] of Object.entries(FISHING_SYSTEM.sizeGrades)) {
+            if (sizePercent >= data.percentRange[0] && sizePercent < data.percentRange[1]) {
+                sizeGrade = { grade, ...data };
+                break;
+            }
+        }
+        
+        if (!sizeGrade) {
+            sizeGrade = { grade: 'medium', ...FISHING_SYSTEM.sizeGrades.medium };
+        }
+        
+        // 최종 이름 생성
+        const fullName = `${prefix}${adjective} ${fishName}`;
+        
+        // 가격 계산 (물고기 기본가 + 형용사 보너스) × 크기 배율 × 접두사 배율
+        const finalPrice = Math.floor(
+            (fishData.basePrice + adjectiveData.priceBonus) * sizeGrade.priceMultiplier * prefixMulti
         );
         
         // 경험치 계산
-        const rarityExp = { common: 10, uncommon: 25, rare: 50, epic: 100, legendary: 250, mythic: 500 };
-        const expReward = rarityExp[rarity] + Math.floor(sizeResult.size / 10);
+        const rarityExp = { 
+            common: 100,
+            uncommon: 250,
+            rare: 500,
+            epic: 1000,
+            legendary: 2500,
+            mythic: 5000
+        };
+        const expReward = rarityExp[rarity] + Math.floor(actualSize / 10);
         
         return {
-            name: name,
-            baseType: baseType,
+            name: fullName,
+            baseType: fishName,
+            adjective: adjective,
+            prefix: prefix.trim(),
             rarity: rarity,
-            size: sizeResult.size,
-            sizeGrade: sizeResult.sizeGrade,
-            estimatedPrice: price,
+            size: actualSize,
+            sizeGrade: sizeGrade,
+            sizePercent: Math.round(sizePercent),
+            estimatedPrice: finalPrice,
             expReward: expReward,
             timestamp: Date.now()
         };
@@ -589,22 +1119,36 @@ class FishingManager {
         if (!this.client) return;
         
         const rarityData = FISHING_SYSTEM.rarities[fish.rarity];
+        
+        // 이모지 선택
+        let titleEmoji = '🎣';
+        if (fish.rarity === 'mythic') titleEmoji = '🌟';
+        else if (fish.rarity === 'legendary') titleEmoji = '⭐';
+        else if (fish.rarity === 'epic') titleEmoji = '💎';
+        else if (fish.rarity === 'rare') titleEmoji = '✨';
+        
         const embed = new EmbedBuilder()
             .setColor(rarityData.color)
-            .setTitle('🎣 희귀한 물고기 발견!')
-            .setDescription(`**${user.nickname || user.username}**님이 ${spot.name}에서\n**${fish.name}**을(를) 낚았습니다!`)
+            .setTitle(`${titleEmoji} ${user.nickname || user.username}님의 낚시!`)
+            .setDescription(`${spot.name}에서 낚시 성공!`)
             .addFields(
                 {
-                    name: '📊 정보',
-                    value: `${rarityData.emoji} ${rarityData.name} 등급\n크기: ${fish.size}cm (${fish.sizeGrade.name})`,
+                    name: '🐟 잡은 물고기',
+                    value: `**${fish.name}**`,
+                    inline: false
+                },
+                {
+                    name: '📊 상세 정보',
+                    value: `${rarityData.emoji} ${rarityData.name} 등급\n📏 ${fish.size}cm (${fish.sizeGrade.emoji} ${fish.sizeGrade.name} - 상위 ${100 - fish.sizePercent}%)\n💰 ${fish.estimatedPrice.toLocaleString()}G`,
                     inline: true
                 },
                 {
-                    name: '💰 예상 가격',
-                    value: `${fish.estimatedPrice.toLocaleString()}G`,
+                    name: '📈 크기 등급',
+                    value: `${fish.sizeGrade.description}\n크기 배율: ×${fish.sizeGrade.priceMultiplier}`,
                     inline: true
                 }
             )
+            .setFooter({ text: `${spot.name} • ${new Date().toLocaleTimeString('ko-KR')}` })
             .setTimestamp();
             
         // 신화 등급은 특별한 디자인
@@ -625,19 +1169,14 @@ class FishingManager {
             });
         }
         
-        // 모든 서버의 공지 채널로 전송
-        for (const guild of this.client.guilds.cache.values()) {
-            const noticeChannel = guild.channels.cache.find(ch => 
-                ch.name.includes('공지') || ch.name.includes('notice') || ch.name.includes('알림')
-            );
-            
-            if (noticeChannel && noticeChannel.isTextBased()) {
-                try {
-                    await noticeChannel.send({ embeds: [embed] });
-                } catch (error) {
-                    console.error(`[낚시] ${guild.name} 공지 전송 실패:`, error);
-                }
+        // 특정 채널로 전송
+        try {
+            const channel = this.client.channels.cache.get('1395135664164438106');
+            if (channel && channel.isTextBased()) {
+                await channel.send({ embeds: [embed] });
             }
+        } catch (error) {
+            console.error('[낚시] 자랑 메시지 전송 실패:', error);
         }
     }
     
@@ -658,16 +1197,29 @@ class FishingManager {
             // 희귀도별로 정렬
             const sorted = [...user.fishing.inventory].sort((a, b) => {
                 const rarityOrder = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
-                return rarityOrder.indexOf(a.rarity) - rarityOrder.indexOf(b.rarity);
+                const aRarity = a.quality || a.rarity || 'common';
+                const bRarity = b.quality || b.rarity || 'common';
+                return rarityOrder.indexOf(aRarity) - rarityOrder.indexOf(bRarity);
             });
             
             // 최대 25개만 표시
             const display = sorted.slice(0, 25);
+            const { fishMarket } = require('./fishMarket');
+            
             for (const [index, fish] of display.entries()) {
-                const rarityData = FISHING_SYSTEM.rarities[fish.rarity];
+                const rarity = fish.quality || fish.rarity || 'common';
+                const rarityData = FISHING_SYSTEM.rarities[rarity];
+                
+                // 가격 계산 - estimatedPrice가 없으면 시장 가격 계산
+                let price = Number(fish.estimatedPrice) || 0;
+                if (!price || price <= 0) {
+                    const priceInfo = fishMarket.calculateSellPrice(fish, user);
+                    price = priceInfo.finalPrice;
+                }
+                
                 embed.addFields({
-                    name: `${index + 1}. ${fish.name}`,
-                    value: `${rarityData.emoji} ${fish.size}cm | ${fish.estimatedPrice.toLocaleString()}G`,
+                    name: `${index + 1}. ${fish.fishId || fish.baseType || '알 수 없는 물고기'}`,
+                    value: `${rarityData.emoji} ${fish.size || 30}cm | ${price.toLocaleString()}G`,
                     inline: true
                 });
             }
@@ -713,7 +1265,7 @@ class FishingManager {
             .setDescription('낚싯대와 미끼를 구매할 수 있습니다.')
             .addFields({
                 name: '💰 보유 골드',
-                value: `${user.gold.toLocaleString()}G`,
+                value: `${(user.gold || 0).toLocaleString()}G`,
                 inline: false
             });
             
@@ -724,15 +1276,42 @@ class FishingManager {
     createRodShopEmbed(user) {
         const embed = new EmbedBuilder()
             .setTitle('🎣 낚싯대 상점')
-            .setColor('#f39c12');
+            .setColor('#f39c12')
+            .addFields({
+                name: '💰 보유 골드',
+                value: `${(user.gold || 0).toLocaleString()}G`,
+                inline: false
+            });
             
+        const collectionCount = Array.isArray(user.fishing.collection) ? user.fishing.collection.length : 0;
+        
         for (const [rodId, rod] of Object.entries(FISHING_SYSTEM.fishingRods)) {
             const owned = user.fishing.rod === rodId;
-            const canBuy = user.gold >= rod.price && !owned;
+            
+            // 해금 조건 체크
+            let unlocked = true;
+            let unlockCondition = '';
+            
+            if (rodId === 'steel') {
+                unlocked = collectionCount >= 10;
+                unlockCondition = '도감 10종 수집';
+            } else if (rodId === 'titanium') {
+                unlocked = collectionCount >= 30;
+                unlockCondition = '도감 30종 수집';
+            } else if (rodId === 'carbon' || rodId === 'mithril' || rodId === 'dragon' || rodId === 'divine') {
+                unlocked = false;
+                unlockCondition = '향후 업데이트 예정';
+            }
+            
+            const canBuy = user.gold >= rod.price && !owned && unlocked;
+            
+            let status = '';
+            if (owned) status = '✅';
+            else if (!unlocked) status = '🔒';
             
             embed.addFields({
-                name: `${owned ? '✅' : ''} ${rod.name}`,
-                value: `${rod.description}\n크기 보너스: ${rod.sizeBonus}x | 희귀도 보너스: ${rod.rarityBonus}x\n가격: ${rod.price.toLocaleString()}G`,
+                name: `${status} ${rod.name}`,
+                value: `${rod.description}\n크기 보너스: ${rod.sizeBonus}x | 희귀도 보너스: ${rod.rarityBonus}x\n가격: ${rod.price.toLocaleString()}G${!unlocked ? `\n**해금 조건: ${unlockCondition}**` : ''}`,
                 inline: false
             });
         }
@@ -744,14 +1323,31 @@ class FishingManager {
     createBaitShopEmbed(user) {
         const embed = new EmbedBuilder()
             .setTitle('🪱 미끼 상점')
-            .setColor('#f39c12');
+            .setColor('#f39c12')
+            .addFields({
+                name: '💰 보유 골드',
+                value: `${(user.gold || 0).toLocaleString()}G`,
+                inline: false
+            });
+            
+        if (!user.fishing.baits) {
+            user.fishing.baits = {
+                worm: 0,
+                shrimp: 0,
+                bread: 0,
+                lure: 0,
+                glowing: 0,
+                golden: 0,
+                legendary: 0
+            };
+        }
             
         for (const [baitId, bait] of Object.entries(FISHING_SYSTEM.baits)) {
             const owned = user.fishing.baits[baitId] || 0;
             
             embed.addFields({
                 name: `${bait.name} (보유: ${owned}개)`,
-                value: `${bait.description}\n효과: ${bait.effect}\n가격: ${bait.price}G/개`,
+                value: `${bait.description}\n효과: ${bait.effect}\n가격: ${bait.price}G/개 | 10개: ${bait.price * 10}G`,
                 inline: true
             });
         }
@@ -768,6 +1364,17 @@ class FishingManager {
         
         if (user.fishing.rod === rodId) {
             return { success: false, message: '이미 보유 중인 낚싯대입니다.' };
+        }
+        
+        // 해금 조건 체크
+        const collectionCount = Array.isArray(user.fishing.collection) ? user.fishing.collection.length : 0;
+        
+        if (rodId === 'steel' && collectionCount < 10) {
+            return { success: false, message: '강철 낚싯대는 도감 10종 수집 시 해금됩니다.' };
+        } else if (rodId === 'titanium' && collectionCount < 30) {
+            return { success: false, message: '티타늄 낚싯대는 도감 30종 수집 시 해금됩니다.' };
+        } else if (rodId === 'carbon' || rodId === 'mithril' || rodId === 'dragon' || rodId === 'divine') {
+            return { success: false, message: '이 낚싯대는 아직 구매할 수 없습니다.' };
         }
         
         if (user.gold < rod.price) {
@@ -977,10 +1584,15 @@ class FishingManager {
             // 총 가치 계산
             let totalValue = 0;
             const rarityCount = {};
+            const { fishMarket } = require('./fishMarket');
             
             for (const fish of user.fishing.inventory) {
-                totalValue += fish.estimatedPrice;
-                rarityCount[fish.rarity] = (rarityCount[fish.rarity] || 0) + 1;
+                // 시장 가격 계산 사용
+                const priceInfo = fishMarket.calculateSellPrice(fish, user);
+                const price = priceInfo.finalPrice || 0;
+                totalValue += price;
+                const rarity = fish.quality || fish.rarity || 'common';
+                rarityCount[rarity] = (rarityCount[rarity] || 0) + 1;
             }
             
             // 희귀도별 개수
@@ -1001,7 +1613,7 @@ class FishingManager {
                 },
                 {
                     name: '💰 총 예상 가치',
-                    value: `${totalValue.toLocaleString()}G`,
+                    value: `${Math.floor(totalValue).toLocaleString()}G`,
                     inline: true
                 }
             );
@@ -1025,12 +1637,12 @@ class FishingManager {
                     .setCustomId('fishing_sell_common')
                     .setLabel('⚪ 일반만 판매')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(!user.fishing.inventory.some(f => f.rarity === 'common')),
+                    .setDisabled(!user.fishing.inventory.some(f => (f.quality || f.rarity) === 'common')),
                 new ButtonBuilder()
                     .setCustomId('fishing_sell_rare')
                     .setLabel('💎 희귀 이상만 판매')
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(!user.fishing.inventory.some(f => ['rare', 'epic', 'legendary', 'mythic'].includes(f.rarity))),
+                    .setDisabled(!user.fishing.inventory.some(f => ['rare', 'epic', 'legendary', 'mythic'].includes(f.quality || f.rarity))),
                 new ButtonBuilder()
                     .setCustomId('fishing_back')
                     .setLabel('🔙 돌아가기')
@@ -1048,18 +1660,20 @@ class FishingManager {
             return { success: false, message: '판매할 물고기가 없습니다!' };
         }
         
+        const { fishMarket } = require('./fishMarket');
         let itemsToSell = [];
         let totalGold = 0;
+        let detailText = '';
         
         switch (action) {
             case 'all':
                 itemsToSell = [...inventory];
                 break;
             case 'common':
-                itemsToSell = inventory.filter(f => f.rarity === 'common');
+                itemsToSell = inventory.filter(f => (f.quality || f.rarity) === 'common');
                 break;
             case 'rare':
-                itemsToSell = inventory.filter(f => ['rare', 'epic', 'legendary', 'mythic'].includes(f.rarity));
+                itemsToSell = inventory.filter(f => ['rare', 'epic', 'legendary', 'mythic'].includes(f.quality || f.rarity));
                 break;
         }
         
@@ -1067,14 +1681,46 @@ class FishingManager {
             return { success: false, message: '판매할 물고기가 없습니다!' };
         }
         
-        // 가격 계산
+        // 각 물고기별 가격 계산
+        const sellDetails = [];
         for (const fish of itemsToSell) {
-            totalGold += fish.estimatedPrice;
+            const priceInfo = fishMarket.calculateSellPrice(fish, user);
+            totalGold += priceInfo.finalPrice;
+            
+            sellDetails.push({
+                fish: fish,
+                priceInfo: priceInfo
+            });
+        }
+        
+        // 판매 상세 정보 (최대 10개만 표시)
+        const displayCount = Math.min(10, sellDetails.length);
+        for (let i = 0; i < displayCount; i++) {
+            const detail = sellDetails[i];
+            const fishName = detail.fish.fishId || detail.fish.baseType || '알 수 없는 물고기';
+            const basePrice = detail.priceInfo.basePrice || 0;
+            
+            detailText += `${fishName}: ${basePrice.toLocaleString()}G`;
+            
+            if (detail.priceInfo.marketMulti && detail.priceInfo.marketMulti !== 1.0) {
+                detailText += ` × ${detail.priceInfo.marketMulti.toFixed(1)}`;
+            }
+            
+            if (detail.priceInfo.appliedBuyers && detail.priceInfo.appliedBuyers.length > 0) {
+                const buyer = detail.priceInfo.appliedBuyers[0];
+                detailText += ` (${buyer.buyer})`;
+            }
+            
+            detailText += ` = ${detail.priceInfo.finalPrice.toLocaleString()}G\n`;
+        }
+        
+        if (sellDetails.length > displayCount) {
+            detailText += `...외 ${sellDetails.length - displayCount}마리\n`;
         }
         
         // 판매 처리
-        user.gold += totalGold;
-        user.fishing.stats.totalEarned += totalGold;
+        user.gold = (user.gold || 0) + totalGold;
+        user.fishing.stats.totalEarned = (user.fishing.stats.totalEarned || 0) + totalGold;
         
         // 인벤토리에서 제거
         user.fishing.inventory = inventory.filter(f => !itemsToSell.includes(f));
@@ -1086,7 +1732,12 @@ class FishingManager {
             .setDescription(`${itemsToSell.length}마리의 물고기를 판매했습니다!`)
             .addFields(
                 {
-                    name: '💵 획득 골드',
+                    name: '📋 판매 내역',
+                    value: detailText || '없음',
+                    inline: false
+                },
+                {
+                    name: '💵 총 판매 금액',
                     value: `+${totalGold.toLocaleString()}G`,
                     inline: true
                 },
@@ -1106,6 +1757,10 @@ class FishingManager {
                     .setStyle(ButtonStyle.Success)
                     .setDisabled(user.fishing.inventory.length === 0),
                 new ButtonBuilder()
+                    .setCustomId('fishing_market')
+                    .setLabel('🏪 수산시장')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
                     .setCustomId('fishing_back')
                     .setLabel('🔙 돌아가기')
                     .setStyle(ButtonStyle.Secondary)
@@ -1119,15 +1774,27 @@ class FishingManager {
     createRodShopComponents(user) {
         const components = [];
         const rodButtons = [];
+        const collectionCount = Array.isArray(user.fishing.collection) ? user.fishing.collection.length : 0;
         
         for (const [rodId, rod] of Object.entries(FISHING_SYSTEM.fishingRods)) {
             const owned = user.fishing.rod === rodId;
-            const canBuy = user.gold >= rod.price && !owned;
+            
+            // 해금 조건 체크
+            let unlocked = true;
+            if (rodId === 'steel') {
+                unlocked = collectionCount >= 10;
+            } else if (rodId === 'titanium') {
+                unlocked = collectionCount >= 30;
+            } else if (rodId === 'carbon' || rodId === 'mithril' || rodId === 'dragon' || rodId === 'divine') {
+                unlocked = false;
+            }
+            
+            const canBuy = user.gold >= rod.price && !owned && unlocked;
             
             rodButtons.push(
                 new ButtonBuilder()
                     .setCustomId(`fishing_buy_rod_${rodId}`)
-                    .setLabel(owned ? `✅ ${rod.name}` : rod.name)
+                    .setLabel(owned ? `✅ ${rod.name}` : unlocked ? rod.name : `🔒 ${rod.name}`)
                     .setStyle(owned ? ButtonStyle.Success : ButtonStyle.Primary)
                     .setDisabled(!canBuy)
             );
@@ -1194,10 +1861,17 @@ class FishingManager {
     
     // 도감 임베드
     createCollectionEmbed(user) {
+        // collection 배열 확인
+        if (!Array.isArray(user.fishing.collection)) {
+            user.fishing.collection = [];
+        }
+        
+        const collectionCount = user.fishing.collection.length;
+        
         const embed = new EmbedBuilder()
             .setTitle('📖 물고기 도감')
             .setColor('#3498db')
-            .setDescription(`수집한 물고기 종류: ${user.fishing.collection.length}/50`);
+            .setDescription(`수집한 물고기 종류: ${collectionCount}/50`);
             
         const allFishTypes = [
             ...FISHING_SYSTEM.fishTypes.freshwater,
@@ -1212,14 +1886,31 @@ class FishingManager {
             '✨ 특수 물고기': FISHING_SYSTEM.specialFishTypes
         };
         
-        for (const [category, fishList] of Object.entries(categories)) {
+        for (const [category, fishData] of Object.entries(categories)) {
             let collected = 0;
             let text = '';
             
-            for (const fish of fishList) {
-                if (user.fishing.collection.includes(fish)) {
-                    text += `✅ ${fish}\n`;
+            // fishData가 객체인지 배열인지 확인
+            const fishList = Array.isArray(fishData) ? fishData : Object.keys(fishData);
+            
+            for (const fishType of fishList) {
+                let catchRecord = null;
+                
+                // collection이 배열인지 확인
+                if (Array.isArray(user.fishing.collection)) {
+                    catchRecord = user.fishing.collection.find(f => 
+                        (typeof f === 'string' && f === fishType) || 
+                        (typeof f === 'object' && f.type === fishType)
+                    );
+                }
+                
+                if (catchRecord) {
                     collected++;
+                    if (typeof catchRecord === 'object' && catchRecord.bestCatch) {
+                        text += `✅ ${fishType} - ${catchRecord.bestCatch.name} (${catchRecord.bestCatch.size}cm)\n`;
+                    } else {
+                        text += `✅ ${fishType}\n`;
+                    }
                 } else {
                     text += `❌ ???\n`;
                 }
@@ -1227,7 +1918,7 @@ class FishingManager {
             
             embed.addFields({
                 name: `${category} (${collected}/${fishList.length})`,
-                value: text || '없음',
+                value: text.substring(0, 1024) || '없음',  // Discord 필드 제한
                 inline: true
             });
         }
@@ -1235,16 +1926,30 @@ class FishingManager {
         // 수집 보상 정보
         const collectionRewards = [
             { count: 10, reward: '🎣 강철 낚싯대 해금' },
-            { count: 20, reward: '💰 10,000G 보너스' },
+            { count: 20, reward: '💰 10,000,000G 보너스' },
             { count: 30, reward: '🎣 티타늄 낚싯대 해금' },
             { count: 40, reward: '💎 전설 미끼 10개' },
-            { count: 50, reward: '🏆 낚시왕 칭호' }
+            { count: 50, reward: '🏆 낚시왕 칭호 (에픽 이하 판매가 10배)' }
         ];
+        
+        // 이미 받은 보상 확인
+        const claimedRewards = user.fishing.collectionRewardsClaimed || [];
         
         let rewardText = '';
         for (const milestone of collectionRewards) {
-            const achieved = user.fishing.collection.length >= milestone.count;
-            rewardText += `${achieved ? '✅' : '⬜'} ${milestone.count}종: ${milestone.reward}\n`;
+            const achieved = collectionCount >= milestone.count;
+            const claimed = claimedRewards.includes(milestone.count);
+            
+            // 도달했지만 아직 받지 않은 경우는 ⭐로 표시
+            let icon = '⬜';
+            if (claimed) icon = '✅';
+            else if (achieved) icon = '⭐';
+            
+            rewardText += `${icon} ${milestone.count}종: ${milestone.reward}`;
+            if (achieved && !claimed) {
+                rewardText += ' (받을 수 있음!)';
+            }
+            rewardText += '\n';
         }
         
         embed.addFields({

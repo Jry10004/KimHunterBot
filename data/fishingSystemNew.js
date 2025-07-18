@@ -1,50 +1,197 @@
 // 🎣 확장된 낚시 시스템 데이터 (50종)
 const FISHING_SYSTEM = {
-    // 물고기 기본 종류 (50종)
+    // 물고기 기본 종류 (50종) - 크기와 가격 정보 포함
     fishTypes: {
         // 민물고기 (25종)
-        freshwater: [
-            '붕어', '잉어', '송어', '메기', '가물치',
-            '빙어', '은어', '피라미', '누치', '쏘가리',
-            '배스', '블루길', '향어', '틸라피아', '무지개송어',
-            '산천어', '열목어', '버들치', '갈겨니', '돌고기',
-            '미꾸리', '뱀장어', '동자개', '퉁가리', '꺽지'
-        ],
+        freshwater: {
+            '붕어': { minSize: 10, maxSize: 35, megaSize: 50, basePrice: 3000 },
+            '잉어': { minSize: 30, maxSize: 80, megaSize: 120, basePrice: 5000 },
+            '송어': { minSize: 20, maxSize: 50, megaSize: 70, basePrice: 8000 },
+            '메기': { minSize: 20, maxSize: 60, megaSize: 100, basePrice: 6000 },
+            '가물치': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 12000 },
+            '빙어': { minSize: 5, maxSize: 12, megaSize: 15, basePrice: 2000 },
+            '은어': { minSize: 10, maxSize: 25, megaSize: 30, basePrice: 4000 },
+            '피라미': { minSize: 5, maxSize: 15, megaSize: 20, basePrice: 1500 },
+            '누치': { minSize: 15, maxSize: 40, megaSize: 60, basePrice: 3500 },
+            '쏘가리': { minSize: 15, maxSize: 35, megaSize: 50, basePrice: 7000 },
+            '배스': { minSize: 20, maxSize: 50, megaSize: 70, basePrice: 9000 },
+            '블루길': { minSize: 10, maxSize: 25, megaSize: 35, basePrice: 2500 },
+            '향어': { minSize: 30, maxSize: 70, megaSize: 100, basePrice: 6500 },
+            '틸라피아': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 4500 },
+            '무지개송어': { minSize: 25, maxSize: 60, megaSize: 80, basePrice: 10000 },
+            '산천어': { minSize: 15, maxSize: 30, megaSize: 40, basePrice: 8500 },
+            '열목어': { minSize: 20, maxSize: 40, megaSize: 55, basePrice: 9500 },
+            '버들치': { minSize: 5, maxSize: 10, megaSize: 15, basePrice: 1000 },
+            '갈겨니': { minSize: 8, maxSize: 18, megaSize: 25, basePrice: 1800 },
+            '돌고기': { minSize: 10, maxSize: 20, megaSize: 30, basePrice: 2200 },
+            '미꾸리': { minSize: 8, maxSize: 20, megaSize: 25, basePrice: 2800 },
+            '뱀장어': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 15000 },
+            '동자개': { minSize: 10, maxSize: 25, megaSize: 35, basePrice: 3200 },
+            '퉁가리': { minSize: 12, maxSize: 28, megaSize: 40, basePrice: 3800 },
+            '꺽지': { minSize: 10, maxSize: 22, megaSize: 30, basePrice: 4200 }
+        },
         // 바닷물고기 (25종)
-        saltwater: [
-            '고등어', '갈치', '조기', '민어', '농어',
-            '우럭', '광어', '도다리', '가자미', '넙치',
-            '돔', '숭어', '전어', '멸치', '정어리',
-            '삼치', '방어', '참치', '가오리', '상어',
-            '복어', '아귀', '대구', '명태', '오징어'
-        ]
+        saltwater: {
+            '고등어': { minSize: 20, maxSize: 40, megaSize: 50, basePrice: 5000 },
+            '갈치': { minSize: 60, maxSize: 120, megaSize: 150, basePrice: 8000 },
+            '조기': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 6000 },
+            '민어': { minSize: 30, maxSize: 80, megaSize: 120, basePrice: 12000 },
+            '농어': { minSize: 40, maxSize: 90, megaSize: 130, basePrice: 14000 },
+            '우럭': { minSize: 20, maxSize: 40, megaSize: 55, basePrice: 7000 },
+            '광어': { minSize: 30, maxSize: 80, megaSize: 100, basePrice: 11000 },
+            '도다리': { minSize: 20, maxSize: 40, megaSize: 50, basePrice: 9000 },
+            '가자미': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 6500 },
+            '넙치': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 13000 },
+            '돔': { minSize: 25, maxSize: 50, megaSize: 70, basePrice: 10000 },
+            '숭어': { minSize: 30, maxSize: 60, megaSize: 80, basePrice: 5500 },
+            '전어': { minSize: 10, maxSize: 20, megaSize: 25, basePrice: 3500 },
+            '멸치': { minSize: 3, maxSize: 10, megaSize: 15, basePrice: 1000 },
+            '정어리': { minSize: 8, maxSize: 18, megaSize: 25, basePrice: 2000 },
+            '삼치': { minSize: 50, maxSize: 100, megaSize: 130, basePrice: 9500 },
+            '방어': { minSize: 60, maxSize: 120, megaSize: 150, basePrice: 16000 },
+            '참치': { minSize: 100, maxSize: 250, megaSize: 350, basePrice: 20000 },
+            '가오리': { minSize: 50, maxSize: 150, megaSize: 200, basePrice: 11000 },
+            '상어': { minSize: 150, maxSize: 400, megaSize: 600, basePrice: 25000 },
+            '복어': { minSize: 15, maxSize: 30, megaSize: 40, basePrice: 15000 },
+            '아귀': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 13000 },
+            '대구': { minSize: 40, maxSize: 90, megaSize: 120, basePrice: 8500 },
+            '명태': { minSize: 30, maxSize: 60, megaSize: 80, basePrice: 7500 },
+            '오징어': { minSize: 20, maxSize: 50, megaSize: 80, basePrice: 10000 }
+        }
     },
 
-    // 형용사 시스템 (등급별)
+    // 형용사 시스템 (등급별) - 가격 보너스와 크기 영향 포함
     adjectives: {
         common: {
-            positive: ['평범한', '작은', '귀여운', '둥근', '날씬한', '통통한', '길쭉한', '짧은', '가벼운', '부드러운'],
-            negative: ['못생긴', '이상한', '삐뚤어진', '찌그러진', '볼품없는', '초라한', '지저분한', '누추한', '허름한', '남루한']
+            positive: {
+                '평범한': { priceBonus: 500, sizeMulti: 1.0 },
+                '작은': { priceBonus: -500, sizeMulti: 0.6 },
+                '귀여운': { priceBonus: 1000, sizeMulti: 0.7 },
+                '둥근': { priceBonus: 800, sizeMulti: 0.9 },
+                '날씬한': { priceBonus: 600, sizeMulti: 0.8 },
+                '통통한': { priceBonus: 700, sizeMulti: 1.2 },
+                '길쭉한': { priceBonus: 400, sizeMulti: 1.1 },
+                '짧은': { priceBonus: -300, sizeMulti: 0.7 },
+                '가벼운': { priceBonus: -200, sizeMulti: 0.8 },
+                '부드러운': { priceBonus: 900, sizeMulti: 1.0 }
+            },
+            negative: {
+                '못생긴': { priceBonus: -1000, sizeMulti: 1.0 },
+                '이상한': { priceBonus: -800, sizeMulti: 1.0 },
+                '삐뚤어진': { priceBonus: -600, sizeMulti: 0.9 },
+                '찌그러진': { priceBonus: -700, sizeMulti: 0.8 },
+                '볼품없는': { priceBonus: -500, sizeMulti: 0.9 },
+                '초라한': { priceBonus: -400, sizeMulti: 0.8 },
+                '지저분한': { priceBonus: -900, sizeMulti: 1.0 },
+                '누추한': { priceBonus: -300, sizeMulti: 0.9 },
+                '허름한': { priceBonus: -600, sizeMulti: 0.9 },
+                '남루한': { priceBonus: -700, sizeMulti: 0.8 }
+            }
         },
         uncommon: {
-            positive: ['예쁜', '멋진', '윤기나는', '건강한', '튼튼한', '활발한', '깨끗한', '싱싱한', '탱탱한', '매끈한'],
-            negative: ['거친', '딱딱한', '거무튀튀한', '얼룩덜룩한', '울퉁불퉁한']
+            positive: {
+                '예쁜': { priceBonus: 3000, sizeMulti: 1.0 },
+                '멋진': { priceBonus: 3500, sizeMulti: 1.1 },
+                '윤기나는': { priceBonus: 4000, sizeMulti: 1.0 },
+                '건강한': { priceBonus: 4500, sizeMulti: 1.2 },
+                '튼튼한': { priceBonus: 4000, sizeMulti: 1.3 },
+                '활발한': { priceBonus: 3500, sizeMulti: 1.0 },
+                '깨끗한': { priceBonus: 3800, sizeMulti: 1.0 },
+                '싱싱한': { priceBonus: 5000, sizeMulti: 1.1 },
+                '탱탱한': { priceBonus: 4200, sizeMulti: 1.2 },
+                '매끈한': { priceBonus: 3700, sizeMulti: 1.0 }
+            },
+            negative: {
+                '거친': { priceBonus: -2000, sizeMulti: 1.1 },
+                '딱딱한': { priceBonus: -1800, sizeMulti: 1.0 },
+                '거무튀튀한': { priceBonus: -2200, sizeMulti: 1.0 },
+                '얼룩덜룩한': { priceBonus: -1500, sizeMulti: 1.0 },
+                '울퉁불퉁한': { priceBonus: -1700, sizeMulti: 1.1 }
+            }
         },
         rare: {
-            positive: ['아름다운', '화려한', '빛나는', '영롱한', '신비로운', '우아한', '고급스러운', '품격있는', '당당한', '위풍당당한'],
-            negative: ['무시무시한', '섬뜩한', '괴기한', '기괴한', '음산한']
+            positive: {
+                '아름다운': { priceBonus: 8000, sizeMulti: 1.1 },
+                '화려한': { priceBonus: 9000, sizeMulti: 1.0 },
+                '빛나는': { priceBonus: 10000, sizeMulti: 1.0 },
+                '영롱한': { priceBonus: 9500, sizeMulti: 1.0 },
+                '신비로운': { priceBonus: 11000, sizeMulti: 1.1 },
+                '우아한': { priceBonus: 8500, sizeMulti: 1.0 },
+                '고급스러운': { priceBonus: 12000, sizeMulti: 1.1 },
+                '품격있는': { priceBonus: 10500, sizeMulti: 1.2 },
+                '당당한': { priceBonus: 9000, sizeMulti: 1.3 },
+                '위풍당당한': { priceBonus: 11500, sizeMulti: 1.4 }
+            },
+            negative: {
+                '무시무시한': { priceBonus: 6000, sizeMulti: 1.5 },
+                '섬뜩한': { priceBonus: 5500, sizeMulti: 1.2 },
+                '괴기한': { priceBonus: 7000, sizeMulti: 1.3 },
+                '기괴한': { priceBonus: 6500, sizeMulti: 1.4 },
+                '음산한': { priceBonus: 5000, sizeMulti: 1.1 }
+            }
         },
         epic: {
-            positive: ['장엄한', '위대한', '고귀한', '성스러운', '눈부신', '찬란한', '황홀한', '경이로운', '장대한', '웅장한'],
-            negative: ['파괴적인', '맹렬한', '격렬한', '흉포한', '잔혹한']
+            positive: {
+                '장엄한': { priceBonus: 25000, sizeMulti: 1.5 },
+                '위대한': { priceBonus: 28000, sizeMulti: 1.6 },
+                '고귀한': { priceBonus: 26000, sizeMulti: 1.3 },
+                '성스러운': { priceBonus: 30000, sizeMulti: 1.4 },
+                '눈부신': { priceBonus: 32000, sizeMulti: 1.2 },
+                '찬란한': { priceBonus: 29000, sizeMulti: 1.3 },
+                '황홀한': { priceBonus: 27000, sizeMulti: 1.2 },
+                '경이로운': { priceBonus: 31000, sizeMulti: 1.5 },
+                '장대한': { priceBonus: 26500, sizeMulti: 1.7 },
+                '웅장한': { priceBonus: 28500, sizeMulti: 1.8 }
+            },
+            negative: {
+                '파괴적인': { priceBonus: 20000, sizeMulti: 1.6 },
+                '맹렬한': { priceBonus: 22000, sizeMulti: 1.5 },
+                '격렬한': { priceBonus: 21000, sizeMulti: 1.4 },
+                '흉포한': { priceBonus: 23000, sizeMulti: 1.7 },
+                '잔혹한': { priceBonus: 24000, sizeMulti: 1.8 }
+            }
         },
         legendary: {
-            positive: ['전설의', '신화의', '불멸의', '영원한', '절대적인', '궁극의', '초월적인', '신성한', '천상의', '완벽한'],
-            negative: ['저주받은', '금지된', '봉인된', '타락한', '어둠의']
+            positive: {
+                '전설의': { priceBonus: 80000, sizeMulti: 2.0 },
+                '신화의': { priceBonus: 90000, sizeMulti: 2.2 },
+                '불멸의': { priceBonus: 100000, sizeMulti: 1.8 },
+                '영원한': { priceBonus: 85000, sizeMulti: 1.9 },
+                '절대적인': { priceBonus: 95000, sizeMulti: 2.1 },
+                '궁극의': { priceBonus: 110000, sizeMulti: 2.3 },
+                '초월적인': { priceBonus: 105000, sizeMulti: 2.0 },
+                '신성한': { priceBonus: 92000, sizeMulti: 1.9 },
+                '천상의': { priceBonus: 88000, sizeMulti: 1.8 },
+                '완벽한': { priceBonus: 115000, sizeMulti: 2.0 }
+            },
+            negative: {
+                '저주받은': { priceBonus: 60000, sizeMulti: 1.6 },
+                '금지된': { priceBonus: 70000, sizeMulti: 1.7 },
+                '봉인된': { priceBonus: 75000, sizeMulti: 1.8 },
+                '타락한': { priceBonus: 65000, sizeMulti: 1.9 },
+                '어둠의': { priceBonus: 68000, sizeMulti: 2.0 }
+            }
         },
         mythic: {
-            positive: ['창조의', '태초의', '원시의', '근원의', '우주의', '차원의', '시공을', '운명의', '인과의', '존재의'],
-            negative: ['종말의', '파멸의', '혼돈의', '무의', '공허의']
+            positive: {
+                '창조의': { priceBonus: 200000, sizeMulti: 2.5 },
+                '태초의': { priceBonus: 220000, sizeMulti: 2.8 },
+                '원시의': { priceBonus: 180000, sizeMulti: 2.6 },
+                '근원의': { priceBonus: 210000, sizeMulti: 2.7 },
+                '우주의': { priceBonus: 250000, sizeMulti: 3.0 },
+                '차원의': { priceBonus: 230000, sizeMulti: 2.9 },
+                '시공을': { priceBonus: 240000, sizeMulti: 2.8 },
+                '운명의': { priceBonus: 190000, sizeMulti: 2.4 },
+                '인과의': { priceBonus: 205000, sizeMulti: 2.5 },
+                '존재의': { priceBonus: 215000, sizeMulti: 2.6 }
+            },
+            negative: {
+                '종말의': { priceBonus: 150000, sizeMulti: 2.2 },
+                '파멸의': { priceBonus: 160000, sizeMulti: 2.3 },
+                '혼돈의': { priceBonus: 170000, sizeMulti: 2.4 },
+                '무의': { priceBonus: 140000, sizeMulti: 2.1 },
+                '공허의': { priceBonus: 155000, sizeMulti: 2.5 }
+            }
         }
     },
 
@@ -114,84 +261,63 @@ const FISHING_SYSTEM = {
         }
     },
 
-    // 크기 등급 (디테일한 설정)
+    // 크기 등급별 가격 배율
     sizeGrades: {
-        tiny: {
-            name: '🐟 미니급',
-            description: '한입 거리',
-            sizeRange: [0, 0.15],
+        'tiny': {
+            name: '초미니',
+            description: '한입 크기',
+            percentRange: [0, 10],
             priceMultiplier: 0.5,
-            sizeByType: {
-                freshwater: { min: 3, max: 15 },    // 3~15cm
-                saltwater: { min: 5, max: 20 },     // 5~20cm
-                special: { min: 10, max: 30 }       // 10~30cm
-            }
+            emoji: '🐟'
         },
-        small: {
-            name: '🐠 소형급',
+        'mini': {
+            name: '미니',
             description: '손바닥 크기',
-            sizeRange: [0.15, 0.35],
-            priceMultiplier: 0.8,
-            sizeByType: {
-                freshwater: { min: 10, max: 30 },   // 10~30cm
-                saltwater: { min: 15, max: 40 },    // 15~40cm
-                special: { min: 20, max: 50 }       // 20~50cm
-            }
+            percentRange: [10, 25],
+            priceMultiplier: 0.7,
+            emoji: '🐠'
         },
-        medium: {
-            name: '🐡 일반급',
-            description: '적당한 크기',
-            sizeRange: [0.35, 0.55],
+        'small': {
+            name: '소형',
+            description: '팔뚝 크기',
+            percentRange: [25, 40],
+            priceMultiplier: 0.9,
+            emoji: '🐡'
+        },
+        'medium': {
+            name: '중형',
+            description: '표준 크기',
+            percentRange: [40, 60],
             priceMultiplier: 1.0,
-            sizeByType: {
-                freshwater: { min: 25, max: 50 },   // 25~50cm
-                saltwater: { min: 35, max: 70 },    // 35~70cm
-                special: { min: 40, max: 100 }      // 40~100cm
-            }
+            emoji: '🐟'
         },
-        large: {
-            name: '🦈 대형급',
-            description: '꽤 큰 녀석',
-            sizeRange: [0.55, 0.75],
+        'large': {
+            name: '대형',
+            description: '한아름 크기',
+            percentRange: [60, 80],
             priceMultiplier: 1.5,
-            sizeByType: {
-                freshwater: { min: 45, max: 80 },   // 45~80cm
-                saltwater: { min: 60, max: 120 },   // 60~120cm
-                special: { min: 80, max: 200 }      // 80~200cm
-            }
+            emoji: '🐠'
         },
-        huge: {
-            name: '🐋 거물급',
-            description: '어마어마한 크기',
-            sizeRange: [0.75, 0.9],
-            priceMultiplier: 3.0,
-            sizeByType: {
-                freshwater: { min: 70, max: 120 },  // 70~120cm
-                saltwater: { min: 100, max: 250 },  // 100~250cm
-                special: { min: 150, max: 400 }     // 150~400cm
-            }
+        'extra': {
+            name: '특대',
+            description: '양손 크기',
+            percentRange: [80, 95],
+            priceMultiplier: 2.5,
+            emoji: '🦈'
         },
-        giant: {
-            name: '🦕 거인급',
-            description: '믿기 힘든 크기',
-            sizeRange: [0.9, 0.98],
+        'legendary': {
+            name: '전설',
+            description: '기록급 크기',
+            percentRange: [95, 100],
             priceMultiplier: 5.0,
-            sizeByType: {
-                freshwater: { min: 100, max: 200 }, // 100~200cm
-                saltwater: { min: 200, max: 500 },  // 200~500cm
-                special: { min: 300, max: 800 }     // 300~800cm
-            }
+            emoji: '🐋'
         },
-        mythic: {
-            name: '🌟 전설급',
-            description: '역대 최고 기록',
-            sizeRange: [0.98, 1.0],
+        'mythic': {
+            name: '신화',
+            description: '믿기 힘든 크기',
+            percentRange: [100, 999],  // 100% 이상 (특수 접두사로만 가능)
             priceMultiplier: 10.0,
-            sizeByType: {
-                freshwater: { min: 150, max: 300 }, // 150~300cm
-                saltwater: { min: 400, max: 1000 }, // 400~1000cm
-                special: { min: 600, max: 2000 }    // 600~2000cm
-            }
+            emoji: '🌟'
         }
     },
 
@@ -332,18 +458,38 @@ const FISHING_SYSTEM = {
         }
     },
 
-    // 특수 물고기 (특별 낚시터 전용)
-    specialFishTypes: [
-        // 기존 공허의 바다 물고기
-        '시공어', '차원어', '무한어', '영겁어', '혼돈어',
-        '질서어', '창조어', '파멸어', '윤회어', '인과어',
+    // 특수 물고기 (특별 낚시터 전용) - 크기와 가격 정보 포함
+    specialFishTypes: {
+        // 공허의 바다 물고기
+        '시공어': { minSize: 500, maxSize: 2000, megaSize: 3000, basePrice: 100000 },
+        '차원어': { minSize: 600, maxSize: 2500, megaSize: 4000, basePrice: 120000 },
+        '무한어': { minSize: 800, maxSize: 3000, megaSize: 5000, basePrice: 150000 },
+        '영겁어': { minSize: 700, maxSize: 2800, megaSize: 4500, basePrice: 140000 },
+        '혼돈어': { minSize: 900, maxSize: 3500, megaSize: 6000, basePrice: 180000 },
+        '질서어': { minSize: 750, maxSize: 3000, megaSize: 5000, basePrice: 160000 },
+        '창조어': { minSize: 1000, maxSize: 4000, megaSize: 7000, basePrice: 200000 },
+        '파멸어': { minSize: 950, maxSize: 3800, megaSize: 6500, basePrice: 190000 },
+        '윤회어': { minSize: 850, maxSize: 3200, megaSize: 5500, basePrice: 170000 },
+        '인과어': { minSize: 800, maxSize: 3000, megaSize: 5000, basePrice: 165000 },
         // 용의 바다 특수 물고기
-        '용왕어', '드래곤피시', '화룡어', '빙룡어', '암룡어',
+        '용왕어': { minSize: 1000, maxSize: 5000, megaSize: 8000, basePrice: 250000 },
+        '드래곤피시': { minSize: 800, maxSize: 4000, megaSize: 6000, basePrice: 220000 },
+        '화룡어': { minSize: 700, maxSize: 3500, megaSize: 5500, basePrice: 200000 },
+        '빙룡어': { minSize: 750, maxSize: 3800, megaSize: 6000, basePrice: 210000 },
+        '암룡어': { minSize: 900, maxSize: 4500, megaSize: 7000, basePrice: 230000 },
         // 천상의 호수 특수 물고기
-        '별빛송어', '은하잉어', '천사어', '신성어', '성좌어',
+        '별빛송어': { minSize: 100, maxSize: 500, megaSize: 800, basePrice: 80000 },
+        '은하잉어': { minSize: 150, maxSize: 600, megaSize: 1000, basePrice: 90000 },
+        '천사어': { minSize: 200, maxSize: 800, megaSize: 1200, basePrice: 110000 },
+        '신성어': { minSize: 250, maxSize: 1000, megaSize: 1500, basePrice: 130000 },
+        '성좌어': { minSize: 300, maxSize: 1200, megaSize: 2000, basePrice: 150000 },
         // 영원의 심해 특수 물고기
-        '영원어', '불멸어', '태초어', '종말어', '순환어'
-    ],
+        '영원어': { minSize: 1500, maxSize: 6000, megaSize: 10000, basePrice: 300000 },
+        '불멸어': { minSize: 1200, maxSize: 5000, megaSize: 8000, basePrice: 280000 },
+        '태초어': { minSize: 2000, maxSize: 8000, megaSize: 12000, basePrice: 350000 },
+        '종말어': { minSize: 1800, maxSize: 7000, megaSize: 11000, basePrice: 320000 },
+        '순환어': { minSize: 1600, maxSize: 6500, megaSize: 10000, basePrice: 310000 }
+    },
 
     // 낚싯대 등급
     fishingRods: {
@@ -361,7 +507,7 @@ const FISHING_SYSTEM = {
             description: '가볍고 유연한 낚싯대',
             sizeBonus: 1.1,
             rarityBonus: 1.05,
-            price: 50000
+            price: 1000000
         },
         steel: {
             id: 'steel',
@@ -369,7 +515,15 @@ const FISHING_SYSTEM = {
             description: '튼튼한 금속 낚싯대',
             sizeBonus: 1.2,
             rarityBonus: 1.1,
-            price: 200000
+            price: 5000000
+        },
+        titanium: {
+            id: 'titanium',
+            name: '🔧 티타늄 낚싯대',
+            description: '가볍고 강한 티타늄 합금 낚싯대',
+            sizeBonus: 1.25,
+            rarityBonus: 1.12,
+            price: 10000000
         },
         carbon: {
             id: 'carbon',
@@ -377,7 +531,7 @@ const FISHING_SYSTEM = {
             description: '최신 기술의 낚싯대',
             sizeBonus: 1.3,
             rarityBonus: 1.15,
-            price: 500000
+            price: 20000000
         },
         mithril: {
             id: 'mithril',
@@ -385,7 +539,7 @@ const FISHING_SYSTEM = {
             description: '마법의 금속으로 만든 낚싯대',
             sizeBonus: 1.5,
             rarityBonus: 1.3,
-            price: 1000000
+            price: 50000000
         },
         dragon: {
             id: 'dragon',
@@ -393,15 +547,15 @@ const FISHING_SYSTEM = {
             description: '용의 뼈로 만든 전설의 낚싯대',
             sizeBonus: 1.8,
             rarityBonus: 1.5,
-            price: 5000000
+            price: 100000000
         },
         divine: {
             id: 'divine',
             name: '🌟 신의 낚싯대',
-            description: '신이 사용했다는 낚싯대',
+            description: '신이 사용했다는 낚슯대',
             sizeBonus: 2.5,
             rarityBonus: 2.0,
-            price: 20000000
+            price: 500000000
         }
     },
 
@@ -413,7 +567,7 @@ const FISHING_SYSTEM = {
             description: '가장 기본적인 미끼',
             effect: '효과 없음',
             bonus: {},
-            price: 100
+            price: 60000  // 평균 물고기 가격 ~7500G의 80% x10
         },
         shrimp: {
             id: 'shrimp',
@@ -421,7 +575,7 @@ const FISHING_SYSTEM = {
             description: '바닷물고기가 좋아하는 미끼',
             effect: '바닷물고기 확률 +20%',
             bonus: { saltwater: 1.2 },
-            price: 500
+            price: 100000  // 바닷물고기 평균이 더 높음 x10
         },
         bread: {
             id: 'bread',
@@ -429,7 +583,7 @@ const FISHING_SYSTEM = {
             description: '민물고기가 좋아하는 미끼',
             effect: '민물고기 확률 +20%',
             bonus: { freshwater: 1.2 },
-            price: 500
+            price: 50000  // 민물고기 평균이 더 낮음 x10
         },
         lure: {
             id: 'lure',
@@ -437,7 +591,7 @@ const FISHING_SYSTEM = {
             description: '큰 물고기를 유혹하는 미끼',
             effect: '크기 +30%',
             bonus: { size: 1.3 },
-            price: 2000
+            price: 120000  // 크기 보너스로 가격 1.5배 기대 x10
         },
         glowing: {
             id: 'glowing',
@@ -445,7 +599,7 @@ const FISHING_SYSTEM = {
             description: '희귀 물고기를 유혹하는 미끼',
             effect: '희귀도 +30%',
             bonus: { rarity: 1.3 },
-            price: 5000
+            price: 200000  // 레어 확률 증가 x10
         },
         golden: {
             id: 'golden',
@@ -453,7 +607,7 @@ const FISHING_SYSTEM = {
             description: '모든 확률이 증가하는 특별한 미끼',
             effect: '모든 확률 +50%',
             bonus: { all: 1.5 },
-            price: 20000
+            price: 500000  // 전체적인 보너스 x10
         },
         legendary: {
             id: 'legendary',
@@ -461,7 +615,7 @@ const FISHING_SYSTEM = {
             description: '엄청난 효과를 가진 미끼',
             effect: '전설/신화 확률 대폭 증가',
             bonus: { legendary: 3.0, mythic: 5.0 },
-            price: 100000
+            price: 2000000  // 최고급 미끼 x10
         }
     },
 
@@ -473,36 +627,6 @@ const FISHING_SYSTEM = {
         autoSellCommon: false
     },
 
-    // 물고기 이름 생성 함수
-    generateFishName: function(rarity, fishType, size) {
-        const rarityData = this.rarities[rarity];
-        const adjectiveList = this.adjectives[rarity];
-        
-        // 긍정/부정 형용사 선택 (레어 이상은 긍정적 형용사가 더 많이 나옴)
-        const usePositive = rarity === 'common' || rarity === 'uncommon' 
-            ? Math.random() > 0.5 
-            : Math.random() > 0.2;
-        
-        const adjectives = usePositive ? adjectiveList.positive : adjectiveList.negative;
-        const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-        
-        // 특수 접두사 확률 체크
-        let prefix = '';
-        for (const [tier, data] of Object.entries(this.specialPrefixes)) {
-            if (Math.random() < data.chance) {
-                prefix = data.prefixes[Math.floor(Math.random() * data.prefixes.length)] + ' ';
-                break;
-            }
-        }
-        
-        // 크기 접미사 (거물급 이상)
-        let sizeSuffix = '';
-        if (size === 'huge') sizeSuffix = ' (대물)';
-        else if (size === 'giant') sizeSuffix = ' (초대물)';
-        else if (size === 'mythic') sizeSuffix = ' (전설급)';
-        
-        return `${prefix}${adjective} ${fishType}${sizeSuffix}`;
-    }
 };
 
 // 물고기 리스트 예시

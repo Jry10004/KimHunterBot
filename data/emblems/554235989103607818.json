@@ -1,0 +1,42 @@
+[
+  {
+    "emblemName": "초보 수호자",
+    "category": "defender",
+    "purchaseDate": "2025-07-18T11:06:56.919Z",
+    "price": 300000,
+    "level": 20,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "철벽 방패병",
+    "category": "defender",
+    "purchaseDate": "2025-07-18T11:07:24.671Z",
+    "price": 500000,
+    "level": 35,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "불굴의 수호자",
+    "category": "defender",
+    "purchaseDate": "2025-07-18T11:07:46.767Z",
+    "price": 1500000,
+    "level": 50,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "강철 파수꾼",
+    "category": "defender",
+    "purchaseDate": "2025-07-18T11:08:26.398Z",
+    "price": 3000000,
+    "level": 65,
+    "enhanceLevel": 0
+  },
+  {
+    "emblemName": "전설의 철벽",
+    "category": "defender",
+    "purchaseDate": "2025-07-18T11:08:47.682Z",
+    "price": 10000000,
+    "level": 80,
+    "enhanceLevel": 0
+  }
+]

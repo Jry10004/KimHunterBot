@@ -289,7 +289,7 @@ async function enhanceEmblem(interaction) {
         .setDescription(result.message)
         .addFields(
             { name: '🎲 결과', value: result.result === 'success' ? '성공' : '실패', inline: true },
-            { name: '💠 남은 강화석', value: `${user.items?.emblemEnhanceStone || 0}개`, inline: true }
+            { name: '💠 남은 강화석', value: `${(user.items?.emblemEnhanceStone || 0).toFixed(1)}개`, inline: true }
         );
     
     await interaction.followUp({
@@ -513,21 +513,24 @@ async function applyEmblemStats(user, emblemType) {
     // 엠블럼 강화 레벨에 따른 스탯 계산
     const enhanceLevel = user.emblemEnhancement?.level || 0;
     
-    // 기존 엠블럼 스탯 제거 (있다면)
-    if (user.emblemEnhancement?.appliedStats) {
-        for (const [stat, value] of Object.entries(user.emblemEnhancement.appliedStats)) {
-            if (user.stats[stat] !== undefined && value > 0) {
-                user.stats[stat] = Math.max(10, user.stats[stat] - value); // 최소값 10 보장
-            }
-        }
-    }
-    
-    // 새로운 스탯 적용
+    // 새로운 스탯 계산 (user.stats에는 적용하지 않음)
     const appliedStats = {};
     for (const [stat, multiplier] of Object.entries(emblemData.stats)) {
-        const statValue = Math.floor(multiplier * enhanceLevel);
-        if (statValue > 0 && user.stats[stat] !== undefined) {
-            user.stats[stat] += statValue;
+        let statValue = Math.floor(multiplier * enhanceLevel);
+        
+        // 10, 20, 30 등 특정 구간 보너스
+        if (enhanceLevel >= 10) statValue += 5;
+        if (enhanceLevel >= 20) statValue += 10;
+        if (enhanceLevel >= 30) statValue += 15;
+        if (enhanceLevel >= 40) statValue += 20;
+        if (enhanceLevel >= 50) statValue += 30;
+        if (enhanceLevel >= 60) statValue += 40;
+        if (enhanceLevel >= 70) statValue += 50;
+        if (enhanceLevel >= 80) statValue += 60;
+        if (enhanceLevel >= 90) statValue += 70;
+        if (enhanceLevel >= 100) statValue += 100;
+        
+        if (statValue > 0) {
             appliedStats[stat] = statValue;
         }
     }
@@ -536,7 +539,7 @@ async function applyEmblemStats(user, emblemType) {
     if (!user.emblemEnhancement) {
         user.emblemEnhancement = {};
     }
-    user.emblemEnhancement.appliedStats = appliedStats;
+    user.emblemEnhancement.stats = appliedStats;
     
     console.log(`[엠블럼 스탯 적용] 유저: ${user.discordId}, 타입: ${emblemType}, 레벨: ${enhanceLevel}, 적용된 스탯:`, appliedStats);
 }
@@ -636,7 +639,7 @@ async function enhanceEmblemWithScroll(interaction, scrollType) {
         .setDescription(result.message)
         .addFields(
             { name: '🎲 결과', value: result.result === 'success' ? '성공' : '실패', inline: true },
-            { name: '💠 남은 강화석', value: `${user.items?.emblemEnhanceStone || 0}개`, inline: true },
+            { name: '💠 남은 강화석', value: `${(user.items?.emblemEnhanceStone || 0).toFixed(1)}개`, inline: true },
             { name: '📜 사용 주문서', value: scrollType === 'blessing' ? '✨ 축복 주문서' : '🛡️ 보호 주문서', inline: true }
         );
     

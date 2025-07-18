@@ -90,7 +90,7 @@ module.exports = {
     
     // 보스 레이드 설정
     bossRaid: {
-        spawnInterval: 2 * 60 * 60 * 1000, // 2시간
+        spawnInterval: 60 * 60 * 1000,     // 1시간
         duration: 30 * 60 * 1000,          // 30분
         minParticipants: 2,                // 3명에서 2명으로 변경
         maxParticipants: 20,

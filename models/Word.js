@@ -60,6 +60,9 @@ wordSchema.index({ lastChar: 1 });
 wordSchema.index({ chosung: 1 });
 wordSchema.index({ usageCount: -1 });
 
+// 자동 인덱스 생성 비활성화
+wordSchema.set('autoIndex', false);
+
 // 단어 사용 시 카운트 증가
 wordSchema.methods.incrementUsage = async function() {
     this.usageCount += 1;

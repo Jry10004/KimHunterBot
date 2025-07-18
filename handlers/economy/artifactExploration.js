@@ -1819,13 +1819,17 @@ async function upgradePickaxe(interaction, pickaxeType, userId) {
         await user.save();
         await userArtifacts.upgradePickaxe(pickaxeType);
         
+        // 업데이트된 데이터 다시 조회
+        const updatedArtifacts = await UserArtifacts.findOne({ userId });
+        const updatedPickaxe = updatedArtifacts.pickaxes[pickaxeType];
+        
         const embed = new EmbedBuilder()
             .setColor('#00FF00')
             .setTitle('✨ 강화 성공!')
-            .setDescription(`${pickaxe.name}이(가) 레벨 ${userPickaxe.level + 1}로 강화되었습니다!`)
+            .setDescription(`${pickaxe.name}이(가) 레벨 ${updatedPickaxe.level}로 강화되었습니다!`)
             .addFields(
-                { name: '발견 확률', value: `${(pickaxe.findChance(userPickaxe.level + 1) * 100).toFixed(1)}%`, inline: true },
-                { name: '품질 보너스', value: `${pickaxe.qualityBonus(userPickaxe.level + 1).toFixed(2)}x`, inline: true }
+                { name: '발견 확률', value: `${(pickaxe.findChance(updatedPickaxe.level) * 100).toFixed(1)}%`, inline: true },
+                { name: '품질 보너스', value: `${pickaxe.qualityBonus(updatedPickaxe.level).toFixed(2)}x`, inline: true }
             );
         
         // 강화 성공 메시지와 함께 곡괭이 메뉴로 돌아가기 버튼 추가

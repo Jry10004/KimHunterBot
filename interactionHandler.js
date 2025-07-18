@@ -11,6 +11,32 @@ const macroMonitor = require('./systems/macroMonitor');
 // 휴식 보상 시스템
 const { restBonusSystem } = require('./systems/restBonus');
 
+// 안전한 interaction 응답 헬퍼
+async function safeReply(interaction, options) {
+    try {
+        // 이미 응답했으면 아무것도 하지 않음
+        if (interaction.replied) {
+            console.log('[SafeReply] Already replied, skipping');
+            return null;
+        }
+        
+        // deferred 상태에 따라 다른 메서드 사용
+        if (interaction.deferred) {
+            return await interaction.editReply(options);
+        } else {
+            // reply 시도
+            return await interaction.reply(typeof options === 'string' ? { content: options, flags: 64 } : { ...options, flags: options.flags || 64 });
+        }
+    } catch (error) {
+        // 10062: Unknown interaction (타임아웃)
+        // 40060: Interaction has already been acknowledged
+        if (error.code !== 10062 && error.code !== 40060) {
+            console.error('[SafeReply] Error:', error.message);
+        }
+        return null;
+    }
+}
+
 // 유저 가져오기 헬퍼
 async function getUser(userId) {
     try {
@@ -201,7 +227,8 @@ async function handleMainInteraction(interaction) {
                         'admin_emblem_give', 'admin_emblem_set_level', 'admin_emblem_reset',
                         'admin_money_adjust', 'admin_reset_user', 'admin_announcement',
                         'stat_add_custom', 'admin_user_level', 'admin_user_gold', 
-                        'admin_give_item', 'admin_user_stats', 'start_registration'
+                        'admin_give_item', 'admin_user_stats', 'start_registration',
+                        'admin_bulk_reward_type'
                     ];
                     
                     if (modalButtons.includes(interaction.customId) || interaction.customId.startsWith('verify_email_')) {
@@ -237,11 +264,17 @@ async function handleMainInteraction(interaction) {
                 
                 // 안전한 응답
                 try {
+                    // 이미 응답했으면 아무것도 하지 않음
+                    if (interaction.replied) {
+                        console.log('[InteractionHandler] Already replied, skipping penalty response');
+                        return;
+                    }
+                    
                     if (interaction.deferred) {
                         return await interaction.editReply({
                             content: `🚫 ${penaltyStatus.message}\n\n⏰ 남은 시간: ${remainingTime}`
                         });
-                    } else if (!interaction.replied) {
+                    } else {
                         return await interaction.reply({
                             content: `🚫 ${penaltyStatus.message}\n\n⏰ 남은 시간: ${remainingTime}`,
                             flags: 64
@@ -249,6 +282,9 @@ async function handleMainInteraction(interaction) {
                     }
                 } catch (e) {
                     console.error('제재 응답 오류:', e.message);
+                    if (e.code !== 10062) { // Unknown interaction 오류가 아닌 경우만 로그
+                        console.error('제재 응답 상세 오류:', e);
+                    }
                 }
             }
             
@@ -340,19 +376,6 @@ async function handleMainInteraction(interaction) {
                     flags: 64 
                 });
                 
-                // 댕댕봇 이벤트 즉시 실행
-                const { triggerDogBotEvent } = require('./handlers/events/dogBotEvent');
-                if (triggerDogBotEvent) {
-                    setTimeout(() => {
-                        triggerDogBotEvent(interaction.client, interaction.channelId);
-                    }, 3000);
-                }
-            }
-            
-            // 댕댕봇구출시작 명령어
-            else if (commandName === '댕댕봇구출시작') {
-                const startRescueCommand = require('./commands/startRescueEvent');
-                return await startRescueCommand.execute(interaction);
             }
             
             // 감정테스트 명령어
@@ -431,18 +454,6 @@ async function handleMainInteraction(interaction) {
             else if (commandName === '말') {
                 const sayCommand = require('./commands/admin/say');
                 return await sayCommand.execute(interaction);
-            }
-            
-            // 댕댕봇 구출 이벤트 명령어
-            else if (commandName === '댕댕봇납치') {
-                const rescueCommand = require('./commands/dogBotRescue');
-                return await rescueCommand.execute(interaction);
-            }
-            
-            // 구출 이벤트 시작 명령어 (관리자)
-            else if (commandName === '구출이벤트시작') {
-                const startRescueCommand = require('./commands/startRescueEvent');
-                return await startRescueCommand.execute(interaction);
             }
             
             // 매크로감지 명령어 (관리자)
@@ -678,10 +689,16 @@ async function handleMainInteraction(interaction) {
                 return await spawnBossCommand.execute(interaction);
             }
             
-            // 댕댕봇백업 명령어
-            else if (commandName === '댕댕봇백업') {
-                const dogBotBackupCommand = require('./commands/dogBotBackup');
-                return await dogBotBackupCommand.execute(interaction);
+            // 댕댕이벤트 명령어
+            else if (commandName === '댕댕이벤트') {
+                const puppyEventCommand = require('./commands/admin/puppyEvent');
+                return await puppyEventCommand.execute(interaction);
+            }
+            
+            // 댕댕테스트 명령어
+            else if (commandName === '댕댕테스트') {
+                const testPuppyEventCommand = require('./commands/admin/testPuppyEvent');
+                return await testPuppyEventCommand.execute(interaction);
             }
             
             // 게임 관련 명령어들
@@ -860,7 +877,7 @@ async function handleMainInteraction(interaction) {
                 
                 // 강화 시스템으로 바로 이동
                 const { handleEnhanceInteraction } = require('./handlers/enhance/enhanceSystem');
-                interaction.customId = 'enhance_menu';
+                interaction.customId = 'enhance';  // enhance_menu 대신 enhance 사용
                 return await handleEnhanceInteraction(interaction);
             }
             
@@ -1233,15 +1250,22 @@ async function handleMainInteraction(interaction) {
             }
             // 공지 바로 발송 버튼 처리
             else if (interaction.isButton() && interaction.customId.startsWith('announcement_send_')) {
+                // 즉시 defer 처리
+                try {
+                    await interaction.deferReply({ flags: 64 });
+                } catch (error) {
+                    console.error('공지 발송 defer 오류:', error);
+                    return;
+                }
+                
                 const noticeId = interaction.customId.replace('announcement_send_', '');
                 const noticeSystem = require('./systems/noticeSystem');
                 
                 // 공지 찾기
                 const notice = noticeSystem.getNotice(noticeId);
                 if (!notice) {
-                    return await interaction.reply({
-                        content: '❌ 공지를 찾을 수 없습니다.',
-                        flags: 64
+                    return await interaction.editReply({
+                        content: '❌ 공지를 찾을 수 없습니다.'
                     });
                 }
                 
@@ -1251,20 +1275,28 @@ async function handleMainInteraction(interaction) {
                         embeds: [notice.embed]
                     });
                     
-                    await interaction.reply({
-                        content: '✅ 공지가 현재 채널에 발송되었습니다!',
-                        flags: 64
+                    await interaction.editReply({
+                        content: '✅ 공지가 현재 채널에 발송되었습니다!'
                     });
                 } catch (error) {
                     console.error('공지 발송 오류:', error);
-                    await interaction.reply({
-                        content: '❌ 공지 발송 중 오류가 발생했습니다.',
-                        flags: 64
+                    await interaction.editReply({
+                        content: '❌ 공지 발송 중 오류가 발생했습니다.'
                     });
                 }
             }
+            // 운동 시간 입력 모달 처리
+            else if (interaction.isModalSubmit() && interaction.customId.startsWith('exercise_time_')) {
+                const { handleExerciseModal } = require('./handlers/daily/exercise');
+                return await handleExerciseModal(interaction);
+            }
+            // 다른 Modal submit들은 handleInteraction으로 전달
+            else if (interaction.isModalSubmit()) {
+                return await handleInteraction(interaction);
+            }
+            
             // main_menu 처리 (StringSelectMenu일 때)
-            else if (interaction.customId === 'main_menu' && interaction.isStringSelectMenu()) {
+            if (interaction.customId === 'main_menu' && interaction.isStringSelectMenu()) {
                 const selectedValue = interaction.values[0];
                 
                 // 선택된 값에 따라 적절한 customId로 변환하여 핸들러로 전달
@@ -1310,6 +1342,9 @@ async function handleMainInteraction(interaction) {
                         break;
                     case 'market_prices':
                         interaction.customId = 'market_prices';
+                        break;
+                    case 'fishing':
+                        interaction.customId = 'fishing_menu';
                         break;
                     case 'stocks':
                         interaction.customId = 'stock_market';
@@ -1378,6 +1413,15 @@ async function handleMainInteraction(interaction) {
             
             // main_menu 버튼 처리
             else if (interaction.customId === 'main_menu' && interaction.isButton()) {
+                // 먼저 안전하게 defer 처리
+                try {
+                    if (!interaction.deferred && !interaction.replied) {
+                        await interaction.deferUpdate();
+                    }
+                } catch (error) {
+                    console.log('[Main Menu] Defer 처리 스킵:', error.message);
+                }
+                
                 const user = await getUser(interaction.user.id);
                 if (!user || !user.registered) {
                     return await interaction.editReply({ 
@@ -1416,11 +1460,16 @@ async function handleMainInteraction(interaction) {
                 return await handlePrelaunchInteraction(interaction);
             }
             // 월드 보스 버튼은 handlers/index.js에서 처리하므로 여기서는 제거
-            // 댕댕봇 구출 버튼 처리
-            else if (interaction.customId && (interaction.customId === 'dogbot_attack' || interaction.customId === 'dogbot_ranking' || interaction.customId === 'dogbot_status')) {
-                console.log(`[인터랙션] 댕댕봇 구출 버튼 처리: ${interaction.customId}`);
-                const { handleDogBotRescueInteraction } = require('./handlers/dogBotRescueHandler');
-                return await handleDogBotRescueInteraction(interaction);
+            // 댕댕봇 목걸이 이벤트 버튼 처리
+            else if (interaction.customId && (interaction.customId === 'necklace_event_attack' || interaction.customId === 'necklace_event_ranking')) {
+                console.log(`[인터랙션] 목걸이 이벤트 버튼 처리: ${interaction.customId}`);
+                const { attackBoss, showRanking } = require('./handlers/events/puppyNecklaceEvent');
+                
+                if (interaction.customId === 'necklace_event_attack') {
+                    return await attackBoss(interaction);
+                } else if (interaction.customId === 'necklace_event_ranking') {
+                    return await showRanking(interaction);
+                }
             }
             // optimize_equipment와 equip_category는 여기서 직접 처리
             else if (interaction.customId === 'optimize_equipment') {

@@ -107,7 +107,7 @@ class PVPWaitingRoom {
         // 관전자 참여 버튼
         buttons.push(
             new ButtonBuilder()
-                .setCustomId(`pvp_spectate_${this.roomId}`)
+                .setCustomId(`pvp_room_spectate_${this.roomId}`)
                 .setLabel('👁️ 관전자로 참여')
                 .setStyle(ButtonStyle.Secondary)
         );
@@ -336,8 +336,10 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
                     flags: 64 
                 });
             } else {
-                return interaction.editReply({ 
-                    content: '❌ 이미 다른 대전방에 참가중입니다!' 
+                await interaction.update({});
+                return interaction.followUp({ 
+                    content: '❌ 이미 다른 대전방에 참가중입니다!',
+                    ephemeral: true 
                 });
             }
         }
@@ -382,8 +384,10 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
                 flags: 64 
             });
         } else {
-            return interaction.editReply({ 
-                content: errorMessage 
+            await interaction.update({});
+            return interaction.followUp({ 
+                content: errorMessage,
+                ephemeral: true 
             });
         }
     }
@@ -425,10 +429,29 @@ async function createPVPWaitingRoom(interaction, user, pvpSystem) {
             // 자동으로 오프라인 매칭
             if (!room.opponent) {
                 try {
+                    // 대기실 메시지 업데이트
+                    if (room.waitingMessage) {
+                        try {
+                            await room.waitingMessage.edit({
+                                content: '⏳ 시간 초과로 오프라인 유저와 자동 매칭 중...',
+                                embeds: [],
+                                components: []
+                            });
+                        } catch (error) {
+                            console.error('[PVP] 대기실 메시지 업데이트 오류:', error);
+                        }
+                    }
+                    
                     await room.startOfflineMatch(pvpSystem);
-                    await interaction.channel.send({
-                        content: '⏰ 대기 시간이 종료되어 오프라인 유저와 자동 매칭되었습니다!'
-                    });
+                    
+                    // 대기실 메시지 삭제
+                    if (room.waitingMessage) {
+                        try {
+                            await room.waitingMessage.delete();
+                        } catch (error) {
+                            console.error('[PVP] 대기실 메시지 삭제 오류:', error);
+                        }
+                    }
                 } catch (error) {
                     console.error('자동 오프라인 매칭 오류:', error);
                 }
@@ -463,10 +486,12 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
 
     const room = pvpWaitingRooms.get(roomId);
     if (!room) {
-        return interaction.reply({ 
-            content: '❌ 대전방을 찾을 수 없습니다.', 
-            flags: 64 
+        await interaction.update({ 
+            content: '❌ 대전방을 찾을 수 없습니다.',
+            embeds: [],
+            components: []
         });
+        return;
     }
 
     const userId = interaction.user.id;
@@ -475,67 +500,107 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
     switch (action) {
         case 'join':
             if (!user) {
-                return interaction.reply({ 
+                await interaction.update({});
+                return interaction.followUp({ 
                     content: '❌ 먼저 회원가입을 해주세요!',
-                    flags: 64
+                    ephemeral: true
                 });
             }
 
             const joinResult = await room.addOpponent(userId, user);
             if (joinResult.success) {
                 await room.updateWaitingRoom();
-                return interaction.reply({ 
+                // 대기실이 이미 업데이트되었으므로 추가 메시지만 전송
+                return interaction.followUp({ 
                     content: '✅ ' + joinResult.message,
-                    flags: 64
+                    ephemeral: true
                 });
             } else {
-                return interaction.reply({ 
+                // 실패 시 빈 업데이트 후 메시지
+                await interaction.update({});
+                return interaction.followUp({ 
                     content: '❌ ' + joinResult.message,
-                    flags: 64
+                    ephemeral: true
                 });
             }
 
         case 'start':
             if (userId !== room.host.id) {
-                return interaction.reply({ 
+                await interaction.update({});
+                return interaction.followUp({ 
                     content: '❌ 방장만 게임을 시작할 수 있습니다!',
-                    flags: 64
+                    ephemeral: true
                 });
             }
 
             const startResult = await room.startGame(pvpSystem);
             if (startResult.success) {
-                return interaction.reply({ 
+                await interaction.update({
                     content: '✅ 게임을 시작합니다!',
-                    flags: 64
+                    embeds: [],
+                    components: []
                 });
             } else {
-                return interaction.reply({ 
+                await interaction.update({});
+                return interaction.followUp({ 
                     content: '❌ ' + startResult.message,
-                    flags: 64
+                    ephemeral: true
                 });
             }
 
         case 'offline':
             if (userId !== room.host.id) {
-                return interaction.reply({ 
-                    content: '❌ 방장만 오프라인 대전을 시작할 수 있습니다!', 
-                    flags: 64 
-                });
+                try {
+                    if (!interaction.deferred && !interaction.replied) {
+                        await interaction.deferUpdate();
+                    }
+                    return await interaction.followUp({ 
+                        content: '❌ 방장만 오프라인 대전을 시작할 수 있습니다!',
+                        ephemeral: true 
+                    });
+                } catch (error) {
+                    console.error('[PVP] 권한 체크 오류:', error);
+                    return;
+                }
+            }
+
+            // 먼저 interaction을 처리하고 대기실 메시지 업데이트
+            try {
+                if (!interaction.deferred && !interaction.replied) {
+                    await interaction.update({
+                        content: '⏳ 오프라인 유저와 매칭 중...',
+                        embeds: [],
+                        components: []
+                    });
+                } else {
+                    await interaction.editReply({
+                        content: '⏳ 오프라인 유저와 매칭 중...',
+                        embeds: [],
+                        components: []
+                    });
+                }
+            } catch (error) {
+                console.error('[PVP] 오프라인 매칭 interaction 업데이트 오류:', error);
+                // 오류가 발생해도 계속 진행
             }
 
             const offlineResult = await room.startOfflineMatch(pvpSystem);
-            if (offlineResult.success) {
-                return interaction.reply({ 
-                    content: '✅ 오프라인 유저와 대전을 시작합니다!', 
-                    flags: 64 
-                });
-            } else {
-                return interaction.reply({ 
-                    content: '❌ ' + offlineResult.message, 
-                    flags: 64 
+            if (!offlineResult.success) {
+                return interaction.followUp({ 
+                    content: '❌ ' + offlineResult.message,
+                    ephemeral: true 
                 });
             }
+            
+            // 대기실 메시지 삭제 (성공 시)
+            if (room.waitingMessage) {
+                try {
+                    await room.waitingMessage.delete();
+                } catch (error) {
+                    console.error('[PVP] 대기실 메시지 삭제 오류:', error);
+                }
+            }
+            return;
 
         case 'leave':
             if (userId === room.host.id) {
@@ -555,30 +620,35 @@ async function handlePVPWaitingRoomInteraction(interaction, pvpSystem) {
                         console.error('대기실 메시지 삭제 오류:', error);
                     }
                 }
-                return interaction.reply({ 
-                    content: '✅ 대전방을 닫았습니다.', 
-                    flags: 64 
+                await interaction.update({
+                    content: '✅ 대전방을 닫았습니다.',
+                    embeds: [],
+                    components: []
                 });
+                return;
             } else if (room.opponent && userId === room.opponent.id) {
                 // 상대가 나가면
                 room.opponent = null;
                 await room.updateWaitingRoom();
-                return interaction.reply({ 
-                    content: '✅ 대전방에서 나갔습니다.', 
-                    flags: 64 
+                await interaction.update({
+                    content: '✅ 대전방에서 나갔습니다.',
+                    embeds: [],
+                    components: []
                 });
+                return;
             }
             break;
 
-        case 'spectate':
+        case 'room_spectate':
             // 관전자 시스템 연동
             const { handleSpectatorInteraction } = require('../../systems/spectatorBettingHandler');
             
             // 이미 참가자인지 확인
             if (userId === room.host.id || (room.opponent && userId === room.opponent.id)) {
-                return interaction.reply({ 
-                    content: '❌ 이미 경기에 참가중입니다!', 
-                    flags: 64 
+                await interaction.update({});
+                return interaction.followUp({ 
+                    content: '❌ 이미 경기에 참가중입니다!',
+                    ephemeral: true 
                 });
             }
             

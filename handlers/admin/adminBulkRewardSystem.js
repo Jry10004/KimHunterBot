@@ -74,6 +74,7 @@ class AdminBulkRewardSystem {
                 { label: '티켓', value: 'ticket', emoji: '🎫' },
                 { label: '아이템', value: 'item', emoji: '🎁' },
                 { label: '스탯 포인트', value: 'statpoint', emoji: '💎' },
+                { label: '에너지 조각', value: 'fragment', emoji: '⚡' },
                 { label: '복합 보상', value: 'mixed', emoji: '📦' }
             ]);
 
@@ -167,6 +168,7 @@ class AdminBulkRewardSystem {
                 { label: '경험치', value: 'exp', emoji: '✨' },
                 { label: '티켓', value: 'ticket', emoji: '🎫' },
                 { label: '아이템', value: 'item', emoji: '🎁' },
+                { label: '에너지 조각', value: 'fragment', emoji: '⚡' },
                 { label: '복합 보상', value: 'mixed', emoji: '📦' }
             ]);
 
@@ -216,6 +218,11 @@ class AdminBulkRewardSystem {
 
         bulk.rewardType = rewardType;
 
+        // defer 상태 확인 - 이미 defer된 경우 처리하지 않음
+        if (interaction.deferred) {
+            console.log('[AdminBulkReward] Interaction already deferred, using editReply');
+        }
+
         // 보상 타입별 추가 설정
         switch (rewardType) {
             case 'gold':
@@ -233,9 +240,68 @@ class AdminBulkRewardSystem {
             case 'statpoint':
                 await this.showStatPointSelect(interaction);
                 break;
+            case 'fragment':
+                await this.showFragmentSelect(interaction);
+                break;
             case 'mixed':
                 await this.showMixedRewardModal(interaction);
                 break;
+        }
+    }
+
+    // 조각 선택
+    async showFragmentSelect(interaction) {
+        const fragmentSelect = new StringSelectMenuBuilder()
+            .setCustomId('admin_bulk_fragment_select')
+            .setPlaceholder('⚡ 지급할 조각을 선택하세요')
+            .addOptions([
+                { label: 'Lv.1 조각 x1', value: '1_1', emoji: '🔸' },
+                { label: 'Lv.1 조각 x5', value: '1_5', emoji: '🔸' },
+                { label: 'Lv.1 조각 x10', value: '1_10', emoji: '🔸' },
+                { label: 'Lv.1 조각 x50', value: '1_50', emoji: '🔸' },
+                { label: 'Lv.1 조각 x100', value: '1_100', emoji: '🔸' },
+                { label: 'Lv.5 조각 x1', value: '5_1', emoji: '🔹' },
+                { label: 'Lv.5 조각 x5', value: '5_5', emoji: '🔹' },
+                { label: 'Lv.5 조각 x10', value: '5_10', emoji: '🔹' },
+                { label: 'Lv.5 조각 x50', value: '5_50', emoji: '🔹' },
+                { label: 'Lv.5 조각 x100', value: '5_100', emoji: '🔹' },
+                { label: 'Lv.10 조각 x1', value: '10_1', emoji: '💠' },
+                { label: 'Lv.10 조각 x5', value: '10_5', emoji: '💠' },
+                { label: 'Lv.10 조각 x10', value: '10_10', emoji: '💠' },
+                { label: 'Lv.25 조각 x1', value: '25_1', emoji: '💎' },
+                { label: 'Lv.25 조각 x5', value: '25_5', emoji: '💎' }
+            ]);
+
+        const oldEmbed = interaction.message.embeds[0];
+        const newEmbed = EmbedBuilder.from(oldEmbed)
+            .spliceFields(1, 1, { 
+                name: '선택된 보상', 
+                value: '⚡ 에너지 조각', 
+                inline: true 
+            })
+            .spliceFields(2, 1, { 
+                name: '지급 수량', 
+                value: '조각을 선택하세요', 
+                inline: true 
+            });
+
+        // defer 상태에 따라 적절한 응답 방식 선택
+        if (interaction.deferred) {
+            await interaction.editReply({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(fragmentSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        } else {
+            await interaction.update({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(fragmentSelect),
+                    interaction.message.components[1]
+                ]
+            });
         }
     }
 
@@ -252,19 +318,47 @@ class AdminBulkRewardSystem {
                 { label: '10,000G', value: '10000' },
                 { label: '50,000G', value: '50000' },
                 { label: '100,000G', value: '100000' },
-                { label: '500,000G', value: '500000' }
+                { label: '500,000G', value: '500000' },
+                { label: '1,000,000G', value: '1000000' },
+                { label: '5,000,000G', value: '5000000' },
+                { label: '10,000,000G', value: '10000000' },
+                { label: '20,000,000G', value: '20000000' },
+                { label: '30,000,000G', value: '30000000' },
+                { label: '50,000,000G', value: '50000000' },
+                { label: '100,000,000G', value: '100000000' }
             ]);
 
-        const embed = interaction.message.embeds[0];
-        embed.data.fields[1].value = '💰 골드';
+        const oldEmbed = interaction.message.embeds[0];
+        const newEmbed = EmbedBuilder.from(oldEmbed)
+            .spliceFields(1, 1, { 
+                name: '선택된 보상', 
+                value: '💰 골드', 
+                inline: true 
+            })
+            .spliceFields(2, 1, { 
+                name: '지급 수량', 
+                value: '골드를 선택하세요', 
+                inline: true 
+            });
 
-        await interaction.update({
-            embeds: [embed],
-            components: [
-                new ActionRowBuilder().addComponents(amountSelect),
-                interaction.message.components[1]
-            ]
-        });
+        // defer 상태에 따라 적절한 응답 방식 선택
+        if (interaction.deferred) {
+            await interaction.editReply({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(amountSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        } else {
+            await interaction.update({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(amountSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        }
     }
 
     // 경험치 수량 선택
@@ -282,16 +376,37 @@ class AdminBulkRewardSystem {
                 { label: '레벨 +5', value: 'level_5' }
             ]);
 
-        const embed = interaction.message.embeds[0];
-        embed.data.fields[1].value = '✨ 경험치';
+        const oldEmbed = interaction.message.embeds[0];
+        const newEmbed = EmbedBuilder.from(oldEmbed)
+            .spliceFields(1, 1, { 
+                name: '선택된 보상', 
+                value: '✨ 경험치', 
+                inline: true 
+            })
+            .spliceFields(2, 1, { 
+                name: '지급 수량', 
+                value: '경험치를 선택하세요', 
+                inline: true 
+            });
 
-        await interaction.update({
-            embeds: [embed],
-            components: [
-                new ActionRowBuilder().addComponents(amountSelect),
-                interaction.message.components[1]
-            ]
-        });
+        // defer 상태에 따라 적절한 응답 방식 선택
+        if (interaction.deferred) {
+            await interaction.editReply({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(amountSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        } else {
+            await interaction.update({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(amountSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        }
     }
 
     // 티켓 선택
@@ -308,16 +423,37 @@ class AdminBulkRewardSystem {
                 { label: '모든 티켓 최대 충전', value: 'all_max' }
             ]);
 
-        const embed = interaction.message.embeds[0];
-        embed.data.fields[1].value = '🎫 티켓';
+        const oldEmbed = interaction.message.embeds[0];
+        const newEmbed = EmbedBuilder.from(oldEmbed)
+            .spliceFields(1, 1, { 
+                name: '선택된 보상', 
+                value: '🎫 티켓', 
+                inline: true 
+            })
+            .spliceFields(2, 1, { 
+                name: '지급 수량', 
+                value: '티켓을 선택하세요', 
+                inline: true 
+            });
 
-        await interaction.update({
-            embeds: [embed],
-            components: [
-                new ActionRowBuilder().addComponents(ticketSelect),
-                interaction.message.components[1]
-            ]
-        });
+        // defer 상태에 따라 적절한 응답 방식 선택
+        if (interaction.deferred) {
+            await interaction.editReply({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(ticketSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        } else {
+            await interaction.update({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(ticketSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        }
     }
 
     // 아이템 선택
@@ -363,16 +499,37 @@ class AdminBulkRewardSystem {
                 { label: '200 포인트', value: '200' }
             ]);
 
-        const embed = interaction.message.embeds[0];
-        embed.data.fields[1].value = '💎 스탯 포인트';
+        const oldEmbed = interaction.message.embeds[0];
+        const newEmbed = EmbedBuilder.from(oldEmbed)
+            .spliceFields(1, 1, { 
+                name: '선택된 보상', 
+                value: '💎 스탯 포인트', 
+                inline: true 
+            })
+            .spliceFields(2, 1, { 
+                name: '지급 수량', 
+                value: '스탯 포인트를 선택하세요', 
+                inline: true 
+            });
 
-        await interaction.update({
-            embeds: [embed],
-            components: [
-                new ActionRowBuilder().addComponents(pointSelect),
-                interaction.message.components[1]
-            ]
-        });
+        // defer 상태에 따라 적절한 응답 방식 선택
+        if (interaction.deferred) {
+            await interaction.editReply({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(pointSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        } else {
+            await interaction.update({
+                embeds: [newEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(pointSelect),
+                    interaction.message.components[1]
+                ]
+            });
+        }
     }
 
     // 복합 보상 모달
@@ -445,10 +602,18 @@ class AdminBulkRewardSystem {
                 { name: '처리된 유저', value: '0명', inline: true }
             );
 
-        await interaction.update({
-            embeds: [progressEmbed],
-            components: []
-        });
+        // defer 상태에 따라 적절한 응답 방식 선택
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({
+                embeds: [progressEmbed],
+                components: []
+            });
+        } else {
+            await interaction.update({
+                embeds: [progressEmbed],
+                components: []
+            });
+        }
 
         try {
             // 대상 유저 조회
@@ -536,6 +701,13 @@ class AdminBulkRewardSystem {
                     inline: true 
                 });
             }
+            if (bulk.rewardData.fragment) {
+                completeEmbed.addFields({ 
+                    name: '⚡ 조각', 
+                    value: `Lv.${bulk.rewardData.fragment.level} x${bulk.rewardData.fragment.amount}개`, 
+                    inline: true 
+                });
+            }
 
             await interaction.editReply({
                 embeds: [completeEmbed],
@@ -604,6 +776,21 @@ class AdminBulkRewardSystem {
             user.statPoints = (user.statPoints || 0) + (rewardData.levelUp * 5);
         }
 
+        // 조각 지급
+        if (rewardData.fragment) {
+            if (!user.energyFragments) {
+                user.energyFragments = {
+                    fragments: new Map(),
+                    dailyFusions: 0,
+                    dailyMines: 20,
+                    failureStack: 0
+                };
+            }
+            
+            const currentAmount = user.energyFragments.fragments.get(String(rewardData.fragment.level)) || 0;
+            user.energyFragments.fragments.set(String(rewardData.fragment.level), currentAmount + rewardData.fragment.amount);
+        }
+
         // 티켓 지급
         if (rewardData.tickets) {
             if (rewardData.tickets.hunting) {
@@ -638,9 +825,29 @@ class AdminBulkRewardSystem {
     async handleSelectMenu(interaction) {
         const customId = interaction.customId;
         const adminId = interaction.user.id;
+        
+        console.log('[AdminBulkReward] handleSelectMenu called - customId:', customId);
+        console.log('[AdminBulkReward] interaction deferred:', interaction.deferred, 'replied:', interaction.replied);
+        
         const bulk = this.pendingBulkRewards.get(adminId);
 
-        if (!bulk) return;
+        if (!bulk) {
+            console.log('[AdminBulkReward] No bulk reward data found for admin:', adminId);
+            // 데이터가 없을 때 응답 처리
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ 보상 설정 정보를 찾을 수 없습니다. 다시 시도해주세요.',
+                    flags: 64
+                });
+            }
+            return;
+        }
+        
+        console.log('[AdminBulkReward] Current bulk data:', {
+            type: bulk.type,
+            targetCount: bulk.targetCount,
+            rewardType: bulk.rewardType
+        });
 
         const embed = interaction.message.embeds[0];
         const components = interaction.message.components;
@@ -648,29 +855,158 @@ class AdminBulkRewardSystem {
         // 골드 수량 선택
         if (customId === 'admin_bulk_gold_amount') {
             bulk.rewardData.gold = parseInt(interaction.values[0]);
-            embed.data.fields[2].value = `${formatNumber(bulk.rewardData.gold)}G`;
-            components[1].components[0].data.disabled = false;
-            await interaction.update({ embeds: [embed], components: components });
+            
+            const newEmbed = EmbedBuilder.from(embed);
+            newEmbed.spliceFields(2, 1, {
+                name: '지급 수량',
+                value: `${formatNumber(bulk.rewardData.gold)}G`,
+                inline: true
+            });
+            
+            const confirmButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_confirm')
+                .setLabel('✅ 지급 시작')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(false);
+                
+            const cancelButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_menu')
+                .setLabel('❌ 취소')
+                .setStyle(ButtonStyle.Secondary);
+                
+            const buttonRow = new ActionRowBuilder()
+                .addComponents(confirmButton, cancelButton);
+            
+            // defer 상태에 따라 적절한 응답 방식 선택
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            } else {
+                await interaction.update({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            }
         }
 
         // 경험치 수량 선택
         else if (customId === 'admin_bulk_exp_amount') {
             const value = interaction.values[0];
+            let displayValue;
+            
             if (value.startsWith('level_')) {
                 bulk.rewardData.levelUp = parseInt(value.split('_')[1]);
-                embed.data.fields[2].value = `레벨 +${bulk.rewardData.levelUp}`;
+                displayValue = `레벨 +${bulk.rewardData.levelUp}`;
             } else {
                 bulk.rewardData.exp = parseInt(value);
-                embed.data.fields[2].value = `${formatNumber(bulk.rewardData.exp)} EXP`;
+                displayValue = `${formatNumber(bulk.rewardData.exp)} EXP`;
             }
-            components[1].components[0].data.disabled = false;
-            await interaction.update({ embeds: [embed], components: components });
+            
+            const newEmbed = EmbedBuilder.from(embed);
+            newEmbed.spliceFields(2, 1, {
+                name: '지급 수량',
+                value: displayValue,
+                inline: true
+            });
+            
+            const confirmButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_confirm')
+                .setLabel('✅ 지급 시작')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(false);
+                
+            const cancelButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_menu')
+                .setLabel('❌ 취소')
+                .setStyle(ButtonStyle.Secondary);
+                
+            const buttonRow = new ActionRowBuilder()
+                .addComponents(confirmButton, cancelButton);
+            
+            // defer 상태에 따라 적절한 응답 방식 선택
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            } else {
+                await interaction.update({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            }
+        }
+
+        // 조각 선택
+        else if (customId === 'admin_bulk_fragment_select') {
+            console.log('[AdminBulkReward] Fragment select - values:', interaction.values[0]);
+            
+            const [level, amount] = interaction.values[0].split('_');
+            bulk.rewardData.fragment = {
+                level: parseInt(level),
+                amount: parseInt(amount)
+            };
+            
+            console.log('[AdminBulkReward] Fragment data set:', bulk.rewardData.fragment);
+            
+            // Embed 필드 업데이트
+            const newEmbed = EmbedBuilder.from(embed);
+            newEmbed.spliceFields(2, 1, {
+                name: '지급 수량',
+                value: `Lv.${level} 조각 x${amount}개`,
+                inline: true
+            });
+            
+            // 확인 버튼 활성화
+            const confirmButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_confirm')
+                .setLabel('✅ 지급 시작')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(false);
+                
+            const cancelButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_menu')
+                .setLabel('❌ 취소')
+                .setStyle(ButtonStyle.Secondary);
+                
+            const buttonRow = new ActionRowBuilder()
+                .addComponents(confirmButton, cancelButton);
+            
+            try {
+                if (interaction.deferred || interaction.replied) {
+                    console.log('[AdminBulkReward] Using editReply - deferred:', interaction.deferred, 'replied:', interaction.replied);
+                    await interaction.editReply({ 
+                        embeds: [newEmbed], 
+                        components: [components[0], buttonRow]
+                    });
+                } else {
+                    console.log('[AdminBulkReward] Using update');
+                    await interaction.update({ 
+                        embeds: [newEmbed], 
+                        components: [components[0], buttonRow]
+                    });
+                }
+            } catch (error) {
+                console.error('[AdminBulkReward] Error updating fragment selection:', error);
+                // 에러 발생 시 editReply로 재시도
+                try {
+                    await interaction.editReply({ 
+                        embeds: [newEmbed], 
+                        components: [components[0], buttonRow]
+                    });
+                } catch (retryError) {
+                    console.error('[AdminBulkReward] Retry failed:', retryError);
+                }
+            }
         }
 
         // 티켓 타입 선택
         else if (customId === 'admin_bulk_ticket_type') {
             const [type, amount] = interaction.values[0].split('_');
             bulk.rewardData.tickets = {};
+            let displayValue;
             
             if (type === 'all') {
                 if (amount === 'max') {
@@ -680,7 +1016,7 @@ class AdminBulkRewardSystem {
                         pvp: 20,
                         minigame: 20
                     };
-                    embed.data.fields[2].value = '모든 티켓 최대 충전';
+                    displayValue = '모든 티켓 최대 충전';
                 } else {
                     const num = parseInt(amount);
                     bulk.rewardData.tickets = {
@@ -689,23 +1025,85 @@ class AdminBulkRewardSystem {
                         pvp: num,
                         minigame: num
                     };
-                    embed.data.fields[2].value = `모든 티켓 +${num}`;
+                    displayValue = `모든 티켓 +${num}`;
                 }
             } else {
                 bulk.rewardData.tickets[type] = parseInt(amount);
-                embed.data.fields[2].value = `${type} 티켓 +${amount}`;
+                displayValue = `${type} 티켓 +${amount}`;
             }
             
-            components[1].components[0].data.disabled = false;
-            await interaction.update({ embeds: [embed], components: components });
+            const newEmbed = EmbedBuilder.from(embed);
+            newEmbed.spliceFields(2, 1, {
+                name: '지급 수량',
+                value: displayValue,
+                inline: true
+            });
+            
+            const confirmButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_confirm')
+                .setLabel('✅ 지급 시작')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(false);
+                
+            const cancelButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_menu')
+                .setLabel('❌ 취소')
+                .setStyle(ButtonStyle.Secondary);
+                
+            const buttonRow = new ActionRowBuilder()
+                .addComponents(confirmButton, cancelButton);
+            
+            // defer 상태에 따라 적절한 응답 방식 선택
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            } else {
+                await interaction.update({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            }
         }
         
         // 스탯 포인트 수량 선택
         else if (customId === 'admin_bulk_statpoint_amount') {
             bulk.rewardData.statPoints = parseInt(interaction.values[0]);
-            embed.data.fields[2].value = `${bulk.rewardData.statPoints} 포인트`;
-            components[1].components[0].data.disabled = false;
-            await interaction.update({ embeds: [embed], components: components });
+            
+            const newEmbed = EmbedBuilder.from(embed);
+            newEmbed.spliceFields(2, 1, {
+                name: '지급 수량',
+                value: `${bulk.rewardData.statPoints} 포인트`,
+                inline: true
+            });
+            
+            const confirmButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_confirm')
+                .setLabel('✅ 지급 시작')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(false);
+                
+            const cancelButton = new ButtonBuilder()
+                .setCustomId('admin_bulk_menu')
+                .setLabel('❌ 취소')
+                .setStyle(ButtonStyle.Secondary);
+                
+            const buttonRow = new ActionRowBuilder()
+                .addComponents(confirmButton, cancelButton);
+            
+            // defer 상태에 따라 적절한 응답 방식 선택
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            } else {
+                await interaction.update({ 
+                    embeds: [newEmbed], 
+                    components: [components[0], buttonRow] 
+                });
+            }
         }
     }
 }

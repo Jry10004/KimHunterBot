@@ -12,7 +12,7 @@ const JOB_WEIGHTS = {
         agility: 0.5, 
         intelligence: 0.3, 
         luck: 0.5, 
-        dodge: 0.3 
+        dodge: 0.3
     },
     archer: { 
         agility: 3.5,  // 3.3 -> 3.5 추가 상향
@@ -23,11 +23,11 @@ const JOB_WEIGHTS = {
         hp: 0.7, 
         defense: 0.5, 
         vitality: 0.6, 
-        intelligence: 0.4 
+        intelligence: 0.4
     },
     mage: { 
         intelligence: 3.3,  // 3.5 -> 3.3 (5% 너프)
-        attack: 2.4,        // 2.5 -> 2.4 (5% 너프)
+        attack: 2.4,        // 2.5 -> 2.4 (5% 너프) - 마법사도 같은 attack 스탯 사용
         luck: 1.5, 
         hp: 1.0, 
         defense: 0.7, 
@@ -45,7 +45,7 @@ const JOB_WEIGHTS = {
         hp: 0.7, 
         defense: 0.4, 
         intelligence: 0.5, 
-        vitality: 0.5 
+        vitality: 0.5
     },
     defender: { 
         vitality: 3.5, 
@@ -56,7 +56,7 @@ const JOB_WEIGHTS = {
         agility: 0.4, 
         intelligence: 0.4, 
         luck: 0.5, 
-        dodge: 0.6 
+        dodge: 0.6
     }
 };
 
@@ -114,20 +114,67 @@ function getJobFromEmblem(emblem) {
 function getEquippedItem(user, slot) {
     if (!user || !user.equipment) return null;
     
-    const slotIndex = user.equipment[slot];
-    if (slotIndex === undefined || slotIndex === null || slotIndex < 0) return null;
+    const itemIdOrIndex = user.equipment[slot];
+    if (itemIdOrIndex === undefined || itemIdOrIndex === null) return null;
     
     if (user.inventory) {
-        const item = user.inventory.find(item => item && item.inventorySlot === slotIndex);
-        if (item) return item;
+        // ID로 찾기 시도
+        let item = user.inventory.find(item => 
+            item && (item.id === itemIdOrIndex || item._id?.toString() === itemIdOrIndex)
+        );
         
-        return user.inventory[slotIndex] || null;
+        // inventorySlot으로 찾기 시도
+        if (!item && typeof itemIdOrIndex === 'number') {
+            item = user.inventory.find(item => item && item.inventorySlot === itemIdOrIndex);
+        }
+        
+        // 인덱스로 찾기 시도
+        if (!item && typeof itemIdOrIndex === 'number' && itemIdOrIndex >= 0) {
+            item = user.inventory[itemIdOrIndex];
+        }
+        
+        return item || null;
     }
     
     return null;
 }
 
+// 조각 시스템 공격력 계산
+function getFragmentAttackBonus(user) {
+    if (!user.energyFragments || !user.energyFragments.fragments) return 0;
+    
+    let totalAttackBonus = 0;
+    const fragments = user.energyFragments.fragments instanceof Map 
+        ? user.energyFragments.fragments 
+        : new Map(Object.entries(user.energyFragments.fragments || {}));
+    
+    for (const [level, count] of fragments) {
+        const lvl = parseInt(level);
+        if (isNaN(lvl) || count <= 0) continue;
+        
+        // 기본 공격력 (레벨당 1)
+        const baseAttack = lvl * count;
+        
+        // 구간별 보너스 배율
+        let multiplier = 1.0;
+        if (lvl >= 26 && lvl <= 50) multiplier = 1.2;
+        else if (lvl >= 51 && lvl <= 75) multiplier = 1.5;
+        else if (lvl >= 76 && lvl <= 99) multiplier = 2.0;
+        else if (lvl === 100) multiplier = 3.0;
+        
+        totalAttackBonus += Math.floor(baseAttack * multiplier);
+    }
+    
+    return totalAttackBonus;
+}
+
 // 전체 스탯 계산 (기본 + 장비)
+// [중요] 이 함수가 모든 스탯 소스를 통합합니다:
+// 1. 사용자 기본 스탯 (user.stats)
+// 2. 장비 스탯 (user.equipment)
+// 3. 장신구 스탯 (user.equippedAccessories)
+// 4. 엠블럼 강화 스탯 (user.emblemEnhancement.stats)
+// 5. 조각 시스템 공격력 (energyFragments)
 function getTotalStats(user) {
     const totalStats = {
         strength: user.stats?.strength || 10,
@@ -135,7 +182,7 @@ function getTotalStats(user) {
         intelligence: user.stats?.intelligence || 10,
         vitality: user.stats?.vitality || 10,
         luck: user.stats?.luck || 10,
-        attack: 10,  // 기본 공격력 (장비 공격력으로 대체됨)
+        attack: 10,  // 기본 공격력 (장비 공격력으로 대체됨) - 마법사는 이것을 마력으로 표시
         defense: 10,  // 기본 방어력 (장비 방어력으로 대체됨)
         hp: 0,  // 장비에서 오는 추가 HP
         dodge: 0
@@ -148,22 +195,10 @@ function getTotalStats(user) {
         for (const slot of slots) {
             const item = getEquippedItem(user, slot);
             if (item && item.stats) {
+                // item.stats에는 이미 강화 보너스가 포함되어 있음
                 for (const [stat, value] of Object.entries(item.stats)) {
                     if (totalStats.hasOwnProperty(stat)) {
                         totalStats[stat] += value;
-                    }
-                }
-                // 강화 수치 반영
-                if (item.enhancement || item.enhanceLevel) {
-                    const enhanceLevel = item.enhancement || item.enhanceLevel || 0;
-                    if (item.stats.attack) {
-                        totalStats.attack += enhanceLevel * 10;
-                    }
-                    if (item.stats.defense) {
-                        totalStats.defense += enhanceLevel * 10;
-                    }
-                    if (item.stats.hp) {
-                        totalStats.hp += enhanceLevel * 20;
                     }
                 }
             }
@@ -186,13 +221,19 @@ function getTotalStats(user) {
         }
     }
     
-    // 엠블럼 강화 스탯 추가 (중복 제거 - appliedStats만 사용)
-    if (user.emblemEnhancement && user.emblemEnhancement.appliedStats) {
-        for (const [stat, value] of Object.entries(user.emblemEnhancement.appliedStats)) {
+    // 엠블럼 강화 스탯 추가
+    if (user.emblemEnhancement && user.emblemEnhancement.stats) {
+        for (const [stat, value] of Object.entries(user.emblemEnhancement.stats)) {
             if (totalStats.hasOwnProperty(stat) && value > 0) {
                 totalStats[stat] += value;
             }
         }
+    }
+    
+    // 조각 시스템 공격력 추가
+    const fragmentAttack = getFragmentAttackBonus(user);
+    if (fragmentAttack > 0) {
+        totalStats.attack += fragmentAttack;
     }
     
     return totalStats;
@@ -205,6 +246,7 @@ function calculateCombatPower(user) {
     const weights = job ? JOB_WEIGHTS[job] : null;
     
     // 2. 전체 스탯 계산
+    // [중요] getTotalStats가 모든 스탯을 통합하므로 여기서는 추가 계산 불필요
     const stats = getTotalStats(user);
     
     // 3. 직업별 가중치 적용 전투력
@@ -242,14 +284,7 @@ function calculateCombatPower(user) {
         combatPower += pvpPower;
     }
     
-    // 운동 시스템
-    if (user.fitness?.stats) {
-        const fitnessBonus = 
-            (user.fitness.stats.strength || 0) * 2 +
-            (user.fitness.stats.stamina || 0) * 1.5 +
-            (user.fitness.stats.agility || 0) * 1;
-        combatPower += fitnessBonus;
-    }
+    // 운동 시스템은 이제 user.stats에 직접 반영됨
     
     return Math.floor(combatPower);
 }
@@ -268,5 +303,7 @@ module.exports = {
     calculateCombatPower,
     getCombatModifier,
     getJobFromEmblem,
-    getTotalStats
+    getTotalStats,
+    getFragmentAttackBonus,
+    JOB_WEIGHTS
 };

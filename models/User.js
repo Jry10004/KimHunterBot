@@ -203,6 +203,22 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    // 스탯 포인트로 분배한 스탯 추적
+    distributedStats: {
+        strength: { type: Number, default: 0 },
+        agility: { type: Number, default: 0 },
+        intelligence: { type: Number, default: 0 },
+        vitality: { type: Number, default: 0 },
+        luck: { type: Number, default: 0 }
+    },
+    // 운동으로 얻은 스탯 추적
+    exerciseStats: {
+        strength: { type: Number, default: 0 },
+        agility: { type: Number, default: 0 },
+        intelligence: { type: Number, default: 0 },
+        vitality: { type: Number, default: 0 },
+        luck: { type: Number, default: 0 }
+    },
     skills: [{
         id: String,
         name: String,
@@ -222,7 +238,33 @@ const userSchema = new mongoose.Schema({
             attack: { type: Number, default: 0 },
             defense: { type: Number, default: 0 },
             dodge: { type: Number, default: 0 },
-            luck: { type: Number, default: 0 }
+            luck: { type: Number, default: 0 },
+            strength: { type: Number, default: 0 },
+            agility: { type: Number, default: 0 },
+            intelligence: { type: Number, default: 0 },
+            vitality: { type: Number, default: 0 },
+            hp: { type: Number, default: 0 },
+            // 특수 스탯들 (나중에 구현될 예정)
+            criticalChance: { type: Number, default: 0 },
+            criticalDamage: { type: Number, default: 0 },
+            goldBonus: { type: Number, default: 0 },
+            expBonus: { type: Number, default: 0 }
+        },
+        baseStats: { // 강화 전 원본 스탯 (강화 시스템용)
+            attack: { type: Number, default: 0 },
+            defense: { type: Number, default: 0 },
+            dodge: { type: Number, default: 0 },
+            luck: { type: Number, default: 0 },
+            strength: { type: Number, default: 0 },
+            agility: { type: Number, default: 0 },
+            intelligence: { type: Number, default: 0 },
+            vitality: { type: Number, default: 0 },
+            hp: { type: Number, default: 0 },
+            // 특수 스탯들
+            criticalChance: { type: Number, default: 0 },
+            criticalDamage: { type: Number, default: 0 },
+            goldBonus: { type: Number, default: 0 },
+            expBonus: { type: Number, default: 0 }
         },
         price: { type: Number, default: 0 },
         sellPrice: { type: Number, default: 0 }, // 판매 가격
@@ -244,7 +286,14 @@ const userSchema = new mongoose.Schema({
         gloves: { type: Number, default: -1 },
         boots: { type: Number, default: -1 },
         shield: { type: Number, default: -1 },
-        accessory: { type: Number, default: -1 }
+        // 악세서리 다중 슬롯
+        ring1: { type: Number, default: -1 },
+        ring2: { type: Number, default: -1 },
+        necklace: { type: Number, default: -1 },
+        bracelet1: { type: Number, default: -1 },
+        bracelet2: { type: Number, default: -1 },
+        earring1: { type: Number, default: -1 },
+        earring2: { type: Number, default: -1 }
     },
     protectionScrolls: { type: Number, default: 0 }, // 보호권 개수
     enhancementLevel: {
@@ -279,6 +328,9 @@ const userSchema = new mongoose.Schema({
     energyFragments: {
         fragments: { type: Map, of: Number, default: new Map() }, // 단계별 조각 보유량 (key: 단계, value: 개수)
         lastMine: { type: Date, default: null }, // 마지막 채굴 시간
+        dailyMines: { type: Number, default: 20 }, // 오늘 남은 채굴 횟수
+        dailyMineDate: { type: String, default: null }, // 채굴 횟수 날짜
+        lastMineRecharge: { type: Date, default: null }, // 마지막 채굴 횟수 충전 시간
         dailyFusions: { type: Number, default: 0 }, // 오늘 융합 횟수
         dailyFusionDate: { type: String, default: null }, // 융합 횟수 날짜
         totalFusions: { type: Number, default: 0 }, // 총 융합 시도
@@ -553,14 +605,6 @@ const userSchema = new mongoose.Schema({
     
     // 운동하기 방치형 시스템
     fitness: {
-        // 피트니스 스탯 (일반 스탯과 별개)
-        stats: {
-            strength: { type: Number, default: 1 },      // 근력
-            stamina: { type: Number, default: 1 },       // 체력
-            flexibility: { type: Number, default: 1 },   // 유연성
-            agility: { type: Number, default: 1 },       // 민첩
-            mental: { type: Number, default: 1 }         // 정신력
-        },
         level: { type: Number, default: 1 },            // 피트니스 레벨
         exp: { type: Number, default: 0 },               // 피트니스 경험치
         
@@ -833,6 +877,10 @@ const userSchema = new mongoose.Schema({
     
     // 낚시 시스템
     fishing: {
+        // 낚시권
+        tickets: { type: Number, default: 20, max: 20 },      // 낚시권 (최대 20장)
+        lastTicketRegen: { type: Date, default: Date.now },  // 마지막 낚시권 생성 시간
+        
         // 낚시 장비
         rod: { type: String, default: 'wooden' },       // 낚싯대 종류
         bait: { type: Number, default: 10 },           // 일반 미끼 보유량
@@ -875,25 +923,25 @@ const userSchema = new mongoose.Schema({
             caughtSpot: { type: String, required: true } // 낚은 장소
         }],
         
-        // 도감
+        // 도감 - 배열로 변경
         collection: {
-            discovered: {                               // 발견한 물고기들
-                type: Map,
-                of: {
-                    count: { type: Number, default: 0 },
-                    biggestSize: { type: Number, default: 0 },
-                    firstCaught: { type: Date, default: Date.now }
+            type: [{
+                type: {
+                    type: String,
+                    required: false
                 },
-                default: new Map()
-            },
-            uniqueVariants: {                           // 유니크 변이 발견
-                type: [String],
-                default: []
-            },
-            legendaryVariants: {                        // 전설 변이 발견
-                type: [String],
-                default: []
-            }
+                firstCatch: {
+                    name: String,
+                    size: Number,
+                    date: Date
+                },
+                bestCatch: {
+                    name: String,
+                    size: Number,
+                    date: Date
+                }
+            }],
+            default: []
         },
         
         // 낚시 쿨다운

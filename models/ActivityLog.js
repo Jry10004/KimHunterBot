@@ -61,6 +61,9 @@ const activityLogSchema = new mongoose.Schema({
 activityLogSchema.index({ userId: 1, timestamp: -1 });
 activityLogSchema.index({ userId: 1, activityType: 1, timestamp: -1 });
 
+// 자동 인덱스 생성 비활성화
+activityLogSchema.set('autoIndex', false);
+
 // 일일 활동 통계 가져오기
 activityLogSchema.statics.getDailyStats = async function(userId, date = new Date()) {
     const startOfDay = new Date(date);
