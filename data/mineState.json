@@ -18,16 +18,6 @@
         "visitors": [],
         "closingWarned": true
       }
-    ],
-    [
-      "legendary",
-      {
-        "openedAt": 1752960958068,
-        "closesAt": 1752961558068,
-        "event": null,
-        "visitors": [],
-        "closingWarned": true
-      }
     ]
   ],
   "lastRandomOpen": [
@@ -41,5 +31,5 @@
     ]
   ],
   "dailyEntries": [],
-  "savedAt": 1752961432380
+  "savedAt": 1752961732389
 }

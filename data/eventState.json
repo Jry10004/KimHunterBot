@@ -2,25 +2,25 @@
   "puppyNecklaceEvent": {
     "active": true,
     "currentBoss": {
-      "name": "완벽한 도둑 인프",
-      "maxHp": 68552,
-      "currentHp": 68552,
+      "name": "천상계 도둑 감자",
+      "maxHp": 55014,
+      "currentHp": 55014,
       "attack": 280,
       "defense": 140,
       "tier": "high",
       "attackedUsers": {},
       "embedAttackers": {},
-      "currentEmbedId": "1396239941675122929",
-      "lastUpdateTime": 1752959941331,
-      "updateCount": 0,
-      "startTime": "2025-07-19T21:19:01.331Z",
-      "bossNumber": 53,
-      "basedOnPower": 17094,
+      "currentEmbedId": "1396247695210840094",
+      "lastUpdateTime": 1752961791094,
+      "updateCount": 4,
+      "startTime": "2025-07-19T21:49:00.730Z",
+      "bossNumber": 54,
+      "basedOnPower": 16003,
       "powerThresholds": {
         "high": 15051,
         "mid": 6972
       },
-      "currentMessageId": "1396239941675122929"
+      "currentMessageId": "1396247485537583129"
     },
     "participants": {
       "424480594542592009": {
@@ -48,10 +48,10 @@
         "totalDamage": 579559
       }
     },
-    "bossStartTime": 1752959941331,
+    "bossStartTime": 1752961740730,
     "eventChannel": "1386447256408035399",
     "eventEndRequested": false,
-    "bossCount": 53,
+    "bossCount": 54,
     "totalBossesDefeated": 44
   }
 }

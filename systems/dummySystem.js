@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { calculateDamage, calculateCriticalDamage } = require('../handlers/common/damageCalculator');
 const { calculateCombatPower } = require('../handlers/common/combatPower');
 const { getUser } = require('../handlers/common/utils');
+const DummyStats = require('../models/DummyStats');
 
 // 허수아비 더미 설정
 const DUMMY_CONFIG = {
@@ -95,6 +96,7 @@ async function attackDummy(interaction) {
     }
 
     const session = dummySessions.get(sessionKey);
+    const jobType = getJobType(user);
 
     // 데미지 계산
     const damageResult = calculateDamage(user, DUMMY_CONFIG);
@@ -115,8 +117,44 @@ async function attackDummy(interaction) {
     session.minDamage = Math.min(session.minDamage, finalDamage);
     session.currentHP = Math.max(0, session.currentHP - finalDamage);
 
-    // 직업별 통계 업데이트
-    const jobType = getJobType(user);
+    // DB에 통계 저장/업데이트
+    try {
+        let stats = await DummyStats.findOne({ discordId: interaction.user.id });
+        
+        if (!stats) {
+            stats = new DummyStats({
+                discordId: interaction.user.id,
+                username: interaction.user.username,
+                jobType: jobType,
+                emblem: user.emblem || '없음',
+                combatPower: user.combatPower || 0
+            });
+        }
+        
+        // 통계 업데이트
+        stats.totalDamage += finalDamage;
+        stats.attackCount++;
+        if (isCritical) stats.critCount++;
+        stats.maxDamage = Math.max(stats.maxDamage, finalDamage);
+        if (stats.minDamage === Infinity || finalDamage < stats.minDamage) {
+            stats.minDamage = finalDamage;
+        }
+        
+        // DPS 계산 (세션 기준)
+        const sessionDuration = (Date.now() - session.startTime) / 1000;
+        stats.dps = Math.floor(session.totalDamage / sessionDuration);
+        
+        // 직업 정보 업데이트 (변경되었을 수 있음)
+        stats.jobType = jobType;
+        stats.emblem = user.emblem || '없음';
+        stats.combatPower = user.combatPower || 0;
+        
+        await stats.save();
+    } catch (error) {
+        console.error('허수아비 통계 저장 오류:', error);
+    }
+
+    // 메모리 직업별 통계도 업데이트 (즉시 표시용)
     if (!jobStatistics.has(jobType)) {
         jobStatistics.set(jobType, {
             totalDamage: 0,
@@ -186,64 +224,89 @@ async function attackDummy(interaction) {
 
 // 전체 통계 보기
 async function showStatistics(interaction) {
-    if (jobStatistics.size === 0) {
+    try {
+        // DB에서 직업별 통계 집계
+        const jobStats = await DummyStats.aggregate([
+            {
+                $group: {
+                    _id: '$jobType',
+                    avgDamage: { $avg: '$avgDamage' },
+                    maxDamage: { $max: '$maxDamage' },
+                    totalAttacks: { $sum: '$attackCount' },
+                    avgCritRate: { $avg: '$critRate' },
+                    userCount: { $sum: 1 },
+                    avgCombatPower: { $avg: '$combatPower' }
+                }
+            },
+            { $sort: { avgDamage: -1 } }
+        ]);
+
+        if (jobStats.length === 0) {
+            return await interaction.editReply({
+                content: '📊 아직 수집된 데이터가 없습니다.',
+                embeds: [],
+                components: [
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('dummy_menu')
+                            .setLabel('🏠 메뉴로')
+                            .setStyle(ButtonStyle.Secondary)
+                    )
+                ]
+            });
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('📊 허수아비 전체 통계 (DB 기준)')
+            .setDescription('모든 직업의 평균 데미지 통계입니다.')
+            .setTimestamp();
+
+        jobStats.forEach((stats, index) => {
+            const jobEmoji = getJobEmoji(stats._id);
+            
+            embed.addFields({
+                name: `${index + 1}. ${jobEmoji} ${stats._id}`,
+                value: [
+                    `평균 데미지: **${Math.floor(stats.avgDamage).toLocaleString()}**`,
+                    `최대 데미지: ${stats.maxDamage.toLocaleString()}`,
+                    `평균 치명타율: ${stats.avgCritRate.toFixed(1)}%`,
+                    `총 공격 횟수: ${stats.totalAttacks.toLocaleString()}회`,
+                    `참여 유저: ${stats.userCount}명`,
+                    `평균 전투력: ${Math.floor(stats.avgCombatPower).toLocaleString()}`
+                ].join('\n'),
+                inline: true
+            });
+        });
+
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('dummy_menu')
+                    .setLabel('🏠 메뉴로')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('dummy_job_analysis')
+                    .setLabel('🔍 상세 분석')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('dummy_export')
+                    .setLabel('📤 데이터 내보내기')
+                    .setStyle(ButtonStyle.Success)
+            );
+
         return await interaction.editReply({
-            content: '📊 아직 수집된 데이터가 없습니다.',
+            embeds: [embed],
+            components: [buttons]
+        });
+    } catch (error) {
+        console.error('통계 조회 오류:', error);
+        return await interaction.editReply({
+            content: '❌ 통계 조회 중 오류가 발생했습니다.',
             embeds: [],
-            components: [
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('dummy_menu')
-                        .setLabel('🏠 메뉴로')
-                        .setStyle(ButtonStyle.Secondary)
-                )
-            ]
+            components: []
         });
     }
-
-    const embed = new EmbedBuilder()
-        .setColor('#00FF00')
-        .setTitle('📊 허수아비 전체 통계')
-        .setDescription('모든 직업의 평균 데미지 통계입니다.')
-        .setTimestamp();
-
-    // 직업별 평균 데미지로 정렬
-    const sortedJobs = Array.from(jobStatistics.entries())
-        .sort((a, b) => b[1].avgDamage - a[1].avgDamage);
-
-    sortedJobs.forEach(([jobType, stats], index) => {
-        const jobEmoji = getJobEmoji(jobType);
-        const critRate = ((stats.critCount / stats.attackCount) * 100).toFixed(1);
-        
-        embed.addFields({
-            name: `${index + 1}. ${jobEmoji} ${jobType}`,
-            value: [
-                `평균 데미지: **${stats.avgDamage.toLocaleString()}**`,
-                `최대 데미지: ${stats.maxDamage.toLocaleString()}`,
-                `치명타율: ${critRate}%`,
-                `총 공격 횟수: ${stats.attackCount}회`,
-                `참여 유저: ${stats.users.size}명`
-            ].join('\n'),
-            inline: true
-        });
-    });
-
-    const buttons = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('dummy_menu')
-                .setLabel('🏠 메뉴로')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId('dummy_job_analysis')
-                .setLabel('🔍 상세 분석')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-    return await interaction.editReply({
-        embeds: [embed],
-        components: [buttons]
-    });
 }
 
 // 내 기록 보기
@@ -319,69 +382,88 @@ async function showMyStats(interaction) {
 
 // 직업별 상세 분석
 async function showJobAnalysis(interaction) {
-    const embed = new EmbedBuilder()
-        .setColor('#00FF00')
-        .setTitle('🔍 직업별 상세 분석')
-        .setDescription('각 직업의 강점과 약점을 분석합니다.')
-        .setTimestamp();
+    try {
+        // DB에서 직업별 통계 가져오기
+        const jobStats = await DummyStats.aggregate([
+            {
+                $group: {
+                    _id: '$jobType',
+                    avgDamage: { $avg: '$avgDamage' },
+                    maxDamage: { $max: '$maxDamage' },
+                    minDamage: { $min: { $cond: [{ $lt: ['$minDamage', Infinity] }, '$minDamage', null] } },
+                    avgCritRate: { $avg: '$critRate' },
+                    totalAttacks: { $sum: '$attackCount' },
+                    userCount: { $sum: 1 },
+                    avgCombatPower: { $avg: '$combatPower' },
+                    avgDPS: { $avg: '$dps' }
+                }
+            },
+            { $sort: { avgDamage: -1 } }
+        ]);
 
-    // 직업별 분석 데이터 수집
-    const jobAnalysis = new Map();
-    
-    for (const [jobType, stats] of jobStatistics) {
-        const avgDamage = stats.avgDamage;
-        const critRate = (stats.critCount / stats.attackCount) * 100;
-        
-        // 기준값 대비 성능 계산 (전사를 100%로 기준)
-        const warriorStats = jobStatistics.get('전사');
-        const performanceRatio = warriorStats ? (avgDamage / warriorStats.avgDamage * 100) : 100;
-        
-        jobAnalysis.set(jobType, {
-            avgDamage,
-            critRate,
-            performanceRatio,
-            attackCount: stats.attackCount,
-            users: stats.users.size
+        if (jobStats.length === 0) {
+            return await interaction.editReply({
+                content: '📊 분석할 데이터가 없습니다.',
+                embeds: [],
+                components: []
+            });
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('🔍 직업별 상세 분석')
+            .setDescription('각 직업의 강점과 약점을 분석합니다.')
+            .setTimestamp();
+
+        // 전사 기준값 찾기
+        const warriorStats = jobStats.find(j => j._id === '전사');
+        const baseAvgDamage = warriorStats ? warriorStats.avgDamage : jobStats[0].avgDamage;
+
+        jobStats.forEach((stats) => {
+            const jobEmoji = getJobEmoji(stats._id);
+            const performanceRatio = (stats.avgDamage / baseAvgDamage * 100);
+            const performanceBar = createPerformanceBar(performanceRatio);
+            
+            embed.addFields({
+                name: `${jobEmoji} ${stats._id}`,
+                value: [
+                    `성능: ${performanceBar} ${performanceRatio.toFixed(1)}%`,
+                    `평균 데미지: ${Math.floor(stats.avgDamage).toLocaleString()}`,
+                    `데미지 범위: ${stats.minDamage?.toLocaleString() || 'N/A'} ~ ${stats.maxDamage.toLocaleString()}`,
+                    `평균 DPS: ${Math.floor(stats.avgDPS || 0).toLocaleString()}/초`,
+                    `평균 치명타율: ${stats.avgCritRate.toFixed(1)}%`,
+                    `평균 전투력: ${Math.floor(stats.avgCombatPower).toLocaleString()}`,
+                    `샘플 수: ${stats.totalAttacks.toLocaleString()}회 (${stats.userCount}명)`,
+                    `평가: ${getJobEvaluation(stats._id, { performanceRatio })}`
+                ].join('\n'),
+                inline: false
+            });
+        });
+
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('dummy_statistics')
+                    .setLabel('📊 통계로 돌아가기')
+                    .setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder()
+                    .setCustomId('dummy_menu')
+                    .setLabel('🏠 메뉴로')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        return await interaction.editReply({
+            embeds: [embed],
+            components: [buttons]
+        });
+    } catch (error) {
+        console.error('직업 분석 오류:', error);
+        return await interaction.editReply({
+            content: '❌ 분석 중 오류가 발생했습니다.',
+            embeds: [],
+            components: []
         });
     }
-
-    // 성능 순으로 정렬
-    const sortedAnalysis = Array.from(jobAnalysis.entries())
-        .sort((a, b) => b[1].performanceRatio - a[1].performanceRatio);
-
-    sortedAnalysis.forEach(([jobType, analysis]) => {
-        const jobEmoji = getJobEmoji(jobType);
-        const performanceBar = createPerformanceBar(analysis.performanceRatio);
-        
-        embed.addFields({
-            name: `${jobEmoji} ${jobType}`,
-            value: [
-                `성능: ${performanceBar} ${analysis.performanceRatio.toFixed(1)}%`,
-                `평균 데미지: ${analysis.avgDamage.toLocaleString()}`,
-                `치명타율: ${analysis.critRate.toFixed(1)}%`,
-                `샘플 수: ${analysis.attackCount}회 (${analysis.users}명)`,
-                `평가: ${getJobEvaluation(jobType, analysis)}`
-            ].join('\n'),
-            inline: false
-        });
-    });
-
-    const buttons = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('dummy_statistics')
-                .setLabel('📊 통계로 돌아가기')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId('dummy_menu')
-                .setLabel('🏠 메뉴로')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-    return await interaction.editReply({
-        embeds: [embed],
-        components: [buttons]
-    });
 }
 
 // 직업 타입 가져오기
@@ -457,6 +539,43 @@ function getJobEvaluation(jobType, analysis) {
     return '🔴 밸런스 조정 필요';
 }
 
+// 데이터 내보내기
+async function exportData(interaction) {
+    try {
+        const stats = await DummyStats.find().sort({ avgDamage: -1 }).limit(100);
+        
+        if (stats.length === 0) {
+            return await interaction.followUp({
+                content: '📤 내보낼 데이터가 없습니다.',
+                flags: 64
+            });
+        }
+        
+        let csv = 'Discord ID,사용자명,직업,엠블럼,전투력,평균데미지,최대데미지,공격횟수,치명타율,DPS\n';
+        
+        stats.forEach(stat => {
+            csv += `${stat.discordId},${stat.username},${stat.jobType},"${stat.emblem}",${stat.combatPower},${stat.avgDamage},${stat.maxDamage},${stat.attackCount},${stat.critRate.toFixed(2)},${stat.dps}\n`;
+        });
+        
+        const buffer = Buffer.from(csv, 'utf-8');
+        
+        await interaction.followUp({
+            content: '📤 허수아비 통계 데이터입니다.',
+            files: [{
+                attachment: buffer,
+                name: `dummy_stats_${new Date().toISOString().split('T')[0]}.csv`
+            }],
+            flags: 64
+        });
+    } catch (error) {
+        console.error('데이터 내보내기 오류:', error);
+        await interaction.followUp({
+            content: '❌ 데이터 내보내기 중 오류가 발생했습니다.',
+            flags: 64
+        });
+    }
+}
+
 // 인터랙션 핸들러
 async function handleDummyInteraction(interaction) {
     if (interaction.customId === 'dummy_menu') {
@@ -469,6 +588,9 @@ async function handleDummyInteraction(interaction) {
         return await showMyStats(interaction);
     } else if (interaction.customId === 'dummy_job_analysis') {
         return await showJobAnalysis(interaction);
+    } else if (interaction.customId === 'dummy_export') {
+        await interaction.deferUpdate().catch(() => {});
+        return await exportData(interaction);
     } else if (interaction.customId === 'dummy_reset') {
         const sessionKey = interaction.user.id;
         dummySessions.delete(sessionKey);
