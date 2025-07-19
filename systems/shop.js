@@ -2318,11 +2318,8 @@ async function showLegendaryItemDetail(interaction, legendaryItems, currentPage,
 }
 
 // 100회 아이템 목록 표시
-async function showHundredItemsPage(interaction, items, currentPage, itemsPerPage, totalPages) {
-    // interaction이 이미 응답되었는지 확인하고 적절히 처리
-    if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate();
-    }
+async function showHundredItemsPage(interaction, items, currentPage, itemsPerPage, totalPages, createCollector = true) {
+    // deferUpdate는 호출하는 쪽에서 이미 처리했으므로 여기서는 하지 않음
     
     const startIdx = currentPage * itemsPerPage;
     const endIdx = startIdx + itemsPerPage;
@@ -2366,22 +2363,27 @@ async function showHundredItemsPage(interaction, items, currentPage, itemsPerPag
         components: [buttons]
     });
     
+    // 첫 호출시에만 컬렉터 생성
+    if (!createCollector) return;
+    
     // 페이지 네비게이션 컬렉터
     const collector = interaction.channel.createMessageComponentCollector({
         filter: i => i.user.id === interaction.user.id,
         time: 60000
     });
     
+    let collectorCurrentPage = currentPage;
+    
     collector.on('collect', async (i) => {
         try {
             await i.deferUpdate().catch(() => {});
             
-            if (i.customId === 'hundred_prev' && currentPage > 0) {
-                await showHundredItemsPage(i, items, currentPage - 1, itemsPerPage, totalPages);
-                collector.stop();
-            } else if (i.customId === 'hundred_next' && currentPage < totalPages - 1) {
-                await showHundredItemsPage(i, items, currentPage + 1, itemsPerPage, totalPages);
-                collector.stop();
+            if (i.customId === 'hundred_prev' && collectorCurrentPage > 0) {
+                collectorCurrentPage--;
+                await showHundredItemsPage(i, items, collectorCurrentPage, itemsPerPage, totalPages, false);
+            } else if (i.customId === 'hundred_next' && collectorCurrentPage < totalPages - 1) {
+                collectorCurrentPage++;
+                await showHundredItemsPage(i, items, collectorCurrentPage, itemsPerPage, totalPages, false);
             } else if (i.customId === 'hundred_close') {
                 collector.stop();
                 // 메인 화면으로 돌아가기

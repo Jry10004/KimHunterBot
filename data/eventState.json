@@ -2,35 +2,32 @@
   "puppyNecklaceEvent": {
     "active": true,
     "currentBoss": {
-      "name": "불멸의 도둑 인프",
-      "maxHp": 42713,
-      "currentHp": 0,
+      "name": "무적의 도둑 백레오",
+      "maxHp": 75537,
+      "currentHp": 65033,
       "attack": 280,
       "defense": 140,
       "tier": "high",
       "attackedUsers": {},
       "embedAttackers": {
-        "1396174426793447554": {
-          "356473262844280852": true
-        },
-        "1396175010678440078": {
-          "356473262844280852": true
+        "1396187083764273172": {
+          "364197967114272769": true
         },
         "1396175059776700527": {
-          "356473262844280852": true
+          "364197967114272769": true
         }
       },
-      "currentEmbedId": "1396175059776700527",
-      "lastUpdateTime": 1752944473762,
-      "updateCount": 2,
-      "startTime": "2025-07-19T16:58:42.429Z",
-      "bossNumber": 42,
-      "basedOnPower": 16739,
+      "currentEmbedId": "1396187083764273172",
+      "lastUpdateTime": 1752947340094,
+      "updateCount": 0,
+      "startTime": "2025-07-19T17:49:00.094Z",
+      "bossNumber": 43,
+      "basedOnPower": 17772,
       "powerThresholds": {
         "high": 15051,
         "mid": 6972
       },
-      "currentMessageId": "1396174426793447554"
+      "currentMessageId": "1396187083764273172"
     },
     "participants": {
       "424480594542592009": {
@@ -46,8 +43,8 @@
         "totalDamage": 979164
       },
       "364197967114272769": {
-        "attacks": 56,
-        "totalDamage": 169628
+        "attacks": 58,
+        "totalDamage": 180132
       },
       "276322011549007872": {
         "attacks": 4,
@@ -58,10 +55,10 @@
         "totalDamage": 579559
       }
     },
-    "bossStartTime": 1752944322429,
+    "bossStartTime": 1752947340094,
     "eventChannel": "1386447256408035399",
     "eventEndRequested": false,
-    "bossCount": 42,
+    "bossCount": 43,
     "totalBossesDefeated": 38
   }
 }
