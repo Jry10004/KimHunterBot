@@ -35,9 +35,9 @@ async function showEmblem(interaction) {
             .addOptions([
                 { label: '전사 계열', value: 'warrior', emoji: '⚔️', description: '힘 주스탯' },
                 { label: '궁수 계열', value: 'archer', emoji: '🏹', description: '민첩 주스탯' },
-                { label: '마법사 계열', value: 'mage', emoji: '🧿', description: '지능 주스탯' },
+                { label: '마법사 계열', value: 'wizard', emoji: '🧿', description: '지능 주스탯' },
                 { label: '수호자 계열', value: 'defender', emoji: '🛡️', description: '체력 주스탯' },
-                { label: '도적 계열', value: 'thief', emoji: '🗡️', description: '행운 주스탯' }
+                { label: '도적 계열', value: 'rogue', emoji: '🗡️', description: '행운 주스탯' }
             ]);
             
         const actionRow = new ActionRowBuilder().addComponents(selectMenu);
@@ -159,9 +159,9 @@ async function showEmblemShop(interaction) {
         .addOptions([
             { label: '전사 계열', value: 'warrior', emoji: '⚔️', description: '힘 주스탯' },
             { label: '궁수 계열', value: 'archer', emoji: '🏹', description: '민첩 주스탯' },
-            { label: '마법사 계열', value: 'mage', emoji: '🧿', description: '지능 주스탯' },
+            { label: '마법사 계열', value: 'wizard', emoji: '🧿', description: '지능 주스탯' },
             { label: '수호자 계열', value: 'defender', emoji: '🛡️', description: '체력 주스탯' },
-            { label: '도적 계열', value: 'thief', emoji: '🗡️', description: '행운 주스탯' }
+            { label: '도적 계열', value: 'rogue', emoji: '🗡️', description: '행운 주스탯' }
         ]);
         
     const actionRow = new ActionRowBuilder().addComponents(selectMenu);

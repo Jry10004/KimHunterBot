@@ -471,7 +471,40 @@ class EnhanceSystem {
             const currentStats = [];
             const expectedStats = [];
             const itemType = item.type || item.category || 'weapon';
-            const mainStats = ENHANCE_SYSTEM.mainStatByType[itemType] || ['attack'];
+            
+            // 직업별 주스탯 결정
+            let jobMainStats = [];
+            const emblem = user.emblem || '';
+            const baseEmblem = emblem.replace(/\s*\+\d+$/, ''); // 강화 수치 제거
+            
+            // 전사 계열
+            if (['초보전사', '튼튼한 기사', '용맹한 검사', '맹렬한 전사', '전설의 기사'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'strength'];
+            }
+            // 궁수 계열
+            else if (['마을사냥꾼', '숲의 궁수', '바람 사수', '정확한 사격수', '전설의 명궁'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'agility'];
+            }
+            // 마법사 계열
+            else if (['견습 마법사', '원소 술사', '신비한 현자', '대마법사', '전설의 아크메이지'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'intelligence']; // 마법사도 attack이 주스탯 (마력으로 표시됨)
+            }
+            // 도적 계열
+            else if (['떠돌이 도적', '운 좋은 도둑', '행운의 닌자', '복 많은 도적', '전설의 행운아'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'agility', 'luck'];
+            }
+            // 수호자 계열
+            else if (['초보 수호자', '철벽 방패병', '불굴의 수호자', '강철 파수꾼', '전설의 철벽'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'defense', 'vitality'];
+            }
+            // 엠블럼이 없는 경우 공격력만 주스탯
+            else {
+                jobMainStats = ['attack'];
+            }
+            
+            // 아이템 타입별 주스탯과 직업별 주스탯 병합
+            const itemMainStats = ENHANCE_SYSTEM.mainStatByType[itemType] || [];
+            const mainStats = [...new Set([...jobMainStats, ...itemMainStats])];
             
             // 현재 계급의 증가율 결정
             let increaseRate;
@@ -499,6 +532,12 @@ class EnhanceSystem {
                 console.log(`[강화] 아이템 전체 데이터:`, JSON.stringify(item, null, 2));
             }
             
+            // 주스탯이 있는지 확인 (attack과 직업 주스탯 외의 스탯)
+            const hasNonAttackMainStats = Array.from(allStatKeys).some(stat => {
+                const currentValue = item.stats?.[stat] || item.baseStats?.[stat] || 0;
+                return currentValue > 0 && stat !== 'attack' && jobMainStats.includes(stat);
+            });
+            
             allStatKeys.forEach(stat => {
                 const currentValue = item.stats?.[stat] || item.baseStats?.[stat] || 0;
                 const baseValue = item.baseStats?.[stat] || currentValue;
@@ -512,11 +551,14 @@ class EnhanceSystem {
                     const statName = this.getStatKorean(stat, user);
                     const percentage = (rate * 100).toFixed(0);
                     
+                    // attack과 직업 주스탯만 있고 다른 주스탯이 없는 경우 모두 ☆로 표시
+                    const displayStar = (!hasNonAttackMainStats && jobMainStats.length > 0) ? '☆' : (isMainStat ? '⭐' : '☆');
+                    
                     // 현재 스탯 표시
-                    currentStats.push(`${isMainStat ? '⭐' : '☆'} ${statName}: ${currentValue}`);
+                    currentStats.push(`${displayStar} ${statName}: ${currentValue}`);
                     
                     // 예상 증가량 표시
-                    expectedStats.push(`${isMainStat ? '⭐' : '☆'} ${statName}: ${currentValue} → **${nextValue}** (+${increase}, +${percentage}%)`);
+                    expectedStats.push(`${displayStar} ${statName}: ${currentValue} → **${nextValue}** (+${increase}, +${percentage}%)`);
                 }
             });
             
@@ -531,7 +573,7 @@ class EnhanceSystem {
             if (expectedStats.length > 0) {
                 embed.addFields({
                     name: '📈 계급 승급 시 예상 스탯',
-                    value: expectedStats.join('\n') + '\n\n⭐ 주 스탯 | ☆ 부 스탯',
+                    value: expectedStats.join('\n') + '\n\n⭐ 주 스탯 (공격력/직업 특화) | ☆ 부 스탯',
                     inline: true
                 });
             }
@@ -779,7 +821,39 @@ class EnhanceSystem {
             if (!item.stats) item.stats = {};
             
             const itemType = item.type || item.category || 'weapon';
-            const mainStats = ENHANCE_SYSTEM.mainStatByType[itemType] || ['attack'];
+            
+            // 직업별 주스탯 결정 (동일한 로직 적용)
+            let jobMainStats = [];
+            const emblem = user.emblem || '';
+            const baseEmblem = emblem.replace(/\s*\+\d+$/, ''); // 강화 수치 제거
+            
+            // 전사 계열
+            if (['초보전사', '튼튼한 기사', '용맹한 검사', '맹렬한 전사', '전설의 기사'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'strength'];
+            }
+            // 궁수 계열
+            else if (['마을사냥꾼', '숲의 궁수', '바람 사수', '정확한 사격수', '전설의 명궁'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'agility'];
+            }
+            // 마법사 계열
+            else if (['견습 마법사', '원소 술사', '신비한 현자', '대마법사', '전설의 아크메이지'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'intelligence'];
+            }
+            // 도적 계열
+            else if (['떠돌이 도적', '운 좋은 도둑', '행운의 닌자', '복 많은 도적', '전설의 행운아'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'agility', 'luck'];
+            }
+            // 수호자 계열
+            else if (['초보 수호자', '철벽 방패병', '불굴의 수호자', '강철 파수꾼', '전설의 철벽'].includes(baseEmblem)) {
+                jobMainStats = ['attack', 'defense', 'vitality'];
+            }
+            else {
+                jobMainStats = ['attack'];
+            }
+            
+            // 아이템 타입별 주스탯과 직업별 주스탯 병합
+            const itemMainStats = ENHANCE_SYSTEM.mainStatByType[itemType] || [];
+            const mainStats = [...new Set([...jobMainStats, ...itemMainStats])];
             
             // 현재 계급의 증가율 결정
             let increaseRate;

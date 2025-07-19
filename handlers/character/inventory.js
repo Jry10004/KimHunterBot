@@ -1,3 +1,6 @@
+// ⚠️ 중요: 인벤토리 시스템은 장비/프로필과 통합되어 있습니다. 수정 시 주의!
+// 통일화 작업 완료 (2025-01-19) - 변경 시 개발자와 상의 필요
+// 관련 파일: equipment.js, profile.js, combatPower.js
 const { EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { getUser, formatNumber } = require('../common/utils');
 

@@ -183,8 +183,8 @@ async function handleInteraction(interaction) {
         customId.startsWith('sell_current_item_') || customId === 'sell_all_multi_temp' ||
         customId === 'save_all_multi_temp' || customId === 'view_hundred_items' ||
         customId === 'hundred_prev' || customId === 'hundred_next' || customId === 'hundred_close' ||
-        customId === 'view_legendary_items' || customId === 'legendary_prev' || 
-        customId === 'legendary_next' || customId === 'back_to_hundred_summary' ||
+        customId === 'view_legendary_items' || 
+        // legendary_prev, legendary_next, back_to_hundred_summary는 컬렉터에서 처리
         // 카트 판매 관련 - sell_mode_cart만 여기서 처리, 나머지는 컬렉터에서 처리
         customId === 'sell_mode_cart') {
         const { handleShopInteraction } = require('../systems/shop');

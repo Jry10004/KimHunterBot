@@ -134,7 +134,11 @@ const EMBLEM_ENHANCE_STATS = {
         name: '수호자',
         stats: { vitality: 2, strength: 1 }
     },
-    mage: {
+    wizard: {  // mage -> wizard로 변경하여 엠블럼 상점과 일치시킴
+        name: '마법사',
+        stats: { intelligence: 2, luck: 1 }
+    },
+    mage: {  // 기존 코드 호환성을 위해 mage도 유지
         name: '마법사',
         stats: { intelligence: 2, luck: 1 }
     },
@@ -169,6 +173,22 @@ function attemptEmblemEnhance(currentLevel) {
 // 강화 UI 생성
 function createEmblemEnhanceEmbed(user, emblemType) {
     const enhanceData = user.emblemEnhancement || { level: 0, stats: {} };
+    
+    // emblemType이 없거나 EMBLEM_ENHANCE_STATS에 없는 경우 처리
+    if (!emblemType || !EMBLEM_ENHANCE_STATS[emblemType]) {
+        console.error(`[엠블럼 강화] 알 수 없는 엠블럼 타입: ${emblemType}, 유저 엠블럼: ${user.emblem}`);
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle('❌ 엠블럼 오류')
+            .setDescription('엠블럼 타입을 인식할 수 없습니다.')
+            .addFields({
+                name: '현재 엠블럼',
+                value: user.emblem || '없음',
+                inline: false
+            });
+        return errorEmbed;
+    }
+    
     const jobData = EMBLEM_ENHANCE_STATS[emblemType];
     const rates = EMBLEM_ENHANCE_RATES[enhanceData.level] || EMBLEM_ENHANCE_RATES[99];
     
@@ -259,6 +279,12 @@ function createEmblemEnhanceEmbed(user, emblemType) {
 
 // 강화 결과 처리
 async function processEmblemEnhancement(user, emblemType) {
+    // emblemType 검증
+    if (!emblemType || !EMBLEM_ENHANCE_STATS[emblemType]) {
+        console.error(`[processEmblemEnhancement] 알 수 없는 엠블럼 타입: ${emblemType}, 유저 엠블럼: ${user.emblem}`);
+        return { success: false, message: '엠블럼 타입을 인식할 수 없습니다!' };
+    }
+    
     if (!user.emblemEnhancement) {
         user.emblemEnhancement = {
             level: 0,
@@ -456,6 +482,12 @@ function attemptEmblemEnhanceWithScroll(currentLevel, scrollType) {
 
 // 주문서를 사용한 강화 결과 처리
 async function processEmblemEnhancementWithScroll(user, emblemType, scrollType) {
+    // emblemType 검증
+    if (!emblemType || !EMBLEM_ENHANCE_STATS[emblemType]) {
+        console.error(`[processEmblemEnhancementWithScroll] 알 수 없는 엠블럼 타입: ${emblemType}, 유저 엠블럼: ${user.emblem}`);
+        return { success: false, message: '엠블럼 타입을 인식할 수 없습니다!' };
+    }
+    
     if (!user.emblemEnhancement) {
         user.emblemEnhancement = {
             level: 0,

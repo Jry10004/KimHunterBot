@@ -60,51 +60,49 @@ const JOB_WEIGHTS = {
     }
 };
 
+// ⚠️ 중요: 엠블럼 직업 매핑은 고정된 값입니다. 수정 시 주의!
+// 통일화 작업 완료 (2025-01-19) - 변경 시 개발자와 상의 필요
+// 관련 파일: inventory.js, equipment.js, profile.js
 // 엠블럼에서 직업 추출
 function getJobFromEmblem(emblem) {
     if (!emblem) return null;
     
-    const emblemLower = emblem.toLowerCase();
+    // 강화된 엠블럼 처리 (+숫자) - 먼저 처리
+    const baseEmblem = emblem.replace(/\s*\+\d+$/, '');
     
-    // 전사 계열 (정확한 엠블럼 이름)
-    if (emblem === '초보전사' || emblem === '튼튼한 기사' || 
-        emblem === '용맹한 검사' || emblem === '맹렬한 전사' || 
-        emblem === '전설의 기사') {
+    // ⚔️ 전사 계열
+    if (baseEmblem === '초보전사' || baseEmblem === '튼튼한 기사' || 
+        baseEmblem === '용맹한 검사' || baseEmblem === '맹렬한 전사' || 
+        baseEmblem === '전설의 기사') {
         return 'warrior';
     }
     
-    // 궁수 계열 (정확한 엠블럼 이름)
-    if (emblem === '마을사냥꾼' || emblem === '숲의 궁수' || 
-        emblem === '바람 사수' || emblem === '정확한 사격수' || 
-        emblem === '전설의 명궁') {
+    // 🏹 궁수 계열
+    if (baseEmblem === '마을사냥꾼' || baseEmblem === '숲의 궁수' || 
+        baseEmblem === '바람 사수' || baseEmblem === '정확한 사격수' || 
+        baseEmblem === '전설의 명궁') {
         return 'archer';
     }
     
-    // 수호자 계열 (정확한 엠블럼 이름)
-    if (emblem === '초보 수호자' || emblem === '철벽 방패병' || 
-        emblem === '불굴의 수호자' || emblem === '강철 파수꾼' || 
-        emblem === '전설의 철벽') {
+    // 🛡️ 수호자 계열
+    if (baseEmblem === '초보 수호자' || baseEmblem === '철벽 방패병' || 
+        baseEmblem === '불굴의 수호자' || baseEmblem === '강철 파수꾼' || 
+        baseEmblem === '전설의 철벽') {
         return 'defender';
     }
     
-    // 마법사 계열 (정확한 엠블럼 이름)
-    if (emblem === '견습 마법사' || emblem === '원소 술사' || 
-        emblem === '신비한 현자' || emblem === '대마법사' || 
-        emblem === '전설의 아크메이지') {
+    // 🧙 마법사 계열
+    if (baseEmblem === '견습 마법사' || baseEmblem === '원소 술사' || 
+        baseEmblem === '신비한 현자' || baseEmblem === '대마법사' || 
+        baseEmblem === '전설의 아크메이지') {
         return 'mage';
     }
     
-    // 도적 계열 (정확한 엠블럼 이름)
-    if (emblem === '떠돌이 도적' || emblem === '운 좋은 도둑' || 
-        emblem === '행운의 닌자' || emblem === '복 많은 도적' || 
-        emblem === '전설의 행운아') {
+    // 🗡️ 도적 계열
+    if (baseEmblem === '떠돌이 도적' || baseEmblem === '운 좋은 도둑' || 
+        baseEmblem === '행운의 닌자' || baseEmblem === '복 많은 도적' || 
+        baseEmblem === '전설의 행운아') {
         return 'thief';
-    }
-    
-    // 강화된 엠블럼 처리 (+숫자)
-    const baseEmblem = emblem.replace(/\s*\+\d+$/, '');
-    if (baseEmblem !== emblem) {
-        return getJobFromEmblem(baseEmblem);
     }
     
     return null;

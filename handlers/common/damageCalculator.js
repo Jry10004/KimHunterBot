@@ -63,10 +63,12 @@ function calculateDamage(attacker, defender, options = {}) {
         // 전사: 힘 기반
         baseDamage += totalStats.strength * 2;
     } else if (emblemType.includes('궁수') || emblemType.includes('archer')) {
-        // 궁수: 민첩 기반 (2.2 -> 2.5 상향)
-        baseDamage += totalStats.agility * 2.5;
-        // 궁수는 행운도 약간 반영 (행운 보너스 추가)
-        baseDamage += totalStats.luck * 0.5;
+        // 궁수: 민첩 기반 (2.5 -> 3.0 상향)
+        baseDamage += totalStats.agility * 3.0;
+        // 궁수는 행운도 반영 (0.5 -> 1.0 상향)
+        baseDamage += totalStats.luck * 1.0;
+        // 궁수는 공격력도 추가 반영
+        baseDamage += totalStats.attack * 1.2;
     } else if (emblemType.includes('마법사') || emblemType.includes('wizard') || emblemType.includes('mage')) {
         // 마법사: 지능 기반
         baseDamage += totalStats.intelligence * 2;
@@ -101,9 +103,9 @@ function calculateDamage(attacker, defender, options = {}) {
     
     // 궁수 시너지: 민첩+행운 (조건 완화 및 보너스 증가)
     if (emblemType.includes('궁수') || emblemType.includes('archer')) {
-        if (totalStats.agility >= 30 && totalStats.luck >= 30) {
-            const synergyLevel = Math.min(totalStats.agility, totalStats.luck) / 30;
-            synergyBonus += 0.12 * Math.floor(synergyLevel); // 30마다 12% 추가 데미지 (상향)
+        if (totalStats.agility >= 25 && totalStats.luck >= 25) { // 30 -> 25로 조건 완화
+            const synergyLevel = Math.min(totalStats.agility, totalStats.luck) / 25;
+            synergyBonus += 0.15 * Math.floor(synergyLevel); // 25마다 15% 추가 데미지 (12% -> 15% 상향)
         }
     }
     

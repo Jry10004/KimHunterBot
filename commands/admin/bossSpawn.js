@@ -57,10 +57,10 @@ module.exports = {
             }
         }
 
-        // 활성 보스가 있는지 확인
+        // 월드 보스가 있는지 확인 (이벤트 보스는 별개로 허용)
         if (worldBossSystem.activeWorldBoss) {
             return interaction.editReply({
-                content: '❌ 이미 활성화된 보스가 있습니다! 현재 보스를 처치하거나 /보스디버그 리셋을 사용하세요.'
+                content: '❌ 이미 월드 보스가 활성화되어 있습니다! 현재 보스를 처치하거나 /보스디버그 리셋을 사용하세요.'
             });
         }
 

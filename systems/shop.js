@@ -649,7 +649,7 @@ async function handleShopInteraction(interaction, getUser, saveUser) {
         const keysToRemove = [];
         
         // 해당 유저의 모든 뽑기 키 찾기
-        for (const key of gachaInProgress) {
+        for (const [key, value] of gachaInProgress) {
             if (key.startsWith(userId)) {
                 keysToRemove.push(key);
             }
@@ -2154,17 +2154,22 @@ async function showLegendaryItemDetail(interaction, legendaryItems, currentPage,
         );
     
     // interaction 상태 확인 후 적절한 응답 방식 선택
-    if (interaction.deferred || interaction.replied) {
+    try {
+        // 처음 호출될 때만 deferUpdate
+        if (!interaction.deferred && !interaction.replied && currentPage === 0) {
+            await interaction.deferUpdate();
+        }
+        
+        // editReply로 통일
         await interaction.editReply({
             embeds: [detailEmbed],
             components: [buttons]
         });
-    } else {
-        await interaction.reply({
-            embeds: [detailEmbed],
-            components: [buttons],
-            ephemeral: true
-        });
+    } catch (error) {
+        // 오류 발생 시 로그만 출력
+        if (error.code !== 40060 && error.code !== 10062) { // 이미 응답됨, 알 수 없는 인터랙션 오류는 무시
+            console.error('[showLegendaryItemDetail] 응답 오류:', error);
+        }
     }
     
     // 컬렉터 설정
@@ -2175,6 +2180,18 @@ async function showLegendaryItemDetail(interaction, legendaryItems, currentPage,
     
     collector.on('collect', async (i) => {
         try {
+            // 인터랙션 응답 처리를 안전하게 수행
+            try {
+                if (!i.deferred && !i.replied) {
+                    await i.deferUpdate();
+                }
+            } catch (deferError) {
+                // Unknown interaction 오류는 무시
+                if (deferError.code !== 10062) {
+                    console.error('[Collector] deferUpdate 오류:', deferError.code);
+                }
+            }
+            
             if (i.customId === 'legendary_prev' && currentPage > 0) {
                 collector.stop();
                 await showLegendaryItemDetail(i, legendaryItems, currentPage - 1, user, selectedSlot);
@@ -2290,13 +2307,23 @@ async function showLegendaryItemDetail(interaction, legendaryItems, currentPage,
                 collector.stop();
             }
         } catch (error) {
-            console.error('[showLegendaryItemDetail] 컬렉터 오류:', error);
+            // Unknown interaction 오류는 경고만 표시
+            if (error.code === 10062) {
+                console.warn('[showLegendaryItemDetail] 인터랙션 만료됨');
+            } else {
+                console.error('[showLegendaryItemDetail] 컬렉터 오류:', error);
+            }
         }
     });
 }
 
 // 100회 아이템 목록 표시
 async function showHundredItemsPage(interaction, items, currentPage, itemsPerPage, totalPages) {
+    // interaction이 이미 응답되었는지 확인하고 적절히 처리
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate();
+    }
+    
     const startIdx = currentPage * itemsPerPage;
     const endIdx = startIdx + itemsPerPage;
     const pageItems = items.slice(startIdx, endIdx);

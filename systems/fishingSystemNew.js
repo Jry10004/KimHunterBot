@@ -819,7 +819,7 @@ class FishingManager {
                 },
                 {
                     name: '📏 크기',
-                    value: `${fishResult.size}cm\n${sizeMessages[fishResult.sizeGrade.grade]} ${fishResult.sizeGrade.name}`,
+                    value: `${fishResult.size}cm${fishResult.sizeGrade ? `\n${sizeMessages[fishResult.sizeGrade.grade] || ''} ${fishResult.sizeGrade.name || ''}` : ''}`,
                     inline: true
                 },
                 {
@@ -906,6 +906,9 @@ class FishingManager {
                     .setStyle(ButtonStyle.Secondary)
             )
         ];
+        
+        // 유저 데이터 저장
+        await user.save();
         
         return { success: true, embed, components };
     }
@@ -1384,6 +1387,9 @@ class FishingManager {
         user.gold -= rod.price;
         user.fishing.rod = rodId;
         
+        // 유저 데이터 저장
+        await user.save();
+        
         return { success: true, message: `${rod.name}을(를) 구매했습니다!` };
     }
     
@@ -1401,6 +1407,9 @@ class FishingManager {
         
         user.gold -= totalPrice;
         user.fishing.baits[baitId] = (user.fishing.baits[baitId] || 0) + amount;
+        
+        // 유저 데이터 저장
+        await user.save();
         
         return { success: true, message: `${bait.name} ${amount}개를 구매했습니다!` };
     }

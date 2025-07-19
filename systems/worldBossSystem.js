@@ -1375,6 +1375,9 @@ class WorldBossSystem {
                 );
                 user.rankingStats.boss.lastUpdated = new Date();
                 
+                // 프로필용 보스 킬 카운트도 증가
+                user.bossKills = (user.bossKills || 0) + 1;
+                
                 await user.save();
                 
                 // 골드/경험치 보너스 계산을 위한 정보 수집

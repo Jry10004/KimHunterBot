@@ -155,10 +155,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '얼음 거인',
             emoji: '❄️',
             level: 50,
-            hp: 250000,
+            hp: 150000,      // 250000 -> 150000 (40% 감소)
             requiredLevel: 40,
-            attack: 500,
-            defense: 300,
+            attack: 350,      // 500 -> 350 (30% 감소)
+            defense: 210,     // 300 -> 210 (30% 감소)
             spawnMessage: '차가운 바람이 몰아칩니다!\n거대한 얼음 거인이 깨어났습니다!',
             rewards: {
                 exp: 60000,
@@ -179,10 +179,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '그림자 암살자',
             emoji: '🗡️',
             level: 60,
-            hp: 350000,
+            hp: 210000,      // 350000 -> 210000 (40% 감소)
             requiredLevel: 50,
-            attack: 650,
-            defense: 360,
+            attack: 455,      // 650 -> 455 (30% 감소)
+            defense: 252,     // 360 -> 252 (30% 감소)
             spawnMessage: '그림자가 움직이기 시작합니다...\n치명적인 암살자가 모습을 드러냈습니다!',
             rewards: {
                 exp: 90000,
@@ -203,10 +203,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '바위 골렘',
             emoji: '🪨',
             level: 70,
-            hp: 400000,
+            hp: 200000,      // 400000 -> 200000 (50% 감소)
             requiredLevel: 60,
-            attack: 700,
-            defense: 480,
+            attack: 420,      // 700 -> 420 (40% 감소)
+            defense: 288,     // 480 -> 288 (40% 감소)
             spawnMessage: '대지가 움직이기 시작합니다!\n거대한 바위 골렘이 일어났습니다!',
             rewards: {
                 exp: 120000,
@@ -227,10 +227,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '폭풍의 정령',
             emoji: '⚡',
             level: 80,
-            hp: 600000,
+            hp: 300000,      // 600000 -> 300000 (50% 감소)
             requiredLevel: 70,
-            attack: 850,
-            defense: 420,
+            attack: 510,      // 850 -> 510 (40% 감소)
+            defense: 252,     // 420 -> 252 (40% 감소)
             spawnMessage: '거세게 바람이 불어옵니다!\n폭풍의 정령이 나타났습니다!',
             rewards: {
                 exp: 160000,
@@ -253,10 +253,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '화염 드레이크',
             emoji: '🔥',
             level: 85,
-            hp: 600000,
+            hp: 300000,      // 600000 -> 300000 (50% 감소)
             requiredLevel: 75,
-            attack: 700,
-            defense: 450,
+            attack: 420,      // 700 -> 420 (40% 감소)
+            defense: 270,     // 450 -> 270 (40% 감소)
             spawnMessage: '하늘이 붉게 물들었습니다!\n화염을 뿜으며 드레이크가 날아옵니다!',
             rewards: {
                 exp: 200000,
@@ -277,10 +277,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '심연의 괴물',
             emoji: '👾',
             level: 90,
-            hp: 750000,
+            hp: 300000,      // 750000 -> 300000 (60% 감소)
             requiredLevel: 80,
-            attack: 800,
-            defense: 500,
+            attack: 400,      // 800 -> 400 (50% 감소)
+            defense: 250,     // 500 -> 250 (50% 감소)
             spawnMessage: '깊은 어둠에서 무언가 기어 나옵니다...\n심연의 괴물이 모습을 드러냈습니다!',
             rewards: {
                 exp: 250000,
@@ -301,10 +301,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '고대 골렘',
             emoji: '🗿',
             level: 95,
-            hp: 900000,
+            hp: 360000,      // 900000 -> 360000 (60% 감소)
             requiredLevel: 85,
-            attack: 900,
-            defense: 600,
+            attack: 450,      // 900 -> 450 (50% 감소)
+            defense: 300,     // 600 -> 300 (50% 감소)
             spawnMessage: '오랜 세월이 깨어납니다!\n고대의 수호자가 부활했습니다!',
             rewards: {
                 exp: 300000,
@@ -325,10 +325,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '데몬 로드',
             emoji: '👹',
             level: 100,
-            hp: 1200000,
+            hp: 480000,      // 1200000 -> 480000 (60% 감소)
             requiredLevel: 90,
-            attack: 1000,
-            defense: 650,
+            attack: 500,      // 1000 -> 500 (50% 감소)
+            defense: 325,     // 650 -> 325 (50% 감소)
             spawnMessage: '지옥의 문이 열렸습니다!\n악마의 군주가 강림했습니다!',
             rewards: {
                 exp: 400000,
@@ -349,10 +349,10 @@ const BOSS_SYSTEM_SEASON2 = {
             name: '용의 수호자',
             emoji: '🐲',
             level: 100,
-            hp: 1500000,
+            hp: 600000,      // 1500000 -> 600000 (60% 감소)
             requiredLevel: 95,
-            attack: 1200,
-            defense: 750,
+            attack: 600,      // 1200 -> 600 (50% 감소)
+            defense: 375,     // 750 -> 375 (50% 감소)
             spawnMessage: '고대의 용이 날개를 펼쳤습니다!\n전설의 수호자가 깨어났습니다!',
             rewards: {
                 exp: 500000,

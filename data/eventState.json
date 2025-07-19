@@ -2,42 +2,66 @@
   "puppyNecklaceEvent": {
     "active": true,
     "currentBoss": {
-      "name": "베테랑 도둑 요리",
-      "maxHp": 25063,
-      "currentHp": 25063,
-      "attack": 140,
-      "defense": 70,
-      "tier": "mid",
-      "startTime": "2025-07-18T22:49:25.293Z",
-      "bossNumber": 13,
-      "basedOnPower": 8424,
+      "name": "불멸의 도둑 인프",
+      "maxHp": 42713,
+      "currentHp": 0,
+      "attack": 280,
+      "defense": 140,
+      "tier": "high",
+      "attackedUsers": {},
+      "embedAttackers": {
+        "1396174426793447554": {
+          "356473262844280852": true
+        },
+        "1396175010678440078": {
+          "356473262844280852": true
+        },
+        "1396175059776700527": {
+          "356473262844280852": true
+        }
+      },
+      "currentEmbedId": "1396175059776700527",
+      "lastUpdateTime": 1752944473762,
+      "updateCount": 2,
+      "startTime": "2025-07-19T16:58:42.429Z",
+      "bossNumber": 42,
+      "basedOnPower": 16739,
       "powerThresholds": {
-        "high": 9020,
-        "mid": 5655
-      }
+        "high": 15051,
+        "mid": 6972
+      },
+      "currentMessageId": "1396174426793447554"
     },
     "participants": {
       "424480594542592009": {
-        "attacks": 3,
-        "totalDamage": 8743
+        "attacks": 6,
+        "totalDamage": 13199
       },
-      "590922222361903135": {
-        "attacks": 3,
-        "totalDamage": 8806
+      "1387906374285004983": {
+        "attacks": 12,
+        "totalDamage": 7497
       },
-      "592659577384730645": {
-        "attacks": 2,
-        "totalDamage": 11968
+      "356473262844280852": {
+        "attacks": 113,
+        "totalDamage": 979164
       },
       "364197967114272769": {
-        "attacks": 8,
-        "totalDamage": 2008
+        "attacks": 56,
+        "totalDamage": 169628
+      },
+      "276322011549007872": {
+        "attacks": 4,
+        "totalDamage": 49611
+      },
+      "278153008930619392": {
+        "attacks": 56,
+        "totalDamage": 579559
       }
     },
-    "bossStartTime": 1752878965293,
+    "bossStartTime": 1752944322429,
     "eventChannel": "1386447256408035399",
     "eventEndRequested": false,
-    "bossCount": 13,
-    "totalBossesDefeated": 0
+    "bossCount": 42,
+    "totalBossesDefeated": 38
   }
 }

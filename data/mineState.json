@@ -3,51 +3,23 @@
     [
       "beginner",
       {
-        "openedAt": 1752879372191,
-        "closesAt": 1752965772191,
+        "openedAt": 1752943145479,
+        "closesAt": 1753029545479,
         "event": null,
         "visitors": []
-      }
-    ],
-    [
-      "ancient",
-      {
-        "openedAt": 1752878476222,
-        "closesAt": 1752880276222,
-        "event": null,
-        "visitors": []
-      }
-    ],
-    [
-      "celestial",
-      {
-        "openedAt": 1752879020094,
-        "closesAt": 1752880220094,
-        "event": null,
-        "visitors": []
-      }
-    ],
-    [
-      "legendary",
-      {
-        "openedAt": 1752879552209,
-        "closesAt": 1752880152209,
-        "event": "special",
-        "visitors": [],
-        "closingWarned": true
       }
     ]
   ],
   "lastRandomOpen": [
     [
       "ancient",
-      1752878476222
+      1752944045577
     ],
     [
       "celestial",
-      1752879020094
+      1752939240389
     ]
   ],
   "dailyEntries": [],
-  "savedAt": 1752879670670
+  "savedAt": 1752946743981
 }

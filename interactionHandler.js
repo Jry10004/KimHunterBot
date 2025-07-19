@@ -1250,12 +1250,14 @@ async function handleMainInteraction(interaction) {
             }
             // 공지 바로 발송 버튼 처리
             else if (interaction.isButton() && interaction.customId.startsWith('announcement_send_')) {
-                // 즉시 defer 처리
+                // 즉시 defer 처리 (이미 defer되지 않은 경우에만)
                 try {
-                    await interaction.deferReply({ flags: 64 });
+                    if (!interaction.replied && !interaction.deferred) {
+                        await interaction.deferReply({ flags: 64 });
+                    }
                 } catch (error) {
                     console.error('공지 발송 defer 오류:', error);
-                    return;
+                    // 이미 defer된 경우 계속 진행
                 }
                 
                 const noticeId = interaction.customId.replace('announcement_send_', '');

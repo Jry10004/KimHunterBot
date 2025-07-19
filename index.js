@@ -4717,10 +4717,8 @@ client.once('ready', async () => {
         realStockSync.start();
         console.log('📈 실시간 주식 동기화 시작');
         
-        // 자동 마이그레이션 시스템 초기화
-        const autoMigrationSystem = require('./systems/autoMigration');
-        autoMigrationSystem.initialize(client);
-        console.log('🔄 자동 마이그레이션 시스템 초기화 완료');
+        // 자동 마이그레이션 제거됨 - 필요시 수동으로 스크립트 실행
+        // node scripts/migrateOldItems.js 또는 node scripts/migrateUserItems.js 사용
     } catch (error) {
         console.error('봇 초기화 중 오류 발생:', error);
     }

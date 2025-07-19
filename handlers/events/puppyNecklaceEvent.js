@@ -15,9 +15,12 @@ const eventState = {
     eventChannel: null,
     intervalId: null,
     updateIntervalId: null,
+    statusUpdateId: null, // 상태 업데이트 타이머
     eventEndRequested: false,
     bossCount: 0, // 현재 보스 번호
-    totalBossesDefeated: 0 // 총 처치한 보스 수
+    totalBossesDefeated: 0, // 총 처치한 보스 수
+    maxBossesPerHour: 5, // 시간당 최대 보스 수
+    bossSpawnTimes: [] // 보스 소환 시간 기록
 };
 
 // 안전한 인터벌 정리 함수
@@ -61,7 +64,7 @@ async function saveEventState() {
             puppyNecklaceEvent: {
                 active: eventState.active,
                 currentBoss: bossToSave,
-                participants: Object.fromEntries(eventState.participants),
+                participants: eventState.participants,
                 bossStartTime: eventState.bossStartTime,
                 eventChannel: eventState.eventChannel,
                 eventEndRequested: eventState.eventEndRequested,
@@ -98,7 +101,7 @@ async function loadEventState() {
         // 이벤트 상태 초기화
         eventState.active = false;
         eventState.currentBoss = null;
-        eventState.participants = new Map();
+        eventState.participants = {};
         eventState.bossStartTime = null;
         eventState.eventChannel = null;
         eventState.eventEndRequested = false;
@@ -108,7 +111,7 @@ async function loadEventState() {
         if (data.puppyNecklaceEvent && data.puppyNecklaceEvent.active) {
             eventState.active = data.puppyNecklaceEvent.active;
             eventState.currentBoss = data.puppyNecklaceEvent.currentBoss;
-            eventState.participants = new Map(Object.entries(data.puppyNecklaceEvent.participants || {}));
+            eventState.participants = data.puppyNecklaceEvent.participants || {};
             eventState.bossStartTime = data.puppyNecklaceEvent.bossStartTime;
             eventState.eventChannel = data.puppyNecklaceEvent.eventChannel;
             eventState.eventEndRequested = data.puppyNecklaceEvent.eventEndRequested;
@@ -125,7 +128,7 @@ async function loadEventState() {
         // 오류 발생 시에도 상태 초기화
         eventState.active = false;
         eventState.currentBoss = null;
-        eventState.participants = new Map();
+        eventState.participants = {};
         eventState.bossStartTime = null;
         eventState.eventChannel = null;
         eventState.eventEndRequested = false;
@@ -204,7 +207,7 @@ async function restoreEventTimers(client) {
                 `서버 재시작 후 이벤트가 복원되었습니다!\n\n` +
                 `현재 ${eventState.bossCount}번째 도둑\n` +
                 `총 ${eventState.totalBossesDefeated}명의 도둑 처치\n` +
-                `참여자: ${eventState.participants.size}명`
+                `참여자: ${Object.keys(eventState.participants).length}명`
             )
             .setTimestamp();
         
@@ -319,6 +322,104 @@ async function getRandomUsersByTier(tier, count = 3) {
     return shuffled.slice(0, Math.min(count, tierUsers.length));
 }
 
+// 시간대별 소환 간격 계산 함수
+function getSpawnInterval() {
+    const now = new Date();
+    const hour = now.getHours();
+    
+    // 한국 시간 기준
+    // 0-6시: 자정~새벽 (40-50분)
+    // 6-9시: 아침 (30-40분)
+    // 9-18시: 낮 (20-30분)
+    // 18-22시: 저녁 (10-20분) - 가장 활발
+    // 22-24시: 밤 (30-40분)
+    
+    let minMinutes, maxMinutes;
+    
+    if (hour >= 0 && hour < 6) {
+        // 자정~새벽: 40-50분
+        minMinutes = 40;
+        maxMinutes = 50;
+    } else if (hour >= 6 && hour < 9) {
+        // 아침: 30-40분
+        minMinutes = 30;
+        maxMinutes = 40;
+    } else if (hour >= 9 && hour < 18) {
+        // 낮: 20-30분
+        minMinutes = 20;
+        maxMinutes = 30;
+    } else if (hour >= 18 && hour < 22) {
+        // 저녁 (황금시간대): 10-20분
+        minMinutes = 10;
+        maxMinutes = 20;
+    } else {
+        // 밤: 30-40분
+        minMinutes = 30;
+        maxMinutes = 40;
+    }
+    
+    // 랜덤 간격 생성
+    const interval = Math.floor(Math.random() * (maxMinutes - minMinutes + 1)) + minMinutes;
+    console.log(`[이벤트] 다음 보스 소환 간격: ${interval}분 (${hour}시 기준)`);
+    
+    return interval * 60 * 1000; // 밀리초로 변환
+}
+
+// 보스 상태 업데이트 간격 계산
+function getUpdateInterval() {
+    // 5-10분 사이 랜덤
+    const minutes = Math.floor(Math.random() * 6) + 5;
+    return minutes * 60 * 1000;
+}
+
+// 동적 보스 소환 스케줄러
+function scheduleDynamicBossSpawn(client) {
+    if (eventState.intervalId) {
+        clearInterval(eventState.intervalId);
+    }
+    
+    const scheduleNext = () => {
+        const interval = getSpawnInterval();
+        
+        eventState.intervalId = setTimeout(() => {
+            try {
+                spawnBoss(client);
+                // 다음 소환 예약
+                scheduleNext();
+            } catch (error) {
+                console.error('[PuppyEvent] Dynamic spawn error:', error);
+                // 에러 발생 시에도 다음 소환 예약
+                scheduleNext();
+            }
+        }, interval);
+    };
+    
+    scheduleNext();
+}
+
+// 보스 상태 업데이트 스케줄러
+function scheduleStatusUpdate(client) {
+    const scheduleNext = () => {
+        const interval = getUpdateInterval();
+        
+        setTimeout(() => {
+            try {
+                if (eventState.active && eventState.currentBoss && eventState.currentBoss.currentHp > 0) {
+                    updateBossStatus(client);
+                }
+                // 다음 업데이트 예약
+                scheduleNext();
+            } catch (error) {
+                console.error('[PuppyEvent] Status update error:', error);
+                // 에러 발생 시에도 다음 업데이트 예약
+                scheduleNext();
+            }
+        }, interval);
+    };
+    
+    scheduleNext();
+}
+
 // 보스 생성 함수
 async function generateBoss() {
     eventState.bossCount++; // 보스 번호 증가
@@ -367,6 +468,11 @@ async function generateBoss() {
         attack: spec.attack,
         defense: spec.defense,
         tier: tier,
+        attackedUsers: new Set(), // 이 보스를 공격한 유저들
+        embedAttackers: {}, // embed ID별 공격자 기록
+        currentEmbedId: null, // 현재 embed의 ID
+        lastUpdateTime: Date.now(), // 마지막 업데이트 시간
+        updateCount: 0, // 업데이트 횟수
         startTime: new Date(),
         bossNumber: eventState.bossCount, // 보스 번호 저장
         basedOnPower: randomUser.power, // 기반이 된 유저의 전투력
@@ -381,38 +487,120 @@ async function generateBoss() {
     return boss;
 }
 
+// 보스 상태 업데이트 함수
+async function updateBossStatus(client) {
+    if (!eventState.active || !eventState.currentBoss || eventState.currentBoss.currentHp <= 0) return;
+    
+    const channel = client.channels.cache.get(eventState.eventChannel);
+    if (!channel) return;
+    
+    // HP 바 생성
+    const hpPercentage = Math.floor((eventState.currentBoss.currentHp / eventState.currentBoss.maxHp) * 100);
+    const barLength = 20;
+    const filledLength = Math.floor((hpPercentage / 100) * barLength);
+    const emptyLength = barLength - filledLength;
+    
+    const filledBar = '█'.repeat(filledLength);
+    const emptyBar = '░'.repeat(emptyLength);
+    
+    let color;
+    if (hpPercentage > 60) color = '🟢';
+    else if (hpPercentage > 30) color = '🟡';
+    else color = '🔴';
+    
+    const hpBar = `${color} [${filledBar}${emptyBar}] ${hpPercentage}%`;
+    
+    // 티어별 설명
+    let tierDescription = '';
+    let tierEmoji = '';
+    if (eventState.currentBoss.tier === 'high') {
+        tierDescription = `상급 (전투력 ${eventState.currentBoss.powerThresholds?.high?.toLocaleString() || '50,000'}+)`;
+        tierEmoji = '👹';
+    } else if (eventState.currentBoss.tier === 'mid') {
+        tierDescription = `중급 (전투력 ${eventState.currentBoss.powerThresholds?.mid?.toLocaleString() || '20,000'}~${eventState.currentBoss.powerThresholds?.high?.toLocaleString() || '50,000'})`;
+        tierEmoji = '😈';
+    } else {
+        tierDescription = `하급 (전투력 ${eventState.currentBoss.powerThresholds?.mid?.toLocaleString() || '20,000'} 미만)`;
+        tierEmoji = '👺';
+    }
+    
+    eventState.currentBoss.updateCount = (eventState.currentBoss.updateCount || 0) + 1;
+    
+    const embed = new EmbedBuilder()
+        .setColor(hpPercentage > 60 ? '#00FF00' : hpPercentage > 30 ? '#FFFF00' : '#FF0000')
+        .setTitle(`⚔️ ${eventState.currentBoss.bossNumber}번째 도둑 - 상태 업데이트 #${eventState.currentBoss.updateCount} ⚔️`)
+        .setDescription(`# 🦝 **${eventState.currentBoss.name}**\n\n` +
+            `**도둑이 아직 도망가지 못했습니다!**\n` +
+            `**계속해서 공격하세요!**\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+        .addFields(
+            { 
+                name: `📊 도둑 정보 ${tierEmoji}`, 
+                value: `\`\`\`티어: ${tierDescription}\nHP: ${eventState.currentBoss.currentHp.toLocaleString()}/${eventState.currentBoss.maxHp.toLocaleString()}\n공격력: ${eventState.currentBoss.attack}\n방어력: ${eventState.currentBoss.defense}\`\`\``,
+                inline: true
+            },
+            {
+                name: '🎯 공격 상태',
+                value: `\`\`\`상태 업데이트로\n다시 공격 가능!\n\n총 공격자: ${eventState.currentBoss.attackedUsers ? Object.keys(eventState.currentBoss.attackedUsers).length : 0}명\`\`\``,
+                inline: true
+            },
+            {
+                name: '💔 체력 상태',
+                value: `\`\`\`diff\n${hpBar}\nHP: ${eventState.currentBoss.currentHp.toLocaleString()}/${eventState.currentBoss.maxHp.toLocaleString()}\n\`\`\``,
+                inline: false
+            }
+        )
+        .setFooter({ text: `⏰ 남은 시간: ${Math.max(0, 30 - Math.floor((Date.now() - eventState.bossStartTime) / 60000))}분` })
+        .setTimestamp();
+    
+    const buttons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('necklace_event_attack')
+                .setLabel('⚔️ 공격하기')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('necklace_event_ranking')
+                .setLabel('🏆 랭킹 확인')
+                .setStyle(ButtonStyle.Primary)
+        );
+    
+    const message = await channel.send({ embeds: [embed], components: [buttons] });
+    
+    // 새 embed ID 저장
+    eventState.currentBoss.currentEmbedId = message.id;
+    eventState.currentBoss.lastUpdateTime = Date.now();
+    
+    // 상태 저장
+    await saveEventState();
+}
+
 // 보스 출현 함수
 async function spawnBoss(client) {
     if (!eventState.active || !eventState.eventChannel) return;
     
-    // 이전 보스가 아직 살아있고 30분이 안 지났으면 새 보스 소환 안 함
-    if (eventState.currentBoss && eventState.bossStartTime) {
-        const elapsed = Date.now() - eventState.bossStartTime;
-        if (elapsed < 30 * 60 * 1000 && eventState.currentBoss.currentHp > 0) {
-            console.log('[이벤트] 이전 보스가 아직 살아있습니다. 새 보스 소환을 건너뜁니다.');
-            return;
-        }
-        
-        // 30분이 지났으면 댕댕봇구출자에게 보상 지급
-        if (elapsed >= 30 * 60 * 1000) { // 30분
-            // 댕댕봇구출자 칭호 소유자에게 참여 횟수 +1
-            const rescuers = await User.find({ titles: '댕댕봇 구출자' });
-            for (const rescuer of rescuers) {
-                const userId = rescuer.discordId;
-                if (!eventState.participants.has(userId)) {
-                    eventState.participants.set(userId, { attacks: 0, totalDamage: 0 });
-                }
-                const userData = eventState.participants.get(userId);
-                userData.attacks += 1;
-                
-                console.log(`[이벤트] 댕댕봇구출자 ${rescuer.nickname}에게 참여 횟수 +1 (30분 잔류 보상)`);
-            }
-        }
+    // 시간당 보스 수 제한 체크
+    const now = Date.now();
+    const oneHourAgo = now - (60 * 60 * 1000);
+    
+    // 1시간 이내 소환된 보스 수 계산
+    eventState.bossSpawnTimes = eventState.bossSpawnTimes.filter(time => time > oneHourAgo);
+    
+    if (eventState.bossSpawnTimes.length >= eventState.maxBossesPerHour) {
+        console.log(`[이벤트] 시간당 최대 보스 수(${eventState.maxBossesPerHour})에 도달. 다음 소환 대기.`);
+        return;
+    }
+    
+    // 이전 보스가 아직 살아있으면 새 보스 소환 안 함
+    if (eventState.currentBoss && eventState.currentBoss.currentHp > 0) {
+        console.log('[이벤트] 이전 보스가 아직 살아있습니다. 새 보스 소환을 건너뜁니다.');
+        return;
     }
     
     // 새 보스 생성
     eventState.currentBoss = await generateBoss();
     eventState.bossStartTime = Date.now();
+    eventState.bossSpawnTimes.push(Date.now()); // 소환 시간 기록
     
     console.log(`[이벤트] 새 보스 생성: ${eventState.currentBoss.name}, HP: ${eventState.currentBoss.currentHp}/${eventState.currentBoss.maxHp}, 번호: ${eventState.bossCount}`);
     
@@ -498,7 +686,7 @@ async function spawnBoss(client) {
                 inline: false
             }
         )
-        .setFooter({ text: `⏰ 30분 후 자동으로 도망갑니다!` })
+        .setFooter({ text: `⏰ 1시간 후 자동으로 도망갑니다!` })
         .setTimestamp();
     
     const buttons = new ActionRowBuilder()
@@ -513,17 +701,90 @@ async function spawnBoss(client) {
                 .setStyle(ButtonStyle.Primary)
         );
     
-    await channel.send({ embeds: [embed], components: [buttons] });
+    const message = await channel.send({ embeds: [embed], components: [buttons] });
+    
+    // 현재 embed ID 저장
+    eventState.currentBoss.currentEmbedId = message.id;
+    eventState.currentBoss.currentMessageId = message.id;
     
     // 상태 저장
     await saveEventState();
     
-    // 30분 후 보스 제거
-    setTimeout(() => {
+    // 보스 상태 업데이트 스케줄러 시작 (5-10분마다)
+    scheduleStatusUpdate(client);
+    
+    // 1시간 후 보스 제거 (또는 처치 시)
+    setTimeout(async () => {
         if (eventState.currentBoss && eventState.bossStartTime === eventState.currentBoss.startTime.getTime()) {
-            spawnBoss(client);
+            // 보스가 아직 살아있으면 도망감
+            if (eventState.currentBoss.currentHp > 0) {
+                // 댕댕봇구출자 보너스 처리 (보스 도망 시)
+                const now = new Date();
+                const hour = now.getHours();
+                
+                // 새벽 3시~8시 사이가 아닌 경우에만 작동
+                if (hour < 3 || hour >= 8) {
+                    // ⚠️ 중요: 댕댕봇구출자는 고유 칭호입니다. 함부로 수정하지 마세요!
+                    // 현재 소유자: 선규 (364197967114272769)
+                    // 변경 시 반드시 개발자와 상의 필요
+                    const rescuers = await User.find({ titles: '댕댕봇 구출자' });
+                    for (const rescuer of rescuers) {
+                        const userId = rescuer.discordId;
+                        if (!eventState.participants[userId]) {
+                            eventState.participants[userId] = { attacks: 0, totalDamage: 0 };
+                        }
+                        const userData = eventState.participants[userId];
+                        userData.attacks += 1;
+                        
+                        console.log(`[이벤트] 댕댕봇구출자 ${rescuer.nickname}에게 참여 횟수 +1 (보스 도망 보상)`);
+                        
+                        // 이벤트 채널에 보너스 알림 전송
+                        const bonusEmbed = new EmbedBuilder()
+                            .setColor('#FFD700')
+                            .setTitle('🎁 댕댕봇구출자 특별 보너스!')
+                            .setDescription('보스가 도망가서 댕댕봇구출자에게 특별 보너스가 지급됩니다')
+                            .addFields(
+                                { 
+                                    name: '👑 보너스 대상', 
+                                    value: `${rescuer.nickname} (댕댕봇 구출자)`,
+                                    inline: true
+                                },
+                                { 
+                                    name: '🎁 보상 내용', 
+                                    value: '참여 횟수 +1',
+                                    inline: true
+                                }
+                            )
+                            .setFooter({ text: '※ 새벽 3시~8시에는 이 보너스가 작동하지 않습니다' })
+                            .setTimestamp();
+                        
+                        const channel = client.channels.cache.get(eventState.eventChannel);
+                        if (channel) {
+                            await channel.send({ embeds: [bonusEmbed] });
+                        }
+                    }
+                } else {
+                    console.log('[이벤트] 새벽 3시~8시 사이는 댕댕봇구출자 보너스 비활성화');
+                }
+                
+                const channel = client.channels.cache.get(eventState.eventChannel);
+                if (channel) {
+                    const escapeEmbed = new EmbedBuilder()
+                        .setColor('#FF0000')
+                        .setTitle('🏃 도둑이 도망갔습니다!')
+                        .setDescription(`**${eventState.currentBoss.name}**이(가) 목걸이를 가지고 도망쳤습니다!\n\n` +
+                            `총 ${eventState.currentBoss.attackedUsers ? Object.keys(eventState.currentBoss.attackedUsers).length : 0}명이 공격했지만 처치하지 못했습니다.`)
+                        .setFooter({ text: '다음 도둑을 기다려주세요!' });
+                    
+                    await channel.send({ embeds: [escapeEmbed] });
+                }
+            }
+            
+            // 다음 보스는 동적 스케줄러가 알아서 소환
+            eventState.currentBoss = null;
+            eventState.bossStartTime = null;
         }
-    }, 30 * 60 * 1000);
+    }, 60 * 60 * 1000); // 1시간
 }
 
 // 이벤트 시작
@@ -534,7 +795,7 @@ async function startEvent(client, channelId) {
     
     eventState.active = true;
     eventState.eventChannel = channelId;
-    eventState.participants.clear();
+    eventState.participants = {};
     eventState.eventEndRequested = false;
     eventState.bossCount = 0;
     eventState.totalBossesDefeated = 0;
@@ -543,6 +804,20 @@ async function startEvent(client, channelId) {
     if (!channel) {
         return { success: false, message: '이벤트 채널을 찾을 수 없습니다.' };
     }
+    
+    // 모든 유저의 이벤트 관련 데이터 초기화
+    await User.updateMany(
+        { registered: true },
+        { 
+            $set: { 
+                'puppyEventData.attackCount': 0,
+                'puppyEventData.totalDamage': 0,
+                'puppyEventData.bossesDefeated': 0,
+                'puppyEventData.lastAttackTime': null
+            }
+        }
+    );
+    console.log('[PuppyEvent] 모든 유저의 이벤트 데이터가 초기화되었습니다.');
     
     // 이벤트 시작 안내
     const startEmbed = new EmbedBuilder()
@@ -597,16 +872,11 @@ async function startEvent(client, channelId) {
     // 첫 보스 스폰
     setTimeout(() => spawnBoss(client), 5000);
     
-    // 30분마다 보스 스폰 (중복 방지를 위해 기존 인터벌 제거 확인)
-    if (!eventState.intervalId) {
-        eventState.intervalId = setInterval(() => {
-            try {
-                spawnBoss(client);
-            } catch (error) {
-                console.error('[PuppyEvent] Boss spawn interval error:', error);
-            }
-        }, 30 * 60 * 1000);
-    }
+    // 동적 보스 소환 스케줄러 시작
+    scheduleDynamicBossSpawn(client);
+    
+    // 보스 상태 업데이트 스케줄러 시작 (5-10분마다)
+    scheduleStatusUpdate(client);
     
     // 10분마다 현황 업데이트
     eventState.updateIntervalId = setInterval(() => {
@@ -692,7 +962,7 @@ async function updateEventStatus(client) {
         );
         
         // 현재 보스 공격자 수
-        const attackerCount = eventState.currentBoss.attackedUsers ? eventState.currentBoss.attackedUsers.size : 0;
+        const attackerCount = eventState.currentBoss.attackedUsers ? Object.keys(eventState.currentBoss.attackedUsers).length : 0;
         embed.addFields({
             name: '⚔️ 참여 현황',
             value: `현재 공격자: **${attackerCount}명**`,
@@ -707,12 +977,12 @@ async function updateEventStatus(client) {
     }
     
     // 참여 횟수 랭킹 TOP 5
-    const attackRanking = Array.from(eventState.participants.entries())
+    const attackRanking = Object.entries(eventState.participants)
         .sort((a, b) => b[1].attacks - a[1].attacks)
         .slice(0, 5);
     
     // 누적 딜량 랭킹 TOP 5
-    const damageRanking = Array.from(eventState.participants.entries())
+    const damageRanking = Object.entries(eventState.participants)
         .sort((a, b) => b[1].totalDamage - a[1].totalDamage)
         .slice(0, 5);
     
@@ -753,7 +1023,7 @@ async function updateEventStatus(client) {
     // 전체 통계
     embed.addFields({
         name: '📈 전체 통계',
-        value: `총 참여자: **${eventState.participants.size}명**\n` +
+        value: `총 참여자: **${Object.keys(eventState.participants).length}명**\n` +
                `총 공격 횟수: **${Array.from(eventState.participants.values()).reduce((sum, p) => sum + p.attacks, 0)}회**\n` +
                `총 누적 데미지: **${Array.from(eventState.participants.values()).reduce((sum, p) => sum + p.totalDamage, 0).toLocaleString()}**\n` +
                `처치한 도둑: **${eventState.totalBossesDefeated}명**`,
@@ -787,19 +1057,20 @@ async function attackBoss(interaction) {
     }
     
     const userId = interaction.user.id;
+    const messageId = interaction.message.id;
     
-    // 이번 보스에 이미 공격했는지 확인
-    if (!eventState.currentBoss.attackedUsers) {
-        eventState.currentBoss.attackedUsers = new Set();
+    // embedAttackers 초기화
+    if (!eventState.currentBoss.embedAttackers) {
+        eventState.currentBoss.embedAttackers = {};
     }
     
-    // Set이 아닌 경우 (서버 재시작 후) Set으로 변환
-    if (!(eventState.currentBoss.attackedUsers instanceof Set)) {
-        const attackedUserIds = Object.keys(eventState.currentBoss.attackedUsers || {});
-        eventState.currentBoss.attackedUsers = new Set(attackedUserIds);
+    // 현재 메시지(embed)에 대한 공격자 목록 초기화
+    if (!eventState.currentBoss.embedAttackers[messageId]) {
+        eventState.currentBoss.embedAttackers[messageId] = {};
     }
     
-    if (eventState.currentBoss.attackedUsers.has(userId)) {
+    // 이 embed에서 이미 공격했는지 확인
+    if (eventState.currentBoss.embedAttackers[messageId][userId]) {
         // 이미 공격한 경우 메시지 표시
         const channel = interaction.client.channels.cache.get(eventState.eventChannel);
         if (channel) {
@@ -810,8 +1081,8 @@ async function attackBoss(interaction) {
                     name: attackedUser ? attackedUser.nickname : interaction.user.username,
                     iconURL: interaction.user.displayAvatarURL()
                 })
-                .setDescription(`⛔ **이미 이 도둑을 공격했습니다!**\n다음 도둑을 기다려주세요.`)
-                .setFooter({ text: '한 도둑당 1회만 공격 가능합니다.' });
+                .setDescription(`⛔ **이미 이 상태에서 공격했습니다!**\n보스 상태가 업데이트되면 다시 공격할 수 있습니다.`)
+                .setFooter({ text: '보스 상태 업데이트마다 1회 공격 가능합니다.' });
             
             await channel.send({ embeds: [alreadyAttackedEmbed] });
         }
@@ -833,14 +1104,20 @@ async function attackBoss(interaction) {
     const damage = Math.min(damageResult.totalDamage, eventState.currentBoss.currentHp);
     eventState.currentBoss.currentHp -= damage;
     
-    // 이번 보스 공격자로 등록
-    eventState.currentBoss.attackedUsers.add(userId);
+    // 이번 embed의 공격자로 등록
+    eventState.currentBoss.embedAttackers[messageId][userId] = true;
+    
+    // 전체 보스 공격자로도 등록 (통계용)
+    if (!eventState.currentBoss.attackedUsers) {
+        eventState.currentBoss.attackedUsers = {};
+    }
+    eventState.currentBoss.attackedUsers[userId] = true;
     
     // 참가자 기록 업데이트
-    if (!eventState.participants.has(userId)) {
-        eventState.participants.set(userId, { attacks: 0, totalDamage: 0 });
+    if (!eventState.participants[userId]) {
+        eventState.participants[userId] = { attacks: 0, totalDamage: 0 };
     }
-    const userData = eventState.participants.get(userId);
+    const userData = eventState.participants[userId];
     userData.attacks += 1;
     userData.totalDamage += damage;
     
@@ -1080,6 +1357,10 @@ async function attackBoss(interaction) {
                 )
                 .setThumbnail('https://cdn.discordapp.com/attachments/1291053400540090481/1291446516283723799/defeat.png');
             
+            // 현재 보스 제거
+            eventState.currentBoss = null;
+            eventState.bossStartTime = null;
+            
             // 다음 보스 스폰 예약
             setTimeout(() => spawnBoss(interaction.client), 5000);
         }
@@ -1115,12 +1396,12 @@ async function showRanking(interaction) {
     }
     
     // 참여 횟수 랭킹
-    const attackRanking = Array.from(eventState.participants.entries())
+    const attackRanking = Object.entries(eventState.participants)
         .sort((a, b) => b[1].attacks - a[1].attacks)
         .slice(0, 10);
     
     // 누적 딜량 랭킹
-    const damageRanking = Array.from(eventState.participants.entries())
+    const damageRanking = Object.entries(eventState.participants)
         .sort((a, b) => b[1].totalDamage - a[1].totalDamage)
         .slice(0, 10);
     
@@ -1167,11 +1448,11 @@ async function distributeRewards(client) {
     if (!channel) return;
     
     // 참여 횟수 랭킹
-    const attackRanking = Array.from(eventState.participants.entries())
+    const attackRanking = Object.entries(eventState.participants)
         .sort((a, b) => b[1].attacks - a[1].attacks);
     
     // 누적 딜량 랭킹
-    const damageRanking = Array.from(eventState.participants.entries())
+    const damageRanking = Object.entries(eventState.participants)
         .sort((a, b) => b[1].totalDamage - a[1].totalDamage);
     
     // 아이템 생성 준비
@@ -1260,7 +1541,7 @@ async function distributeRewards(client) {
     clearAllIntervals();
     eventState.active = false;
     eventState.currentBoss = null;
-    eventState.participants.clear();
+    eventState.participants = {};
     eventState.eventChannel = null;
     eventState.bossCount = 0;
     eventState.totalBossesDefeated = 0;
@@ -1299,13 +1580,13 @@ async function getEventDebugInfo() {
         active: eventState.active,
         bossCount: eventState.bossCount,
         totalBossesDefeated: eventState.totalBossesDefeated,
-        participantCount: eventState.participants.size,
+        participantCount: Object.keys(eventState.participants).length,
         currentBoss: eventState.currentBoss ? {
             name: eventState.currentBoss.name,
             tier: eventState.currentBoss.tier,
             hp: `${eventState.currentBoss.currentHp}/${eventState.currentBoss.maxHp}`,
             basedOnPower: eventState.currentBoss.basedOnPower,
-            attackerCount: eventState.currentBoss.attackedUsers?.size || 0
+            attackerCount: Object.keys(eventState.currentBoss.attackedUsers || {}).length
         } : null,
         powerDistribution: {
             totalUsers: distribution.userPowers.length,
