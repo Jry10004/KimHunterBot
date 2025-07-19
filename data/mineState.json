@@ -8,18 +8,38 @@
         "event": null,
         "visitors": []
       }
+    ],
+    [
+      "ancient",
+      {
+        "openedAt": 1752960057926,
+        "closesAt": 1752961857926,
+        "event": null,
+        "visitors": [],
+        "closingWarned": true
+      }
+    ],
+    [
+      "legendary",
+      {
+        "openedAt": 1752960958068,
+        "closesAt": 1752961558068,
+        "event": null,
+        "visitors": [],
+        "closingWarned": true
+      }
     ]
   ],
   "lastRandomOpen": [
     [
       "ancient",
-      1752944045577
+      1752960057926
     ],
     [
       "celestial",
-      1752939240389
+      1752954597111
     ]
   ],
   "dailyEntries": [],
-  "savedAt": 1752947632048
+  "savedAt": 1752961432380
 }

@@ -784,6 +784,11 @@ const productionCommands = [
                 type: 1
             }
         ]
+    },
+    {
+        name: '허수아비',
+        description: '훈련용 허수아비로 데미지를 테스트합니다',
+        type: 1
     }
 ];
 

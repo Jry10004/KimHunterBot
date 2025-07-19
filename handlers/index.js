@@ -440,6 +440,12 @@ async function handleInteraction(interaction) {
         return await handleEventInteraction(interaction);
     }
     
+    // 허수아비 시스템 처리
+    else if (customId.includes('dummy_')) {
+        const { handleDummyInteraction } = require('../systems/dummySystem');
+        return await handleDummyInteraction(interaction);
+    }
+    
     // 베팅 관련 처리
     else if (customId.includes('betting_') || customId.includes('spectator_bet_')) {
         const { handleBettingInteraction } = require('./spectatorBetting');
