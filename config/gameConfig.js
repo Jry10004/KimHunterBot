@@ -14,16 +14,41 @@ module.exports = {
     
     // 게임 기본 설정
     game: {
-        startingGold: 1000,
-        maxLevel: 100,
-        expFormula: (level) => level * 100 + (level - 1) * 50,
+        startingGold: 10000,
+        maxLevel: 300, // 시즌2 확장
+        expFormula: (level) => {
+            if (level <= 100) {
+                // 1-100: 빠른 성장 (2-3일)
+                return (level * 1000 + (level - 1) * 500);
+            } else if (level <= 150) {
+                // 101-150: 초반 (1개월)
+                return Math.floor(80000 * Math.pow(1.018, level - 100));
+            } else if (level <= 200) {
+                // 151-200: 중반 (3개월)  
+                return Math.floor(150000 * Math.pow(1.022, level - 150) * 1.2);
+            } else if (level <= 250) {
+                // 201-250: 후반 (4개월) - 50% 단축
+                return Math.floor(300000 * Math.pow(1.02, level - 200) * 1);
+            } else {
+                // 251-300: 최종 (6개월) - 50% 단축
+                return Math.floor(800000 * Math.pow(1.025, level - 250) * 1.5);
+            }
+        },
         
-        // 일일 제한
+        // 일일 제한 (시즌2 통합 밸런스)
         dailyLimits: {
             work: 10,
             quests: 5,
             pvp: 20,
-            dungeonRuns: 3
+            dungeonRuns: 3,
+            fishing: 5,           // 낚시 제한
+            energyFusion: 20,     // 에너지 융합 제한  
+            energyMining: 20,     // 에너지 채굴 제한
+            exercise: {           // 운동 시간 제한 (분)
+                basic: 120,       // 기본: 2시간
+                premium: 240,     // 프리미엄: 4시간  
+                vip: 360          // VIP: 6시간
+            }
         },
         
         // 쿨다운 (밀리초)
@@ -60,21 +85,21 @@ module.exports = {
             botMatchAfter: 20000  // 20초 후 봇 매칭
         },
         rewards: {
-            win: { gold: 500, exp: 100, rating: 25 },
-            loss: { gold: 100, exp: 50, rating: -20 },
-            draw: { gold: 200, exp: 75, rating: 0 }
+            win: { gold: 5000, exp: 1000, rating: 25 },
+            loss: { gold: 1000, exp: 500, rating: -20 },
+            draw: { gold: 2000, exp: 750, rating: 0 }
         },
         betting: {
             enabled: true,
-            minBet: 100,
-            maxBet: 10000,
+            minBet: 1000,
+            maxBet: 100000,
             taxRate: 0.1 // 10% 수수료
         }
     },
     
     // 던전 설정
     dungeon: {
-        entryFee: 1000,
+        entryFee: 10000,
         maxFloors: 5,
         rewards: {
             floorMultiplier: 1.5,
@@ -95,9 +120,9 @@ module.exports = {
         minParticipants: 2,                // 3명에서 2명으로 변경
         maxParticipants: 20,
         rewards: {
-            participation: { gold: 1000, exp: 200 },
-            mvp: { gold: 5000, exp: 1000 },
-            top3: { gold: 3000, exp: 500 }
+            participation: { gold: 10000, exp: 2000 },
+            mvp: { gold: 50000, exp: 10000 },
+            top3: { gold: 30000, exp: 5000 }
         }
     },
     
@@ -105,9 +130,9 @@ module.exports = {
     miniGames: {
         // 가위바위보
         rps: {
-            entryFee: 100,
+            entryFee: 1000,
             rewards: {
-                vsBot: { win: 500, draw: 100 },
+                vsBot: { win: 5000, draw: 1000 },
                 vsPlayer: { winnerTakeRate: 0.9 }
             },
             ticketRegen: 30 * 60 * 1000, // 30분
@@ -116,13 +141,13 @@ module.exports = {
         
         // 독버섯
         mushroom: {
-            entryFee: 1000,
-            survivalBonus: 500,
+            entryFee: 10000,
+            survivalBonus: 5000,
             maxRounds: 10,
             poisonChance: 0.3,
             rewards: {
-                perRound: 200,
-                completion: 5000
+                perRound: 2000,
+                completion: 50000
             }
         },
         
@@ -188,7 +213,7 @@ module.exports = {
     emblem: {
         types: ['warrior', 'mage', 'archer', 'assassin', 'priest'],
         maxTier: 10,
-        evolutionCost: (tier) => tier * 10000,
+        evolutionCost: (tier) => tier * 100000,
         bonusPerTier: {
             stats: 5,     // 5% 스탯 증가
             exp: 10,      // 10% 경험치 보너스

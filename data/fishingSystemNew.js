@@ -4,59 +4,59 @@ const FISHING_SYSTEM = {
     fishTypes: {
         // 민물고기 (25종)
         freshwater: {
-            '붕어': { minSize: 10, maxSize: 35, megaSize: 50, basePrice: 3000 },
-            '잉어': { minSize: 30, maxSize: 80, megaSize: 120, basePrice: 5000 },
-            '송어': { minSize: 20, maxSize: 50, megaSize: 70, basePrice: 8000 },
-            '메기': { minSize: 20, maxSize: 60, megaSize: 100, basePrice: 6000 },
-            '가물치': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 12000 },
-            '빙어': { minSize: 5, maxSize: 12, megaSize: 15, basePrice: 2000 },
-            '은어': { minSize: 10, maxSize: 25, megaSize: 30, basePrice: 4000 },
-            '피라미': { minSize: 5, maxSize: 15, megaSize: 20, basePrice: 1500 },
-            '누치': { minSize: 15, maxSize: 40, megaSize: 60, basePrice: 3500 },
-            '쏘가리': { minSize: 15, maxSize: 35, megaSize: 50, basePrice: 7000 },
-            '배스': { minSize: 20, maxSize: 50, megaSize: 70, basePrice: 9000 },
-            '블루길': { minSize: 10, maxSize: 25, megaSize: 35, basePrice: 2500 },
-            '향어': { minSize: 30, maxSize: 70, megaSize: 100, basePrice: 6500 },
-            '틸라피아': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 4500 },
-            '무지개송어': { minSize: 25, maxSize: 60, megaSize: 80, basePrice: 10000 },
-            '산천어': { minSize: 15, maxSize: 30, megaSize: 40, basePrice: 8500 },
-            '열목어': { minSize: 20, maxSize: 40, megaSize: 55, basePrice: 9500 },
-            '버들치': { minSize: 5, maxSize: 10, megaSize: 15, basePrice: 1000 },
-            '갈겨니': { minSize: 8, maxSize: 18, megaSize: 25, basePrice: 1800 },
-            '돌고기': { minSize: 10, maxSize: 20, megaSize: 30, basePrice: 2200 },
-            '미꾸리': { minSize: 8, maxSize: 20, megaSize: 25, basePrice: 2800 },
-            '뱀장어': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 15000 },
-            '동자개': { minSize: 10, maxSize: 25, megaSize: 35, basePrice: 3200 },
-            '퉁가리': { minSize: 12, maxSize: 28, megaSize: 40, basePrice: 3800 },
-            '꺽지': { minSize: 10, maxSize: 22, megaSize: 30, basePrice: 4200 }
+            '붕어': { minSize: 10, maxSize: 35, megaSize: 50, basePrice: 3000 },      // 30,000 → 3,000
+            '잉어': { minSize: 30, maxSize: 80, megaSize: 120, basePrice: 5000 },      // 50,000 → 5,000
+            '송어': { minSize: 20, maxSize: 50, megaSize: 70, basePrice: 8000 },      // 80,000 → 8,000
+            '메기': { minSize: 20, maxSize: 60, megaSize: 100, basePrice: 6000 },      // 60,000 → 6,000
+            '가물치': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 12000 },   // 1,200,000 → 12,000
+            '빙어': { minSize: 5, maxSize: 12, megaSize: 15, basePrice: 2000 },       // 20,000 → 2,000
+            '은어': { minSize: 10, maxSize: 25, megaSize: 30, basePrice: 4000 },       // 40,000 → 4,000
+            '피라미': { minSize: 5, maxSize: 15, megaSize: 20, basePrice: 1500 },      // 15,000 → 1,500
+            '누치': { minSize: 15, maxSize: 40, megaSize: 60, basePrice: 3500 },       // 35,000 → 3,500
+            '쏘가리': { minSize: 15, maxSize: 35, megaSize: 50, basePrice: 7000 },      // 70,000 → 7,000
+            '배스': { minSize: 20, maxSize: 50, megaSize: 70, basePrice: 9000 },       // 90,000 → 9,000
+            '블루길': { minSize: 10, maxSize: 25, megaSize: 35, basePrice: 2500 },      // 25,000 → 2,500
+            '향어': { minSize: 30, maxSize: 70, megaSize: 100, basePrice: 6500 },      // 65,000 → 6,500
+            '틸라피아': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 4500 },    // 45,000 → 4,500
+            '무지개송어': { minSize: 25, maxSize: 60, megaSize: 80, basePrice: 10000 },  // 1,000,000 → 10,000
+            '산천어': { minSize: 15, maxSize: 30, megaSize: 40, basePrice: 8500 },      // 85,000 → 8,500
+            '열목어': { minSize: 20, maxSize: 40, megaSize: 55, basePrice: 9500 },      // 95,000 → 9,500
+            '버들치': { minSize: 5, maxSize: 10, megaSize: 15, basePrice: 1000 },       // 10,000 → 1,000
+            '갈겨니': { minSize: 8, maxSize: 18, megaSize: 25, basePrice: 1800 },       // 18,000 → 1,800
+            '돌고기': { minSize: 10, maxSize: 20, megaSize: 30, basePrice: 2200 },      // 22,000 → 2,200
+            '미꾸리': { minSize: 8, maxSize: 20, megaSize: 25, basePrice: 28000 },
+            '뱀장어': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 25000 },
+            '동자개': { minSize: 10, maxSize: 25, megaSize: 35, basePrice: 32000 },
+            '퉁가리': { minSize: 12, maxSize: 28, megaSize: 40, basePrice: 38000 },
+            '꺽지': { minSize: 10, maxSize: 22, megaSize: 30, basePrice: 42000 }
         },
         // 바닷물고기 (25종)
         saltwater: {
-            '고등어': { minSize: 20, maxSize: 40, megaSize: 50, basePrice: 5000 },
-            '갈치': { minSize: 60, maxSize: 120, megaSize: 150, basePrice: 8000 },
-            '조기': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 6000 },
-            '민어': { minSize: 30, maxSize: 80, megaSize: 120, basePrice: 12000 },
-            '농어': { minSize: 40, maxSize: 90, megaSize: 130, basePrice: 14000 },
+            '고등어': { minSize: 20, maxSize: 40, megaSize: 50, basePrice: 15000 },
+            '갈치': { minSize: 60, maxSize: 120, megaSize: 150, basePrice: 18000 },
+            '조기': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 16000 },
+            '민어': { minSize: 30, maxSize: 80, megaSize: 120, basePrice: 12000 },  // 밸런스 조정
+            '농어': { minSize: 40, maxSize: 90, megaSize: 130, basePrice: 14000 },  // 밸런스 조정
             '우럭': { minSize: 20, maxSize: 40, megaSize: 55, basePrice: 7000 },
-            '광어': { minSize: 30, maxSize: 80, megaSize: 100, basePrice: 11000 },
+            '광어': { minSize: 30, maxSize: 80, megaSize: 100, basePrice: 11000 },  // 밸런스 조정
             '도다리': { minSize: 20, maxSize: 40, megaSize: 50, basePrice: 9000 },
             '가자미': { minSize: 15, maxSize: 35, megaSize: 45, basePrice: 6500 },
-            '넙치': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 13000 },
-            '돔': { minSize: 25, maxSize: 50, megaSize: 70, basePrice: 10000 },
-            '숭어': { minSize: 30, maxSize: 60, megaSize: 80, basePrice: 5500 },
-            '전어': { minSize: 10, maxSize: 20, megaSize: 25, basePrice: 3500 },
-            '멸치': { minSize: 3, maxSize: 10, megaSize: 15, basePrice: 1000 },
-            '정어리': { minSize: 8, maxSize: 18, megaSize: 25, basePrice: 2000 },
-            '삼치': { minSize: 50, maxSize: 100, megaSize: 130, basePrice: 9500 },
-            '방어': { minSize: 60, maxSize: 120, megaSize: 150, basePrice: 16000 },
-            '참치': { minSize: 100, maxSize: 250, megaSize: 350, basePrice: 20000 },
-            '가오리': { minSize: 50, maxSize: 150, megaSize: 200, basePrice: 11000 },
-            '상어': { minSize: 150, maxSize: 400, megaSize: 600, basePrice: 25000 },
-            '복어': { minSize: 15, maxSize: 30, megaSize: 40, basePrice: 15000 },
-            '아귀': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 13000 },
-            '대구': { minSize: 40, maxSize: 90, megaSize: 120, basePrice: 8500 },
-            '명태': { minSize: 30, maxSize: 60, megaSize: 80, basePrice: 7500 },
-            '오징어': { minSize: 20, maxSize: 50, megaSize: 80, basePrice: 10000 }
+            '넙치': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 13000 },  // 밸런스 조정
+            '돔': { minSize: 25, maxSize: 50, megaSize: 70, basePrice: 10000 },        // 1,000,000 → 10,000
+            '숭어': { minSize: 30, maxSize: 60, megaSize: 80, basePrice: 5500 },       // 55,000 → 5,500
+            '전어': { minSize: 10, maxSize: 20, megaSize: 25, basePrice: 3500 },       // 35,000 → 3,500
+            '멸치': { minSize: 3, maxSize: 10, megaSize: 15, basePrice: 1000 },        // 10,000 → 1,000
+            '정어리': { minSize: 8, maxSize: 18, megaSize: 25, basePrice: 2000 },       // 20,000 → 2,000
+            '삼치': { minSize: 50, maxSize: 100, megaSize: 130, basePrice: 25000 },
+            '방어': { minSize: 60, maxSize: 120, megaSize: 150, basePrice: 30000 },
+            '참치': { minSize: 100, maxSize: 250, megaSize: 350, basePrice: 35000 },
+            '가오리': { minSize: 50, maxSize: 150, megaSize: 200, basePrice: 28000 },
+            '상어': { minSize: 150, maxSize: 400, megaSize: 600, basePrice: 40000 },
+            '복어': { minSize: 15, maxSize: 30, megaSize: 40, basePrice: 32000 },
+            '아귀': { minSize: 40, maxSize: 100, megaSize: 150, basePrice: 30000 },
+            '대구': { minSize: 40, maxSize: 90, megaSize: 120, basePrice: 24000 },
+            '명태': { minSize: 30, maxSize: 60, megaSize: 80, basePrice: 22000 },
+            '오징어': { minSize: 20, maxSize: 50, megaSize: 80, basePrice: 26000 }
         }
     },
 
@@ -64,16 +64,16 @@ const FISHING_SYSTEM = {
     adjectives: {
         common: {
             positive: {
-                '평범한': { priceBonus: 500, sizeMulti: 1.0 },
-                '작은': { priceBonus: -500, sizeMulti: 0.6 },
-                '귀여운': { priceBonus: 1000, sizeMulti: 0.7 },
-                '둥근': { priceBonus: 800, sizeMulti: 0.9 },
-                '날씬한': { priceBonus: 600, sizeMulti: 0.8 },
-                '통통한': { priceBonus: 700, sizeMulti: 1.2 },
-                '길쭉한': { priceBonus: 400, sizeMulti: 1.1 },
-                '짧은': { priceBonus: -300, sizeMulti: 0.7 },
-                '가벼운': { priceBonus: -200, sizeMulti: 0.8 },
-                '부드러운': { priceBonus: 900, sizeMulti: 1.0 }
+                '평범한': { priceBonus: 5000, sizeMulti: 1.0 },      // 5,000,000 → 5,000
+                '작은': { priceBonus: -5000, sizeMulti: 0.6 },       // -50,000 → -5,000
+                '귀여운': { priceBonus: 1000, sizeMulti: 0.7 },     // 1,000,000 → 1,000
+                '둥근': { priceBonus: 8000, sizeMulti: 0.9 },       // 8,000,000 → 8,000
+                '날씬한': { priceBonus: 6000, sizeMulti: 0.8 },     // 6,000,000 → 6,000
+                '통통한': { priceBonus: 7000, sizeMulti: 1.2 },     // 7,000,000 → 7,000
+                '길쭉한': { priceBonus: 4000, sizeMulti: 1.1 },     // 4,000,000 → 4,000
+                '짧은': { priceBonus: -3000, sizeMulti: 0.7 },       // -30,000 → -3,000
+                '가벼운': { priceBonus: -2000, sizeMulti: 0.8 },     // -20,000 → -2,000
+                '부드러운': { priceBonus: 9000, sizeMulti: 1.0 }    // 9,000,000 → 9,000
             },
             negative: {
                 '못생긴': { priceBonus: -1000, sizeMulti: 1.0 },
@@ -220,42 +220,42 @@ const FISHING_SYSTEM = {
         common: {
             name: '일반',
             color: '#95a5a6',
-            basePrice: { min: 6500, max: 10400 },
+            basePrice: { min: 1000, max: 3000 },
             weight: 60,
             emoji: '⬜'
         },
         uncommon: {
             name: '고급',
             color: '#3498db',
-            basePrice: { min: 27500, max: 44000 },
+            basePrice: { min: 3000, max: 8000 },
             weight: 25,
             emoji: '🔵'
         },
         rare: {
             name: '레어',
             color: '#9b59b6',
-            basePrice: { min: 110000, max: 176000 },
+            basePrice: { min: 8000, max: 15000 },
             weight: 10,
             emoji: '🟣'
         },
         epic: {
             name: '에픽',
             color: '#e74c3c',
-            basePrice: { min: 575000, max: 920000 },
+            basePrice: { min: 15000, max: 30000 },
             weight: 4,
             emoji: '🔴'
         },
         legendary: {
             name: '레전드리',
             color: '#f39c12',
-            basePrice: { min: 2875000, max: 4600000 },
+            basePrice: { min: 30000, max: 45000 },
             weight: 0.9,
             emoji: '🟠'
         },
         mythic: {
             name: '신화',
             color: '#ff00ff',
-            basePrice: { min: 11000000, max: 17600000 },
+            basePrice: { min: 45000, max: 50000 },
             weight: 0.1,
             emoji: '✨'
         }
@@ -461,34 +461,34 @@ const FISHING_SYSTEM = {
     // 특수 물고기 (특별 낚시터 전용) - 크기와 가격 정보 포함
     specialFishTypes: {
         // 공허의 바다 물고기
-        '시공어': { minSize: 500, maxSize: 2000, megaSize: 3000, basePrice: 100000 },
-        '차원어': { minSize: 600, maxSize: 2500, megaSize: 4000, basePrice: 120000 },
-        '무한어': { minSize: 800, maxSize: 3000, megaSize: 5000, basePrice: 150000 },
-        '영겁어': { minSize: 700, maxSize: 2800, megaSize: 4500, basePrice: 140000 },
-        '혼돈어': { minSize: 900, maxSize: 3500, megaSize: 6000, basePrice: 180000 },
-        '질서어': { minSize: 750, maxSize: 3000, megaSize: 5000, basePrice: 160000 },
-        '창조어': { minSize: 1000, maxSize: 4000, megaSize: 7000, basePrice: 200000 },
-        '파멸어': { minSize: 950, maxSize: 3800, megaSize: 6500, basePrice: 190000 },
-        '윤회어': { minSize: 850, maxSize: 3200, megaSize: 5500, basePrice: 170000 },
-        '인과어': { minSize: 800, maxSize: 3000, megaSize: 5000, basePrice: 165000 },
+        '시공어': { minSize: 500, maxSize: 2000, megaSize: 3000, basePrice: 50000 },
+        '차원어': { minSize: 600, maxSize: 2500, megaSize: 4000, basePrice: 50000 },
+        '무한어': { minSize: 800, maxSize: 3000, megaSize: 5000, basePrice: 50000 }
+        '영겁어': { minSize: 700, maxSize: 2800, megaSize: 4500, basePrice: 50000 },
+        '혼돈어': { minSize: 900, maxSize: 3500, megaSize: 6000, basePrice: 50000 },
+        '질서어': { minSize: 750, maxSize: 3000, megaSize: 5000, basePrice: 50000 },
+        '창조어': { minSize: 1000, maxSize: 4000, megaSize: 7000, basePrice: 50000 },
+        '파멸어': { minSize: 950, maxSize: 3800, megaSize: 6500, basePrice: 50000 },
+        '윤회어': { minSize: 850, maxSize: 3200, megaSize: 5500, basePrice: 50000 },
+        '인과어': { minSize: 800, maxSize: 3000, megaSize: 5000, basePrice: 50000 },
         // 용의 바다 특수 물고기
-        '용왕어': { minSize: 1000, maxSize: 5000, megaSize: 8000, basePrice: 250000 },
-        '드래곤피시': { minSize: 800, maxSize: 4000, megaSize: 6000, basePrice: 220000 },
-        '화룡어': { minSize: 700, maxSize: 3500, megaSize: 5500, basePrice: 200000 },
-        '빙룡어': { minSize: 750, maxSize: 3800, megaSize: 6000, basePrice: 210000 },
-        '암룡어': { minSize: 900, maxSize: 4500, megaSize: 7000, basePrice: 230000 },
+        '용왕어': { minSize: 1000, maxSize: 5000, megaSize: 8000, basePrice: 50000 },
+        '드래곤피시': { minSize: 800, maxSize: 4000, megaSize: 6000, basePrice: 50000 },
+        '화룡어': { minSize: 700, maxSize: 3500, megaSize: 5500, basePrice: 50000 },
+        '빙룡어': { minSize: 750, maxSize: 3800, megaSize: 6000, basePrice: 50000 },
+        '암룡어': { minSize: 900, maxSize: 4500, megaSize: 7000, basePrice: 50000 },
         // 천상의 호수 특수 물고기
         '별빛송어': { minSize: 100, maxSize: 500, megaSize: 800, basePrice: 80000 },
         '은하잉어': { minSize: 150, maxSize: 600, megaSize: 1000, basePrice: 90000 },
-        '천사어': { minSize: 200, maxSize: 800, megaSize: 1200, basePrice: 110000 },
-        '신성어': { minSize: 250, maxSize: 1000, megaSize: 1500, basePrice: 130000 },
-        '성좌어': { minSize: 300, maxSize: 1200, megaSize: 2000, basePrice: 150000 },
+        '천사어': { minSize: 200, maxSize: 800, megaSize: 1200, basePrice: 50000 },
+        '신성어': { minSize: 250, maxSize: 1000, megaSize: 1500, basePrice: 50000 },
+        '성좌어': { minSize: 300, maxSize: 1200, megaSize: 2000, basePrice: 50000 },
         // 영원의 심해 특수 물고기
-        '영원어': { minSize: 1500, maxSize: 6000, megaSize: 10000, basePrice: 300000 },
-        '불멸어': { minSize: 1200, maxSize: 5000, megaSize: 8000, basePrice: 280000 },
-        '태초어': { minSize: 2000, maxSize: 8000, megaSize: 12000, basePrice: 350000 },
-        '종말어': { minSize: 1800, maxSize: 7000, megaSize: 11000, basePrice: 320000 },
-        '순환어': { minSize: 1600, maxSize: 6500, megaSize: 10000, basePrice: 310000 }
+        '영원어': { minSize: 1500, maxSize: 6000, megaSize: 10000, basePrice: 50000 },
+        '불멸어': { minSize: 1200, maxSize: 5000, megaSize: 8000, basePrice: 50000 },
+        '태초어': { minSize: 2000, maxSize: 8000, megaSize: 12000, basePrice: 50000 },
+        '종말어': { minSize: 1800, maxSize: 7000, megaSize: 11000, basePrice: 50000 },
+        '순환어': { minSize: 1600, maxSize: 6500, megaSize: 10000, basePrice: 50000 }
     },
 
     // 낚싯대 등급
@@ -507,7 +507,7 @@ const FISHING_SYSTEM = {
             description: '가볍고 유연한 낚싯대',
             sizeBonus: 1.1,
             rarityBonus: 1.05,
-            price: 1000000
+            price: 50000  // 시즌2: 50K로 조정
         },
         steel: {
             id: 'steel',
@@ -515,7 +515,7 @@ const FISHING_SYSTEM = {
             description: '튼튼한 금속 낚싯대',
             sizeBonus: 1.2,
             rarityBonus: 1.1,
-            price: 5000000
+            price: 100000  // 시즌2: 100K로 조정
         },
         titanium: {
             id: 'titanium',
@@ -523,7 +523,7 @@ const FISHING_SYSTEM = {
             description: '가볍고 강한 티타늄 합금 낚싯대',
             sizeBonus: 1.25,
             rarityBonus: 1.12,
-            price: 10000000
+            price: 200000  // 시즌2: 200K로 조정
         },
         carbon: {
             id: 'carbon',
@@ -531,7 +531,7 @@ const FISHING_SYSTEM = {
             description: '최신 기술의 낚싯대',
             sizeBonus: 1.3,
             rarityBonus: 1.15,
-            price: 20000000
+            price: 400000  // 시즌2: 400K로 조정
         },
         mithril: {
             id: 'mithril',
@@ -539,7 +539,7 @@ const FISHING_SYSTEM = {
             description: '마법의 금속으로 만든 낚싯대',
             sizeBonus: 1.5,
             rarityBonus: 1.3,
-            price: 50000000
+            price: 750000  // 시즌2: 750K로 조정
         },
         dragon: {
             id: 'dragon',
@@ -547,7 +547,7 @@ const FISHING_SYSTEM = {
             description: '용의 뼈로 만든 전설의 낚싯대',
             sizeBonus: 1.8,
             rarityBonus: 1.5,
-            price: 100000000
+            price: 1000000  // 시즌2: 1M로 조정 (전설 낚싯대)
         },
         divine: {
             id: 'divine',
@@ -555,7 +555,7 @@ const FISHING_SYSTEM = {
             description: '신이 사용했다는 낚슯대',
             sizeBonus: 2.5,
             rarityBonus: 2.0,
-            price: 500000000
+            price: 2000000  // 시즌2: 2M로 조정 (최고급 낚싯대)
         }
     },
 
@@ -624,7 +624,8 @@ const FISHING_SYSTEM = {
         maxInventory: 100,
         fishingCooldown: 5000,
         baitConsumption: true,
-        autoSellCommon: false
+        autoSellCommon: false,
+        dailyFishLimit: 5  // 시즌2 밸런스: 일일 낚시 제한
     },
 
 };

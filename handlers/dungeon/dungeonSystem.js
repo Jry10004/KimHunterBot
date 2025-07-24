@@ -21,21 +21,22 @@ const {
     calculateDungeonScore,
     MONSTER_AI_PATTERNS 
 } = require('../../data/dungeonEnhanced');
-const ARTIFACT_SYSTEM = require('../../data/artifactSystem');
+// const ARTIFACT_SYSTEM = require('../../data/artifactSystem'); // 삭제됨
+const artifactData = require('../../data/artifactExploration');
 const { MAX_LEVEL, canGainExperience, addExperienceSafely } = require('../../utils/levelCapHelper');
 
 class AutoDungeonSystem {
     constructor() {
         this.activeDungeons = new Map();
         this.dungeonMonsters = this.initializeMonsters();
-        this.floors = 50;
+        this.floors = 300;
     }
 
     // 몬스터 초기화 (기존과 동일)
     initializeMonsters() {
         const monsters = new Map();
         
-        for (let floor = 1; floor <= 50; floor++) {
+        for (let floor = 1; floor <= 300; floor++) {
             const difficulty = Math.ceil(floor / 10);
             const baseStats = this.getBaseStatsForFloor(floor);
             
@@ -53,24 +54,56 @@ class AutoDungeonSystem {
 
     getBaseStatsForFloor(floor) {
         // 전투력 균형 조정 - 플레이어 진행도에 맞춰 점진적 증가
-        const baseAttack = 20 + (floor * 8); // 더 낮은 시작점
-        const baseDefense = 15 + (floor * 6);
-        const baseHP = 200 + (floor * 60);
+        // 1-50층: 초급 난이도 (일반 유저)
+        // 51-100층: 중급 난이도 (레전더리 유저)
+        // 101-150층: 고급 난이도 (레전더리 강화 유저)
+        // 151-200층: 최고급 난이도 (앱솔루트 유저)
+        // 201-300층: 초월 난이도 (앱솔루트 +20 이상)
+        
+        let baseAttack, baseDefense, baseHP;
+        
+        if (floor <= 50) {
+            // 초급 구간
+            baseAttack = 20 + (floor * 8);
+            baseDefense = 15 + (floor * 6);
+            baseHP = 200 + (floor * 60);
+        } else if (floor <= 100) {
+            // 중급 구간 - 급격한 상승
+            baseAttack = 420 + ((floor - 50) * 20);
+            baseDefense = 315 + ((floor - 50) * 15);
+            baseHP = 3200 + ((floor - 50) * 150);
+        } else if (floor <= 150) {
+            // 고급 구간
+            baseAttack = 1420 + ((floor - 100) * 40);
+            baseDefense = 1065 + ((floor - 100) * 30);
+            baseHP = 10700 + ((floor - 100) * 300);
+        } else if (floor <= 200) {
+            // 최고급 구간 - 앱솔루트 유저 대상
+            baseAttack = 3420 + ((floor - 150) * 80);
+            baseDefense = 2565 + ((floor - 150) * 60);
+            baseHP = 25700 + ((floor - 150) * 600);
+        } else {
+            // 초월 구간 - 앱솔루트 +20 이상 대상
+            baseAttack = 7420 + ((floor - 200) * 160);
+            baseDefense = 5565 + ((floor - 200) * 120);
+            baseHP = 55700 + ((floor - 200) * 1200);
+        }
         
         return {
             attack: baseAttack,
             defense: baseDefense,
             maxHp: baseHP,
             currentHp: baseHP,
-            criticalRate: Math.min(3 + Math.floor(floor / 3), 20),
-            accuracy: Math.min(60 + Math.floor(floor * 0.8), 85),
-            evasion: Math.min(3 + Math.floor(floor / 4), 15),
-            lifesteal: Math.min(Math.floor(floor / 15), 8)
+            criticalRate: Math.min(3 + Math.floor(floor / 3), 50), // 최대 50%
+            accuracy: Math.min(60 + Math.floor(floor * 0.8), 95), // 최대 95%
+            evasion: Math.min(3 + Math.floor(floor / 4), 30), // 최대 30%
+            lifesteal: Math.min(Math.floor(floor / 15), 20) // 최대 20%
         };
     }
 
     getMonsterName(floor) {
         const names = {
+            // 1-50층: 초급 구간
             1: '나약한 슬라임',
             5: '흉포한 늑대',
             10: '🔥 화염의 정령왕',
@@ -81,32 +114,170 @@ class AutoDungeonSystem {
             35: '혼돈의 키메라',
             40: '👹 지옥의 수문장',
             45: '고대의 티탄',
-            50: '🌟 최종 보스: 어둠의 황제'
+            50: '🌟 제1장 보스: 어둠의 황제',
+            
+            // 51-100층: 중급 구간
+            55: '마계의 전령',
+            60: '🔥 용암의 지배자',
+            65: '폭풍의 정령',
+            70: '⚡ 천둥신의 사도',
+            75: '빙하의 여왕',
+            80: '💀 언데드 군단장',
+            85: '악몽의 키메라',
+            90: '👹 심연의 감시자',
+            95: '태고의 거인',
+            100: '🌟 제2장 보스: 혼돈의 대군주',
+            
+            // 101-150층: 고급 구간
+            105: '지옥불 악마',
+            110: '🔥 태양의 화신',
+            115: '폭풍의 제왕',
+            120: '⚡ 뇌신의 화신',
+            125: '영원한 겨울의 군주',
+            130: '💀 죽음의 화신',
+            135: '차원의 파괴자',
+            140: '👹 지옥의 대공',
+            145: '신들의 심판자',
+            150: '🌟 제3장 보스: 종말의 예언자',
+            
+            // 151-200층: 최고급 구간
+            155: '천계의 배신자',
+            160: '🔥 불멸의 피닉스',
+            165: '시공의 지배자',
+            170: '⚡ 번개의 신',
+            175: '절대영도의 지배자',
+            180: '💀 영혼의 수확자',
+            185: '무한의 파멸자',
+            190: '👹 마왕의 화신',
+            195: '운명의 조작자',
+            200: '🌟 제4장 보스: 절대자의 그림자',
+            
+            // 201-250층: 초월 구간
+            205: '신을 죽인 자',
+            210: '🔥 창조의 불꽃',
+            215: '우주의 파괴자',
+            220: '⚡ 시간의 지배자',
+            225: '차원의 절대자',
+            230: '💀 만물의 종말',
+            235: '혼돈의 창조자',
+            240: '👹 심연의 절대자',
+            245: '존재의 소거자',
+            250: '🌟 제5장 보스: 무한의 절대자',
+            
+            // 251-300층: 신화 구간
+            255: '태초의 존재',
+            260: '🔥 원초의 화염',
+            265: '창조 이전의 자',
+            270: '⚡ 모든 것의 시작',
+            275: '끝없는 심연',
+            280: '💀 절대 무의 화신',
+            285: '모든 차원의 지배자',
+            290: '👹 최초이자 최후',
+            295: '존재와 무의 경계',
+            300: '🌟 최종장 보스: 절대신 크로노스'
         };
         
         return names[floor] || `${floor}층 몬스터`;
     }
 
     getMonsterEmoji(floor) {
-        const emojis = ['👾', '🐺', '🔥', '⚔️', '⚡', '❄️', '💀', '🦴', '👹', '🐉', '🌟'];
-        return emojis[Math.floor(floor / 5)] || '👾';
+        if (floor <= 50) {
+            const emojis = ['👾', '🐺', '🔥', '⚔️', '⚡', '❄️', '💀', '🦴', '👹', '🐉', '🌟'];
+            return emojis[Math.floor(floor / 5)] || '👾';
+        } else if (floor <= 100) {
+            const emojis = ['🔥', '⚡', '❄️', '💀', '👹', '🐉', '🌌', '⭐', '💫', '🌟'];
+            return emojis[Math.floor((floor - 50) / 5)] || '🐉';
+        } else if (floor <= 150) {
+            const emojis = ['🌋', '⚡', '🌊', '💀', '🌑', '🔮', '🌌', '✨', '💥', '🌟'];
+            return emojis[Math.floor((floor - 100) / 5)] || '🌌';
+        } else if (floor <= 200) {
+            const emojis = ['🔴', '🟣', '🔵', '⚫', '⚪', '🟡', '🟠', '🔺', '🔻', '🌟'];
+            return emojis[Math.floor((floor - 150) / 5)] || '🔴';
+        } else if (floor <= 250) {
+            const emojis = ['♾️', '🌀', '🎆', '🌈', '🔯', '⬛', '🟦', '🟪', '🟥', '🌟'];
+            return emojis[Math.floor((floor - 200) / 5)] || '♾️';
+        } else {
+            const emojis = ['🌌', '🌑', '🔮', '💠', '🔷', '🔶', '💎', '👁️', '🗿', '👑'];
+            return emojis[Math.floor((floor - 250) / 5)] || '👑';
+        }
     }
 
     getBossAbility(floor) {
         const abilities = {
+            // 1-50층 보스
             10: { name: '화염 폭발', damage: 1.5, effect: 'burn' },
             20: { name: '번개 강타', damage: 2.0, effect: 'stun' },
             30: { name: '죽음의 저주', damage: 1.8, effect: 'curse' },
             40: { name: '지옥불', damage: 2.5, effect: 'hellfire' },
-            50: { name: '절대 파멸', damage: 3.0, effect: 'destruction' }
+            50: { name: '절대 파멸', damage: 3.0, effect: 'destruction' },
+            
+            // 51-100층 보스
+            60: { name: '용암 쓰나미', damage: 3.5, effect: 'melt' },
+            70: { name: '천둥의 심판', damage: 4.0, effect: 'paralyze' },
+            80: { name: '언데드 군단 소환', damage: 3.8, effect: 'undead_army' },
+            90: { name: '심연의 포효', damage: 4.5, effect: 'fear' },
+            100: { name: '혼돈의 파동', damage: 5.0, effect: 'chaos' },
+            
+            // 101-150층 보스
+            110: { name: '태양 폭발', damage: 5.5, effect: 'solar_flare' },
+            120: { name: '뇌신의 분노', damage: 6.0, effect: 'divine_wrath' },
+            130: { name: '영혼 강탈', damage: 5.8, effect: 'soul_steal' },
+            140: { name: '지옥의 문', damage: 6.5, effect: 'hell_gate' },
+            150: { name: '종말의 나팔', damage: 7.0, effect: 'apocalypse' },
+            
+            // 151-200층 보스
+            160: { name: '불사조의 부활', damage: 7.5, effect: 'phoenix_rebirth' },
+            170: { name: '번개 신의 강림', damage: 8.0, effect: 'thunder_god' },
+            180: { name: '영혼 수확', damage: 7.8, effect: 'soul_harvest' },
+            190: { name: '마왕의 각성', damage: 8.5, effect: 'demon_lord' },
+            200: { name: '절대자의 심판', damage: 9.0, effect: 'absolute_judgment' },
+            
+            // 201-250층 보스
+            210: { name: '창조의 역전', damage: 9.5, effect: 'creation_reverse' },
+            220: { name: '시간 정지', damage: 10.0, effect: 'time_stop' },
+            230: { name: '만물 소거', damage: 9.8, effect: 'existence_erase' },
+            240: { name: '무한 심연', damage: 10.5, effect: 'infinite_abyss' },
+            250: { name: '절대 무한', damage: 11.0, effect: 'absolute_infinity' },
+            
+            // 251-300층 보스
+            260: { name: '원초의 불꽃', damage: 11.5, effect: 'primordial_flame' },
+            270: { name: '태초의 빅뱅', damage: 12.0, effect: 'big_bang' },
+            280: { name: '절대 무의 구현', damage: 11.8, effect: 'absolute_void' },
+            290: { name: '존재의 역설', damage: 12.5, effect: 'paradox' },
+            300: { name: '크로노스의 종언', damage: 15.0, effect: 'chronos_end' }
         };
         
         return abilities[floor] || null;
     }
 
     getFloorRewards(floor) {
-        const baseGold = 5000 * floor;  // 100 -> 5000 (50x increase)
-        const baseExp = 500 * floor;    // 50 -> 500 (10x increase)
+        let baseGold, baseExp;
+        
+        if (floor <= 50) {
+            // 초급 구간 (90% 감소)
+            baseGold = Math.floor((1000 + (floor * 500)) * 0.15);
+            baseExp = Math.floor((500 + (floor * 100)) * 0.15);
+        } else if (floor <= 100) {
+            // 중급 구간 (90% 감소)
+            baseGold = Math.floor((39000 + ((floor - 50) * 1000)) * 0.15);
+            baseExp = Math.floor((8250 + ((floor - 50) * 200)) * 0.15);
+        } else if (floor <= 150) {
+            // 고급 구간 (90% 감소)
+            baseGold = Math.floor((114000 + ((floor - 100) * 2000)) * 0.15);
+            baseExp = Math.floor((23250 + ((floor - 100) * 400)) * 0.15);
+        } else if (floor <= 200) {
+            // 최고급 구간 (90% 감소)
+            baseGold = Math.floor((264000 + ((floor - 150) * 4000)) * 0.15);
+            baseExp = Math.floor((53250 + ((floor - 150) * 800)) * 0.15);
+        } else if (floor <= 250) {
+            // 초월 구간 (90% 감소)
+            baseGold = Math.floor((564000 + ((floor - 200) * 8000)) * 0.15);
+            baseExp = Math.floor((113250 + ((floor - 200) * 1600)) * 0.15);
+        } else {
+            // 신화 구간 (90% 감소)
+            baseGold = Math.floor((1164000 + ((floor - 250) * 16000)) * 0.15);
+            baseExp = Math.floor((233250 + ((floor - 250) * 3200)) * 0.15);
+        }
         
         const rewards = {
             gold: baseGold + Math.floor(Math.random() * baseGold),
@@ -133,6 +304,17 @@ class AutoDungeonSystem {
             }
         }
         
+        // 50층마다 특별 보상
+        if (floor % 50 === 0) {
+            rewards.gold *= 2;  // 추가 2배
+            rewards.exp *= 2;   // 추가 2배
+            // 레전더리 유물 확정
+            const legendaryArtifact = this.getBossArtifact(floor);
+            if (legendaryArtifact) {
+                rewards.items.push(legendaryArtifact);
+            }
+        }
+        
         return rewards;
     }
     
@@ -142,7 +324,32 @@ class AutoDungeonSystem {
         const rarityRoll = Math.random() * 100;
         let rarity = 'common';
         
-        if (floor >= 40) {
+        if (floor >= 250) {
+            // 신화 구간 - 레전더리 확률 매우 높음
+            if (rarityRoll < 30) rarity = 'legendary';
+            else if (rarityRoll < 60) rarity = 'epic';
+            else if (rarityRoll < 90) rarity = 'rare';
+        } else if (floor >= 200) {
+            // 초월 구간
+            if (rarityRoll < 20) rarity = 'legendary';
+            else if (rarityRoll < 50) rarity = 'epic';
+            else if (rarityRoll < 85) rarity = 'rare';
+        } else if (floor >= 150) {
+            // 최고급 구간
+            if (rarityRoll < 15) rarity = 'legendary';
+            else if (rarityRoll < 40) rarity = 'epic';
+            else if (rarityRoll < 80) rarity = 'rare';
+        } else if (floor >= 100) {
+            // 고급 구간
+            if (rarityRoll < 10) rarity = 'legendary';
+            else if (rarityRoll < 30) rarity = 'epic';
+            else if (rarityRoll < 70) rarity = 'rare';
+        } else if (floor >= 50) {
+            // 중급 구간
+            if (rarityRoll < 5) rarity = 'legendary';
+            else if (rarityRoll < 20) rarity = 'epic';
+            else if (rarityRoll < 60) rarity = 'rare';
+        } else if (floor >= 40) {
             if (rarityRoll < 5) rarity = 'legendary';
             else if (rarityRoll < 20) rarity = 'epic';
             else if (rarityRoll < 50) rarity = 'rare';
@@ -157,38 +364,46 @@ class AutoDungeonSystem {
             if (rarityRoll < 15) rarity = 'rare';
         }
         
-        const artifactPool = ARTIFACT_SYSTEM.artifacts[rarity];
+        const artifactPool = artifactData.items[rarity];
         if (!artifactPool || artifactPool.length === 0) return null;
         
-        const artifact = artifactPool[Math.floor(Math.random() * artifactPool.length)];
-        const value = Math.floor(Math.random() * (artifact.value[1] - artifact.value[0] + 1)) + artifact.value[0];
+        const itemName = artifactPool[Math.floor(Math.random() * artifactPool.length)];
+        const rarityData = artifactData.rarities[rarity];
+        const adjective = artifactData.adjectives[rarity][Math.floor(Math.random() * artifactData.adjectives[rarity].length)];
+        const prefix = artifactData.prefixes[rarity][Math.floor(Math.random() * artifactData.prefixes[rarity].length)];
+        
+        const value = Math.floor(rarityData.basePrice * (0.8 + Math.random() * 0.4));
         
         return {
             type: 'artifact',
-            name: artifact.name,
-            emoji: artifact.emoji,
+            name: `${adjective} ${prefix} ${itemName}`,
+            emoji: '🏺',
             rarity: rarity,
             value: value,
-            description: artifact.description,
+            description: `${rarityData.name} 등급의 유물`,
             quantity: 1
         };
     }
     
     // 보스 특별 유물
     getBossArtifact(floor) {
-        if (floor === 50) {
-            // 50층 최종 보스는 레전더리 확정
-            const legendaryArtifacts = ARTIFACT_SYSTEM.artifacts.legendary;
-            const artifact = legendaryArtifacts[Math.floor(Math.random() * legendaryArtifacts.length)];
-            const value = Math.floor(Math.random() * (artifact.value[1] - artifact.value[0] + 1)) + artifact.value[0];
+        // 50층마다 레전더리 확정
+        if (floor % 50 === 0) {
+            const legendaryArtifacts = artifactData.items.legendary;
+            const itemName = legendaryArtifacts[Math.floor(Math.random() * legendaryArtifacts.length)];
+            const rarityData = artifactData.rarities.legendary;
+            const adjective = artifactData.adjectives.legendary[Math.floor(Math.random() * artifactData.adjectives.legendary.length)];
+            const prefix = artifactData.prefixes.legendary[Math.floor(Math.random() * artifactData.prefixes.legendary.length)];
+            
+            const value = Math.floor(rarityData.basePrice * (0.8 + Math.random() * 0.4));
             
             return {
                 type: 'artifact',
-                name: artifact.name,
-                emoji: artifact.emoji,
+                name: `${adjective} ${prefix} ${itemName}`,
+                emoji: '🏺',
                 rarity: 'legendary',
                 value: value,
-                description: artifact.description,
+                description: `${rarityData.name} 등급의 유물`,
                 quantity: 1
             };
         }
@@ -335,8 +550,8 @@ class AutoDungeonSystem {
         const maxHp = playerStats.hp;
         let killStreak = 0;
 
-        // 각 층 자동 진행 (최대 50층까지)
-        for (let floor = startFloor; floor <= 50; floor++) {
+        // 각 층 자동 진행 (최대 300층까지)
+        for (let floor = startFloor; floor <= 300; floor++) {
             const monster = this.dungeonMonsters.get(floor);
             const monsterCombatPower = this.calculateMonsterCombatPower(monster.stats);
             
@@ -639,7 +854,7 @@ class AutoDungeonSystem {
         embed.setDescription(description);
 
         // 탐험 진행도
-        const progressBar = this.createProgressBar(result.startFloor, result.finalFloor, 50);
+        const progressBar = this.createProgressBar(result.startFloor, result.finalFloor, 300);
         embed.addFields({
             name: '📊 탐험 진행도',
             value: `\`\`\`${result.startFloor}층 ➜ ${result.finalFloor}층\n${progressBar}\`\`\``,
@@ -718,10 +933,16 @@ class AutoDungeonSystem {
                 value: result.deathReason,
                 inline: false
             });
-        } else if (result.finalFloor === 50) {
+        } else if (result.finalFloor === 300) {
             embed.addFields({
-                name: '🏆 던전 클리어!',
-                value: '축하합니다! 50층까지 모두 클리어했습니다!',
+                name: '🏆 전설의 영웅!',
+                value: '축하합니다! 300층 최종 보스 크로노스를 무찌러습니다!',
+                inline: false
+            });
+        } else if (result.finalFloor % 50 === 0) {
+            embed.addFields({
+                name: '🏆 책터 클리어!',
+                value: `축하합니다! ${result.finalFloor}층까지 클리어했습니다!`,
                 inline: false
             });
         }
@@ -794,7 +1015,8 @@ class AutoDungeonSystem {
         // 레벨업 체크
         let leveledUp = false;
         if (userData.level < MAX_LEVEL) {
-            const requiredExp = userData.level * 100;
+            const { game } = require('../../config/gameConfig');
+            const requiredExp = game.expFormula(userData.level);
             if (userData.exp >= requiredExp) {
                 userData.level++;
                 userData.exp -= requiredExp;
@@ -907,7 +1129,7 @@ class AutoDungeonSystem {
     }
 
     // 진행도 바 생성
-    createProgressBar(start, end, max) {
+    createProgressBar(start, end, max = 300) {
         const filled = '█';
         const empty = '░';
         const barLength = 20;
